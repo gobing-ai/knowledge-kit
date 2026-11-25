@@ -12,7 +12,15 @@
  *
  * This module is the pre-spend half of 0433 R3/R4: a PURE function, no LLM call, that fails the plan
  * when the LEAD title/summary trips the CN-blocked mainline vocabulary, so the failure lands in the plan
- * stage (`daily-curate-check`, workflow node 5) instead of the post-spend safety verdict (node 19).
+ * stage (`curate-check`, node 4 of 25 in `kk-news-generate.yaml`) instead of after the `voice` TTS spend
+ * (node 18) and the post-spend `safety-variants` verdict (node 24).
+ *
+ * Calibration (task 0438): the two-signal detector (AI object × policy signal, with the context-dependent
+ * signals gated on a government actor) is measured, not argued — `plugins/kk/tests/fixtures/
+ * cn-lead-calibration.json` holds 30 class leads (≥28 must trip), 86 product leads (≤3 may trip) and the
+ * accepted misses. Every added term/actor is pinned by a class row that goes clean without it. Re-measure
+ * with `bun test plugins/kk/tests/cn-lead-gate-0438.test.ts`; extend by ADDING rows, never by editing a row
+ * after seeing the gate's output.
  *
  * Scope — deliberately narrow, and it is a *position* constraint, not an exclusion rule:
  *  - Only the lead is scanned (plan index 0), and only its `title` + summary (`metadata.brief`). A body
@@ -193,8 +201,32 @@ const AI_OBJECT_TERMS: readonly string[] = [
     'ai',
     'gpu',
 ];
-/** The nouns a PRODUCT's own terms carry — a policy signal only when a government word is near. */
-const PRODUCT_POLICY_WORDS: ReadonlySet<string> = new Set(['政策', '规则', '规范', '指南']);
+/**
+ * Signals a product's own copy also uses (0438): the 政策/规则/规范/指南/指引 a vendor publishes for its
+ * own product, and 许可 (open-source licence) / 审查 (code review) / 调查 (postmortem) / 限制 (usage
+ * limit). Each counts only when {@link GOVERNMENT_ACTOR_RE} matches the same surface.
+ */
+const CONTEXT_DEPENDENT_SIGNALS: ReadonlySet<string> = new Set([
+    '政策',
+    '规则',
+    '规范',
+    '指南',
+    '指引',
+    '许可',
+    '审查',
+    '调查',
+    '限制',
+]);
+
+/**
+ * Government / jurisdiction actors that turn a context-dependent signal into a policy act. Every entry
+ * is pinned by a `class` row of `tests/fixtures/cn-lead-calibration.json` that trips only through it.
+ * Actors that trip on their own are left out: 网信办/工信部/商务部/国务院/政协 are vocabulary terms,
+ * and 市场监管 contains the plain signal 监管. The generic 部门/会议/国家 are left out because a company
+ * 安全部门 is not a regulator.
+ * No single-character tokens (`市` would match 市场).
+ */
+const GOVERNMENT_ACTOR_RE = /教育部|央行|人民银行|数据局|总局|财政部|司法部|药监局|委员会|政府|美国|美方|欧盟/;
 
 const POLICY_SIGNAL_TERMS: readonly string[] = [
     '出口',
@@ -208,7 +240,6 @@ const POLICY_SIGNAL_TERMS: readonly string[] = [
     '限制',
     '收紧',
     '放宽',
-    '新规',
     '规则',
     '政策',
     '办法',
@@ -227,6 +258,13 @@ const POLICY_SIGNAL_TERMS: readonly string[] = [
     '选举',
     '军方',
     '国防',
+    '指引',
+    '条例',
+    '细则',
+    '备案',
+    '征求意见',
+    '供应',
+    '管制',
 ];
 
 export interface CnLeadHit {
@@ -238,6 +276,8 @@ export interface CnLeadHit {
     term: string;
     /** The lead surface that carried it. */
     field: 'title' | 'summary';
+    /** `vocabulary` = an enumerated {@link CN_LEAD_VOCABULARY} term; `two-signal` = AI object × policy signal. */
+    detector: 'vocabulary' | 'two-signal';
 }
 
 export interface CnLeadScan {
@@ -259,9 +299,11 @@ function squash(text: string): string {
     return text.replace(/\s+/g, '');
 }
 
-/** True when `text` carries `term` — substring for CJK, word-boundary prefix for Latin. */
+/** True when `text` carries `term` — substring for CJK; for Latin a whole word, plural/possessive allowed. */
 function trips(text: string, term: string): boolean {
-    if (LATIN.test(term)) return new RegExp(`(^|[^a-z0-9])${escapeRegex(term)}`, 'i').test(text);
+    if (LATIN.test(term)) {
+        return new RegExp(`(^|[^a-z0-9])${escapeRegex(term)}(?:s|'s)?(?![a-z0-9])`, 'i').test(text);
+    }
     return squash(text).includes(squash(term));
 }
 
@@ -275,7 +317,13 @@ export function scanCnLead(title: string, summary: string): CnLeadScan {
                 ['summary', summary],
             ] as const) {
                 if (text.trim() !== '' && trips(text, term)) {
-                    hits.push({ mainline: row.mainline, ruleIds: CN_LEAD_RULE_IDS, term, field });
+                    hits.push({
+                        mainline: row.mainline,
+                        ruleIds: CN_LEAD_RULE_IDS,
+                        term,
+                        field,
+                        detector: 'vocabulary',
+                    });
                 }
             }
         }
@@ -287,14 +335,16 @@ export function scanCnLead(title: string, summary: string): CnLeadScan {
     ] as const) {
         if (text.trim() === '') continue;
         const object = AI_OBJECT_TERMS.find((term) => trips(text, term));
-        const policy = POLICY_SIGNAL_TERMS.find((term) => trips(text, term));
-        if (object === undefined || policy === undefined) continue;
-        // A product's OWN usage policy ("更新模型使用政策/规则/规范") is not a government action on the
-        // industry; any government/regulator word in the same surface makes it one again.
-        const productPolicy =
-            PRODUCT_POLICY_WORDS.has(policy) && !/政府|监管|国家|部门|法案|网信办|工信部|会议/.test(squash(text));
-        if (productPolicy) continue;
-        hits.push({ mainline: 'trade-control', ruleIds: CN_LEAD_RULE_IDS, term: `${object}+${policy}`, field });
+        if (object === undefined) continue;
+        // A context-dependent signal ("更新模型使用政策", "代码审查") is a product fact unless a government
+        // actor sits in the same surface; the actor then joins the evidence term.
+        const actor = squash(text).match(GOVERNMENT_ACTOR_RE)?.[0];
+        const policy = POLICY_SIGNAL_TERMS.find(
+            (term) => trips(text, term) && (!CONTEXT_DEPENDENT_SIGNALS.has(term) || actor !== undefined),
+        );
+        if (policy === undefined) continue;
+        const term = CONTEXT_DEPENDENT_SIGNALS.has(policy) ? `${object}+${policy}+${actor}` : `${object}+${policy}`;
+        hits.push({ mainline: 'trade-control', ruleIds: CN_LEAD_RULE_IDS, term, field, detector: 'two-signal' });
     }
     return {
         hits,
@@ -381,8 +431,13 @@ export interface CnLeadEnforcement {
     docs: Record<string, unknown>[];
     /** The lead that was moved, and where it now sits (body position, never the last one by rule). */
     demoted: { id: string; from: number; to: number } | null;
-    /** Set when EVERY item trips: no safe lead exists, so the caller must refuse before synthesis. */
+    /** Set when EVERY item carries a vocabulary hit: no safe lead exists, so the caller refuses before synthesis. */
     blocked: { id: string; message: string } | null;
+    /**
+     * 0438 R4: no clean candidate, but this one trips only the two-signal detector (a heuristic that also
+     * fires on product copy) — it leads, and the caller logs it instead of refusing the day.
+     */
+    weakLead: { id: string; terms: string[] } | null;
 }
 
 /**
@@ -391,28 +446,49 @@ export interface CnLeadEnforcement {
  * keeping its relative order. Returns the input array untouched (same reference) when nothing trips, so a
  * caller can persist only what changed.
  *
- * `blocked` is the honest dead end: a pool where every candidate's lead surface trips has no lead this
- * cut may carry, and inventing one would be worse than refusing the day before the TTS spend.
+ * With no clean candidate, the first candidate whose hits are all `two-signal` leads as `weakLead`
+ * (0438 R4): refusing a day on a heuristic that 2/86 product leads also trip costs more than it saves.
+ * `blocked` is the honest dead end: every candidate carries an enumerated vocabulary hit, so no lead this
+ * cut may carry exists, and inventing one would be worse than refusing the day before the TTS spend.
  */
 export function enforceCnLead(docs: readonly Record<string, unknown>[]): CnLeadEnforcement {
     const unchanged = docs as Record<string, unknown>[];
     const verdict = checkCnLeadPlan(docs);
-    if (verdict.ok) return { docs: unchanged, demoted: null, blocked: null };
+    if (verdict.ok) return { docs: unchanged, demoted: null, blocked: null, weakLead: null };
     const tripping = docs[0] as Record<string, unknown>;
     const rest = docs.slice(1);
     const cleanIndex = rest.findIndex((entry) => checkCnLeadPlan([entry]).ok);
-    if (cleanIndex === -1) {
+    if (cleanIndex !== -1) {
+        const clean = rest[cleanIndex] as Record<string, unknown>;
+        const reordered = [clean, ...rest.slice(0, cleanIndex), tripping, ...rest.slice(cleanIndex + 1)];
+        return {
+            docs: reordered,
+            demoted: { id: verdict.leadId ?? '', from: 0, to: cleanIndex + 1 },
+            blocked: null,
+            weakLead: null,
+        };
+    }
+    const scans = docs.map((entry) => {
+        const { title, summary } = leadSurfaceOf(entry);
+        return scanCnLead(title, summary);
+    });
+    const weakIndex = scans.findIndex((scan) => scan.hits.every((hit) => hit.detector === 'two-signal'));
+    if (weakIndex === -1) {
         return {
             docs: unchanged,
             demoted: null,
             blocked: { id: verdict.leadId ?? '', message: verdict.message },
+            weakLead: null,
         };
     }
-    const clean = rest[cleanIndex] as Record<string, unknown>;
-    const reordered = [clean, ...rest.slice(0, cleanIndex), tripping, ...rest.slice(cleanIndex + 1)];
+    const weak = docs[weakIndex] as Record<string, unknown>;
+    const weakLead = { id: String(weak.id ?? ''), terms: (scans[weakIndex] as CnLeadScan).terms };
+    if (weakIndex === 0) return { docs: unchanged, demoted: null, blocked: null, weakLead };
+    const reordered = [weak, tripping, ...rest.filter((entry) => entry !== weak)];
     return {
         docs: reordered,
-        demoted: { id: verdict.leadId ?? '', from: 0, to: cleanIndex + 1 },
+        demoted: { id: verdict.leadId ?? '', from: 0, to: 1 },
         blocked: null,
+        weakLead,
     };
 }

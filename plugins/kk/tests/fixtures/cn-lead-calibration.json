@@ -1,0 +1,277 @@
+{
+    "class": [
+        {
+            "lead": "深圳市发布人工智能产业促进条例",
+            "note": "local regulation on the AI industry",
+            "source": "0433-v5",
+            "pins": "条例"
+        },
+        { "lead": "北京市出台生成式人工智能服务备案细则", "note": "generative-AI filing rules", "source": "0433-v5" },
+        {
+            "lead": "央行发布金融领域人工智能应用指引",
+            "note": "ministry-level guideline",
+            "source": "0433-v5",
+            "pins": "指引"
+        },
+        {
+            "lead": "教育部印发中小学人工智能教学指南",
+            "note": "ministry guideline; the old carve-out cancelled it",
+            "source": "0433-v5",
+            "pins": "教育部"
+        },
+        {
+            "lead": "国家数据局就人工智能数据合规征求意见",
+            "note": "rulemaking at the consultation stage",
+            "source": "0433-v5"
+        },
+        {
+            "lead": "美方要求台积电停止向中国客户供应先进制程",
+            "note": "the incident class: trade control on supply",
+            "source": "0433-v5",
+            "pins": "供应"
+        },
+        {
+            "lead": "多地开展人工智能服务算法备案专项检查",
+            "note": "regulatory inspection campaign",
+            "source": "0433-v5",
+            "pins": "备案"
+        },
+        {
+            "lead": "中国人工智能立法进入征求意见阶段",
+            "note": "legislation is 时政 by any reading",
+            "source": "0433-v5",
+            "pins": "征求意见"
+        },
+        { "lead": "上海发布大模型服务管理细则", "note": "local implementing rules", "source": "0438", "pins": "细则" },
+        {
+            "lead": "美国扩大 AI 芯片管制范围",
+            "note": "bare 管制 without the 出口/贸易 compound",
+            "source": "0438",
+            "pins": "管制"
+        },
+        {
+            "lead": "央行限制金融机构使用境外大模型",
+            "note": "central bank restricting model use",
+            "source": "0438",
+            "pins": "央行"
+        },
+        {
+            "lead": "人民银行发布人工智能金融应用规范",
+            "note": "central bank norms",
+            "source": "0438",
+            "pins": "人民银行"
+        },
+        {
+            "lead": "国家数据局发布人工智能数据标注规范",
+            "note": "data bureau norms",
+            "source": "0438",
+            "pins": "数据局"
+        },
+        {
+            "lead": "国家广电总局发布人工智能生成视频审查规则",
+            "note": "broadcast regulator review rules",
+            "source": "0438",
+            "pins": "总局"
+        },
+        {
+            "lead": "市场监管部门对大模型企业开展价格调查",
+            "note": "market regulator investigation (trips on the plain signal 监管, so it pins no actor)",
+            "source": "0438"
+        },
+        {
+            "lead": "财政部发布人工智能产业规划指南",
+            "note": "finance ministry guideline",
+            "source": "0438",
+            "pins": "财政部"
+        },
+        {
+            "lead": "司法部发布人工智能法律服务规范",
+            "note": "justice ministry norms",
+            "source": "0438",
+            "pins": "司法部"
+        },
+        {
+            "lead": "国家药监局发布 AI 医疗器械审查指南",
+            "note": "drug regulator review guideline",
+            "source": "0438",
+            "pins": "药监局"
+        },
+        {
+            "lead": "国家发展和改革委员会发布算力基础设施指南",
+            "note": "state commission guideline",
+            "source": "0438",
+            "pins": "委员会"
+        },
+        {
+            "lead": "深圳市政府发布人工智能产业扶持指南",
+            "note": "municipal government guideline",
+            "source": "0438",
+            "pins": "政府"
+        },
+        {
+            "lead": "美国限制英伟达 AI 芯片销售",
+            "note": "foreign government restriction",
+            "source": "0438",
+            "pins": "美国"
+        },
+        { "lead": "美方审查台积电先进制程订单", "note": "foreign government review", "source": "0438", "pins": "美方" },
+        {
+            "lead": "欧盟调查 OpenAI 大模型训练数据",
+            "note": "foreign regulator investigation",
+            "source": "0438",
+            "pins": "欧盟"
+        },
+        { "lead": "美国拟将更多中国 AI 企业列入实体清单", "note": "entity list", "source": "0438" },
+        { "lead": "英伟达特供芯片遭美国商务部叫停", "note": "commerce department action", "source": "0438" },
+        { "lead": "荷兰收紧光刻机对华出口", "note": "export control on equipment", "source": "0438" },
+        { "lead": "国务院常务会议部署人工智能+行动", "note": "State Council policy", "source": "0438" },
+        { "lead": "日本限制先进半导体设备出口", "note": "export restriction", "source": "0438" },
+        { "lead": "网信办发布人工智能生成内容标识办法", "note": "CAC labelling measures", "source": "0438" },
+        { "lead": "美国国会提出限制开源大模型出口法案", "note": "legislative export restriction", "source": "0438" }
+    ],
+    "product": [
+        {
+            "lead": "某开源大模型改用 Apache 许可，商用门槛降低",
+            "note": "open-source licence is a product fact",
+            "source": "0433-v5"
+        },
+        {
+            "lead": "GitHub Copilot 上线代码审查助手，支持大模型补全",
+            "note": "code review is a product feature",
+            "source": "0433-v5"
+        },
+        { "lead": "Anthropic 调查 Claude 输出异常并发布复盘", "note": "vendor postmortem", "source": "0433-v5" },
+        { "lead": "OpenAI 限制模型输出长度以降低推理成本", "note": "product-level limit", "source": "0433-v5" },
+        {
+            "lead": "Anthropic 安全部门更新模型使用政策",
+            "note": "a company department is not a government actor",
+            "source": "0433-v5"
+        },
+        {
+            "lead": "英伟达发布 GPU 驱动更新规范说明",
+            "note": "更新规范 contains the substring 新规",
+            "source": "0433-v5"
+        },
+        { "lead": "Airbnb 限制房东上架数量", "note": "Latin ai prefix of an English word", "source": "0433-v5" },
+        { "lead": "Cursor 新增代码审查智能体，支持大模型补全", "note": "amplification pool row", "source": "0433-v5" },
+        { "lead": "OpenAI 限制模型单次输出长度", "note": "amplification pool row", "source": "0433-v5" },
+        { "lead": "Airtable 收紧免费额度上限", "note": "Latin ai prefix of an English word", "source": "0433-v5" },
+        {
+            "lead": "Anthropic 发布 Claude Opus 5：上下文窗口扩至两百万 token",
+            "note": "model release",
+            "source": "0438"
+        },
+        { "lead": "OpenAI 推出 GPT-6，推理速度提升一倍", "note": "model release", "source": "0438" },
+        { "lead": "Google 发布 Gemini 3 Ultra，多模态能力全面升级", "note": "model release", "source": "0438" },
+        { "lead": "DeepSeek 开源 V4 模型，训练成本再降一半", "note": "open-source release", "source": "0438" },
+        { "lead": "阿里通义千问发布 Qwen4，支持百万 token 上下文", "note": "model release", "source": "0438" },
+        { "lead": "Meta 发布 Llama 5，开源权重同步上线", "note": "open-weights release", "source": "0438" },
+        { "lead": "月之暗面 Kimi 上线深度研究功能", "note": "feature launch", "source": "0438" },
+        { "lead": "字节跳动豆包大模型降价八成", "note": "pricing", "source": "0438" },
+        { "lead": "智谱发布 GLM-5，代码能力对标顶级闭源模型", "note": "model release", "source": "0438" },
+        { "lead": "Mistral 完成新一轮融资，估值突破百亿欧元", "note": "funding", "source": "0438" },
+        { "lead": "xAI 发布 Grok 5，接入 X 平台全部用户", "note": "model release", "source": "0438" },
+        { "lead": "英伟达发布新一代数据中心 GPU，能效提升四成", "note": "hardware launch", "source": "0438" },
+        { "lead": "AMD 推出 MI500 加速卡，挑战英伟达 AI 芯片地位", "note": "hardware competition", "source": "0438" },
+        {
+            "lead": "台积电 2 纳米工艺量产，首批客户为苹果与英伟达",
+            "note": "manufacturing milestone",
+            "source": "0438"
+        },
+        { "lead": "苹果发布端侧大模型，Siri 迎来全面重写", "note": "on-device model", "source": "0438" },
+        { "lead": "微软 Copilot 全面接入 Office 桌面版", "note": "product integration", "source": "0438" },
+        { "lead": "亚马逊 AWS 推出自研 Trainium 3 芯片", "note": "custom silicon", "source": "0438" },
+        { "lead": "英伟达市值突破六万亿美元", "note": "market cap", "source": "0438" },
+        { "lead": "OpenAI 年化收入突破五百亿美元", "note": "revenue", "source": "0438" },
+        { "lead": "Anthropic 推出 Claude Code 企业版，支持私有部署", "note": "enterprise product", "source": "0438" },
+        { "lead": "百度文心大模型日调用量突破百亿次", "note": "usage metric", "source": "0438" },
+        { "lead": "腾讯混元发布图像生成新模型", "note": "model release", "source": "0438" },
+        { "lead": "某开源大模型在代码榜单上超过闭源对手", "note": "benchmark", "source": "0438" },
+        { "lead": "斯坦福发布 2026 AI 指数报告：开源与闭源差距缩小", "note": "research report", "source": "0438" },
+        { "lead": "研究发现大模型在长文本推理上仍存在明显短板", "note": "research finding", "source": "0438" },
+        { "lead": "Hugging Face 上线新的模型评测排行榜", "note": "platform feature", "source": "0438" },
+        { "lead": "OpenAI 发布 Sora 2，视频生成时长扩至五分钟", "note": "model release", "source": "0438" },
+        { "lead": "Runway 推出实时视频编辑模型", "note": "model release", "source": "0438" },
+        { "lead": "Midjourney V8 上线，图像细节大幅提升", "note": "model release", "source": "0438" },
+        { "lead": "ElevenLabs 发布多语种语音克隆模型", "note": "model release", "source": "0438" },
+        { "lead": "Perplexity 推出 AI 浏览器 Comet 正式版", "note": "product launch", "source": "0438" },
+        { "lead": "Cursor 估值突破三百亿美元", "note": "valuation", "source": "0438" },
+        { "lead": "小米发布新一代旗舰手机，影像与续航升级", "note": "consumer hardware", "source": "0438" },
+        { "lead": "华为昇腾推出新一代 AI 训练集群", "note": "hardware launch", "source": "0438" },
+        { "lead": "寒武纪发布新款云端推理芯片", "note": "hardware launch", "source": "0438" },
+        { "lead": "摩尔线程完成上市辅导，国产 GPU 加速资本化", "note": "IPO", "source": "0438" },
+        { "lead": "OpenAI 更新模型使用政策，新增企业级审计日志", "note": "product usage policy", "source": "0438" },
+        { "lead": "Anthropic 发布负责任扩展政策第三版", "note": "vendor safety policy", "source": "0438" },
+        { "lead": "Google 更新 Gemini API 定价规则", "note": "pricing rules", "source": "0438" },
+        { "lead": "OpenAI 发布 Agents SDK 开发者指南", "note": "developer guide", "source": "0438" },
+        { "lead": "GitHub 限制免费用户的 Copilot 调用次数", "note": "rate limit", "source": "0438" },
+        { "lead": "Anthropic 放宽 Claude 免费版用量限制", "note": "usage limit change", "source": "0438" },
+        { "lead": "OpenAI 调查 ChatGPT 大规模宕机原因", "note": "outage investigation", "source": "0438" },
+        { "lead": "Meta 以开源许可证发布新一代视觉模型", "note": "licence", "source": "0438" },
+        { "lead": "某大模型安全报告显示越狱成功率下降", "note": "safety report", "source": "0438" },
+        {
+            "lead": "Google DeepMind 发布 AlphaFold 4，蛋白质预测精度再提升",
+            "note": "research model",
+            "source": "0438"
+        },
+        { "lead": "OpenAI 与微软重新谈判算力合作条款", "note": "commercial deal", "source": "0438" },
+        { "lead": "甲骨文为 OpenAI 新建三座数据中心", "note": "infrastructure deal", "source": "0438" },
+        { "lead": "软银追加投资 OpenAI 四百亿美元", "note": "funding", "source": "0438" },
+        { "lead": "三星 HBM4 通过英伟达认证，开始批量供货", "note": "supply milestone", "source": "0438" },
+        { "lead": "SK 海力士季度利润创新高，AI 存储需求旺盛", "note": "earnings", "source": "0438" },
+        { "lead": "英伟达财报超预期，数据中心收入同比翻倍", "note": "earnings", "source": "0438" },
+        { "lead": "特斯拉 Optimus 机器人开始在工厂试产", "note": "robotics", "source": "0438" },
+        { "lead": "Figure 发布新一代人形机器人，搭载自研大模型", "note": "robotics", "source": "0438" },
+        { "lead": "宇树科技发布消费级人形机器人，售价两万元", "note": "robotics", "source": "0438" },
+        { "lead": "Waymo 无人车服务扩展至十个城市", "note": "autonomous driving", "source": "0438" },
+        { "lead": "理想汽车发布端到端自动驾驶大模型", "note": "autonomous driving", "source": "0438" },
+        { "lead": "Notion 推出 AI 会议纪要功能", "note": "feature launch", "source": "0438" },
+        { "lead": "Adobe Firefly 接入第三方视频模型", "note": "integration", "source": "0438" },
+        { "lead": "Salesforce 发布 Agentforce 3，企业智能体全面升级", "note": "enterprise product", "source": "0438" },
+        { "lead": "Anthropic 开源 MCP 新版本规范", "note": "protocol spec", "source": "0438" },
+        { "lead": "OpenAI 推出 ChatGPT 购物功能，支持一键下单", "note": "feature launch", "source": "0438" },
+        { "lead": "谷歌搜索全面上线 AI 模式", "note": "product launch", "source": "0438" },
+        { "lead": "Anthropic raises a new round at a higher valuation", "note": "funding (English)", "source": "0438" },
+        {
+            "lead": "OpenAI ships a faster reasoning model for developers",
+            "note": "model release (English)",
+            "source": "0438"
+        },
+        { "lead": "Nvidia unveils its next AI supercomputer at GTC", "note": "hardware (English)", "source": "0438" },
+        {
+            "lead": "Mistral releases an open-weights coding model",
+            "note": "model release (English)",
+            "source": "0438"
+        },
+        {
+            "lead": "Kimi 新模型完成生成式人工智能服务备案，正式向公众开放",
+            "note": "a product launch that names its filing",
+            "source": "0438"
+        },
+        { "lead": "某大模型要求用户实名注册后使用", "note": "product account requirement", "source": "0438" },
+        { "lead": "英伟达公布 2027 年最新规划", "note": "最新规划 contains the substring 新规", "source": "0438" },
+        { "lead": "某大模型更新规则说明", "note": "更新规则 contains the substring 新规", "source": "0438" },
+        { "lead": "智谱发布 AI 编程助手使用指引", "note": "product usage guide", "source": "0438" },
+        { "lead": "OpenAI 董事会批准新的公司治理结构", "note": "corporate governance", "source": "0438" },
+        { "lead": "百度发布文心一言用户隐私政策更新", "note": "privacy policy update", "source": "0438" },
+        { "lead": "某创业公司推出大模型安全审查工具", "note": "security tooling product", "source": "0438" },
+        { "lead": "Anthropic 推出模型可解释性研究新成果", "note": "research", "source": "0438" }
+    ],
+    "acceptedMisses": [
+        {
+            "lead": "中国推出 AI 生成内容标识新要求",
+            "note": "要求 is also a product noun; needs a reporting-duty shape (out of scope)",
+            "source": "0433-v5"
+        },
+        {
+            "lead": "北京上海同步启动人工智能示范区建设",
+            "note": "示范区建设 carries no policy noun the product side does not also use",
+            "source": "0433-v5"
+        },
+        {
+            "lead": "美国要求云厂商报告外国客户的大模型训练情况",
+            "note": "要求…报告 shape is out of scope for 0438",
+            "source": "0433-v5"
+        }
+    ]
+}

@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%)
-status: todo
+status: done
 template: issue
 created_at: 2026-11-25T20:50:28.401Z
-updated_at: "2026-11-25T21:39:21.134Z"
+updated_at: "2026-11-25T22:18:23.787Z"
 feature_id: L3
 
 ac_numbering: task-local
 ac_altitude: task-local
 priority: P2
 estimate_hours: 5
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0438. Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%)
@@ -54,11 +56,11 @@ Acceptance for this task:
 
 ### Requirements
 
-- [ ] R1. On the committed class fixture (30 held-out XY-02/WX-01-class leads), the gate catches **>= 28/30**.
-- [ ] R2. On the committed product fixture (86 product/market leads), the gate trips **<= 3/86**.
-- [ ] R3. Every row of the shipped 0433 tables (`plugins/kk/tests/cn-lead-gate-0433.test.ts`: 22 trip, 10 pass, plus AC1/AC2) keeps its current verdict.
-- [ ] R4. `enforceCnLead` returns `blocked` only when **every** candidate carries at least one enumerated-vocabulary hit (`CN_LEAD_VOCABULARY`). A pool with no clean candidate but at least one two-signal-only candidate leads with the first such candidate, and the run continues.
-- [ ] R5. The measurement method is committed: both fixture families live in one data file, a test asserts the R1/R2 thresholds from it, every term this task adds is pinned by at least one row that trips **only** through it, and the module docblock plus `news-editorial/references/selection.md` § CN lead say how to re-measure.
+- [x] R1. On the committed class fixture (30 held-out XY-02/WX-01-class leads), the gate catches **>= 28/30**.
+- [x] R2. On the committed product fixture (86 product/market leads), the gate trips **<= 3/86**.
+- [x] R3. Every row of the shipped 0433 tables (`plugins/kk/tests/cn-lead-gate-0433.test.ts`: 22 trip, 10 pass, plus AC1/AC2) keeps its current verdict.
+- [x] R4. `enforceCnLead` returns `blocked` only when **every** candidate carries at least one enumerated-vocabulary hit (`CN_LEAD_VOCABULARY`). A pool with no clean candidate but at least one two-signal-only candidate leads with the first such candidate, and the run continues.
+- [x] R5. The measurement method is committed: both fixture families live in one data file, a test asserts the R1/R2 thresholds from it, every term this task adds is pinned by at least one row that trips **only** through it, and the module docblock plus `news-editorial/references/selection.md` § CN lead say how to re-measure.
 
 Out of scope: the reporting-duty shape (`要求…报告`, 0433 visit-5 accepted residuals), a run artifact for successful demotions (visit-5 P4 #6), an automated tie between the vocabulary and the platform reference files (P4 #9), and any change to `content-safety` or the post-spend safety review.
 
@@ -153,15 +155,44 @@ Calibration debt, not a single defect (measured in 0433 Review visit 5). Three c
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- Fixture first: `plugins/kk/tests/fixtures/cn-lead-calibration.json` (30 class / 86 product / 3 accepted misses) and `plugins/kk/tests/cn-lead-gate-0438.test.ts`; baseline against the unchanged gate: class 17/30, product 13/86, 0/21 pins.
+- Gate (`plugins/kk/scripts/cn-lead-gate.ts`): `POLICY_SIGNAL_TERMS` +指引/条例/细则/备案/征求意见/供应/管制, −新规; `CONTEXT_DEPENDENT_SIGNALS` (政策/规则/规范/指南/指引/许可/审查/调查/限制) count only with a `GOVERNMENT_ACTOR_RE` actor in the same surface, which joins the hit term (`object+signal+actor`); Latin terms match whole words (plural/possessive allowed). Result: class 30/30, product 2/86.
+- Deviation: `市场监管` left out of the actor list — its row trips on the plain signal 监管, so it cannot be pinned (R5); 部委/人大/办公厅/国家 likewise unpinned and omitted.
+- R4: `CnLeadHit.detector`, `CnLeadEnforcement.weakLead`; `enforceCnLead` falls back to the first two-signal-only candidate; `daily-stages.ts` logs `weak lead`.
+- Not committed (operator commits in the next step); baseline recorded here instead of a fixture-only commit.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/tests/cn-lead-gate-0438.test.ts:52-55` — 30/30 class rows trip (`plugins/kk/tests/fixtures/cn-lead-calibration.json` family `class`); signals added at `plugins/kk/scripts/cn-lead-gate.ts:261-268` |
+| R2 | MET | `plugins/kk/tests/cn-lead-gate-0438.test.ts:57-60` — 2/86 product rows trip; context-dependent signals gated on a government actor `plugins/kk/scripts/cn-lead-gate.ts:209-229`, `:336-347`; Latin whole-word match `:303-307` |
+| R3 | MET | `bun test plugins/kk/tests/cn-lead-gate-0433.test.ts` — 50 pass, 0 fail; file unmodified (`git status` shows no change to it) |
+| R4 | MET | `plugins/kk/scripts/cn-lead-gate.ts:471-494` weak-lead fallback, `blocked` only when every candidate carries a vocabulary hit; `detector` field `:280`; log line `plugins/kk/scripts/daily-stages.ts:5857-5861`; tests `plugins/kk/tests/cn-lead-gate-0438.test.ts:136-157` |
+| R5 | MET | fixture `plugins/kk/tests/fixtures/cn-lead-calibration.json` (`{class, product, acceptedMisses}`, rows `{lead, note, source, pins?}`); thresholds `plugins/kk/tests/cn-lead-gate-0438.test.ts:45-73`; docblock `plugins/kk/scripts/cn-lead-gate.ts:18-23`; `plugins/kk/skills/news-editorial/references/selection.md:58-71` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — held-out class recall meets the bar (req: R1) | MET | test | `plugins/kk/tests/cn-lead-gate-0438.test.ts:52-55` — 30/30, missed rows named on failure |
+| Scenario: AC2 — product false positives stay within budget (req: R2) | MET | test | `plugins/kk/tests/cn-lead-gate-0438.test.ts:57-60` — 2/86, tripping rows named with terms on failure |
+| Scenario: AC3 — the shipped 0433 tables are unchanged (req: R3) | MET | test | `plugins/kk/tests/cn-lead-gate-0433.test.ts:1-340` unmodified; 50 pass, 0 fail |
+| Scenario: AC4 — a two-signal-only pool never refuses the day (req: R4) | MET | test | `plugins/kk/tests/cn-lead-gate-0438.test.ts:145-157` — real runner `daily-curate-check --final`: two-signal pool exits 0, no refusal file, plan `a,b,c`, stderr `weak lead`; vocabulary pool exits non-zero with refusal record |
+| Scenario: AC5 — every added term is load-bearing (req: R5) | MET | test | `plugins/kk/tests/cn-lead-gate-0438.test.ts:66-72` pins membership (20 rows); removal fail-first 20/20 clean (recorded above) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -172,3 +203,8 @@ Calibration debt, not a single defect (measured in 0433 Review visit 5). Three c
 - Install-sync rule: `AGENTS.md` § Editing `plugins/kk/scripts/`
 
 ### History
+
+- 2026-11-25T22:18:09.999Z todo → wip (system)
+- 2026-11-25T22:18:11.304Z wip → testing (system)
+- 2026-11-25T22:18:23.653Z testing → done (system)
+

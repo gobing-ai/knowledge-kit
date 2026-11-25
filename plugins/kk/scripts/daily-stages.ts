@@ -5854,6 +5854,11 @@ export function dailyCurateCheck(args: string[]): void {
                     `curate-check: ${enforced.demoted.id} demoted from lead to position ${enforced.demoted.to} — the CN-blocked lead this cut may not carry (see cn-lead-gate.ts)`,
                 );
             }
+            if (enforced.weakLead !== null) {
+                console.error(
+                    `curate-check: weak lead ${enforced.weakLead.id} (${enforced.weakLead.terms.join(', ')}) — no clean candidate, and it trips only the two-signal heuristic, so it leads instead of refusing the day (0438 R4)`,
+                );
+            }
             sted('write', planFile, () => writeJsonText(planFile, enforced.docs));
             sted('write', excludedFile, () => writeJsonText(excludedFile, []));
             if (isFile(errFile)) unlinkSync(errFile);

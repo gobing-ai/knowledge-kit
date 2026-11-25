@@ -56,9 +56,19 @@ foreign-intelligence framing. So:
   (`daily-curate-check --final` writes `21-plan/<date>_03_cn-lead-refusal.json` and exits non-zero rather
   than pay for an episode the CN rows would drop afterwards).
 - **Enforced in code, not by this prose.** `daily-curate-check` runs `plugins/kk/scripts/cn-lead-gate.ts` on
-  the lead (plan index 0, `title` + `metadata.brief`) and rejects the plan with rule `cn-lead:XY-02`, naming
-  the matched terms in the error's `detail`. The vocabulary lives in that module, which cites `XY-02`/`WX-01`
-  as its source of truth — re-verify against the platform files when a platform ruling changes.
+  the lead (plan index 0). The scanned surface is the `title` plus the first of `metadata.brief` / `summary` /
+  the body's first sentence — the same fallback the CN show notes use. A trip rejects the plan with rule
+  `cn-lead:XY-02`, naming the matched terms in the error's `detail`. The vocabulary lives in that module,
+  which cites `XY-02`/`WX-01` as its source of truth — re-verify against the platform files when a platform
+  ruling changes.
+- **Weak-lead fallback (0438).** On `--final`, when no candidate is clean, the first candidate whose hits all
+  come from the two-signal heuristic (AI object × policy signal — it also fires on some product copy) leads,
+  and the run logs `weak lead <id> (<terms>)` instead of refusing. The refusal is kept for a pool where every
+  candidate carries an enumerated vocabulary term.
+- **Re-measure before changing the gate.** `plugins/kk/tests/fixtures/cn-lead-calibration.json` holds 30
+  class leads (≥28 must trip), 86 product leads (≤3 may trip) and the accepted misses; run
+  `bun test plugins/kk/tests/cn-lead-gate-0438.test.ts`. Add rows for a new shape; never edit a row after
+  seeing the gate's output, and pin each new term or actor with a class row that goes clean without it.
 
 ## Spoken Chinese adaptation
 
