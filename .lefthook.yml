@@ -17,6 +17,19 @@ pre-commit:
     format:
       glob: "*.{js,ts,tsx,jsx,json}"
       run: bun run format
+    bundle-plugins:
+      glob: "{plugins/kk/scripts/**,plugins/kk/workflows/**,plugins/**/plugin.json}"
+      run: bun scripts/bundle-plugins.ts --if-stale
+
+post-checkout:
+  commands:
+    bundle-plugins:
+      run: bun scripts/bundle-plugins.ts --if-stale
+
+post-merge:
+  commands:
+    bundle-plugins:
+      run: bun scripts/bundle-plugins.ts --if-stale
 
 pre-push:
   commands:

@@ -12,7 +12,7 @@
  * `apps/cli/{plugins,.claude-plugin}`.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -217,13 +217,73 @@ export async function bundlePlugins(
     return { pluginTarget, marketplaceTarget };
 }
 
+/** Subtrees the launch preflight compares between checkout and staged `apps/cli/plugins` (0430 R2). */
+const STALE_CHECK_TREES = ['kk/workflows', 'kk/scripts'] as const;
+
+function collectFileBytes(root: string): Map<string, Buffer> {
+    const files = new Map<string, Buffer>();
+    if (!existsSync(root)) return files;
+    const walk = (dir: string, rel: string): void => {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            if (entry.name.startsWith('.') || entry.name.endsWith('.log')) continue;
+            const relPath = rel === '' ? entry.name : `${rel}/${entry.name}`;
+            if (entry.isDirectory()) walk(join(dir, entry.name), relPath);
+            else if (entry.isFile()) files.set(relPath, readFileSync(join(dir, entry.name)));
+        }
+    };
+    walk(root, '');
+    return files;
+}
+
+/**
+ * True when `pluginTarget` (default `apps/cli/plugins`) is absent, its `kk/{workflows,scripts}`
+ * trees diverge in bytes from `pluginSource`, or any source product `plugin.json` is newer than
+ * its staged copy (0430 R2). Fast (<50 ms) on a fresh tree so git hooks and `prepare` skip
+ * unnecessary `Bun.build` passes.
+ */
+export function isStagedPluginsStale(
+    pluginTarget: string = PLUGIN_TARGET,
+    pluginSource: string = PLUGIN_SOURCE,
+): boolean {
+    if (!existsSync(pluginTarget)) return true;
+    for (const subtree of STALE_CHECK_TREES) {
+        const srcFiles = collectFileBytes(join(pluginSource, subtree));
+        const dstFiles = collectFileBytes(join(pluginTarget, subtree));
+        if (srcFiles.size !== dstFiles.size) return true;
+        for (const [rel, bytes] of srcFiles) {
+            const staged = dstFiles.get(rel);
+            if (staged === undefined || !bytes.equals(staged)) return true;
+        }
+    }
+    for (const collection of KIND_COLLECTIONS) {
+        const srcCol = join(pluginSource, collection);
+        if (!existsSync(srcCol)) continue;
+        for (const entry of readdirSync(srcCol, { withFileTypes: true })) {
+            if (!entry.isDirectory()) continue;
+            const srcManifest = join(srcCol, entry.name, 'plugin.json');
+            if (!existsSync(srcManifest)) continue;
+            const dstManifest = join(pluginTarget, collection, entry.name, 'plugin.json');
+            if (!existsSync(dstManifest)) return true;
+            if (statSync(srcManifest).mtimeMs > statSync(dstManifest).mtimeMs) return true;
+        }
+    }
+    return false;
+}
+
 if (import.meta.main) {
-    // `bun scripts/bundle-plugins.ts [<plugin-target> <marketplace-target>]`:
-    // with no args it restages `apps/cli/` (prepack). Overrides let tests stage
-    // a scratch tree in a subprocess — bun test cannot run Bun.build in-process
-    // for the plugins' workspace symlinks (0111).
-    const [pluginTarget, marketplaceTarget] = process.argv.slice(2);
+    // `bun scripts/bundle-plugins.ts [--if-stale] [<plugin-target> <marketplace-target>]`:
+    // with no args it restages `apps/cli/` (prepack). `--if-stale` skips rebuilding when
+    // `apps/cli/plugins/` is already in sync with `plugins/kk/{scripts,workflows}` and product
+    // manifests (0430 R2). Overrides let tests stage a scratch tree in a subprocess — bun test
+    // cannot run Bun.build in-process for the plugins' workspace symlinks (0111).
+    const args = process.argv.slice(2);
+    const ifStale = args.includes('--if-stale');
+    const positional = args.filter((arg) => arg !== '--if-stale');
+    const [pluginTarget, marketplaceTarget] = positional;
     try {
+        if (ifStale && !isStagedPluginsStale(pluginTarget)) {
+            process.exit(0);
+        }
         await bundlePlugins(pluginTarget, marketplaceTarget);
     } catch (error) {
         console.error(`error: ${error instanceof Error ? error.message : String(error)}`);

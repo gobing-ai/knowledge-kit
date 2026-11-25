@@ -2583,7 +2583,7 @@ the plugin definitions via the project layer. The retired `feature-verification`
 with spur's script-absorption/lifecycle upgrade, ADR-142, live in @gobing-ai/spur@0.4.18) is gone:
 feature verification runs through the bundled `feature-lifecycle` FSM — entering `verifying` executes
 `spur feature verify <id>`, resolving SDLC action `check-feature` → `bun run spur-check-feature`
-(alias of the full `spur-check` gate) — and records a receipt bound to `feature-lifecycle`, never to
+(fast `spur-check` gate plus `test:heavy`) — and records a receipt bound to `feature-lifecycle`, never to
 a project workflow of that name.
 
 ## publish-matrix stages: plan | check | send | classify | bundle | rss-gate | wait-until (2026-10-22, tasks 0321–0327, ADR-043)
