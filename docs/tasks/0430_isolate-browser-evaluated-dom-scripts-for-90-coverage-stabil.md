@@ -4,7 +4,7 @@ name: Isolate browser-evaluated DOM scripts for 90% coverage stability and autom
 status: done
 template: standard
 created_at: 2026-11-24T22:48:34.634Z
-updated_at: "2026-11-25T00:33:18.581Z"
+updated_at: "2026-11-25T01:37:26.372Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -135,18 +135,18 @@ Scenario: AC3 — Worktree prepare and lefthook hooks invoke bundle-plugins --if
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: FAIL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | `bunfig.toml:28-32` unifies all 11 subprocess Playwright fixture runners under `"**/tests/fixtures/*-runner.ts"` (`grep -c "tests/fixtures/.*-runner\.ts" .coverage/lcov.info` = 0) with zero production `src/` files ignored; `plugins/publishings/wechatmp-pub/src/page.ts:283-296` replaces the serialized `button.evaluate` callback with a `raw.evaluate` string expression (bringing `page.ts` to 92.41% fn / 100.00% ln); `plugins/publishings/wechatmp-pub/tests/wechatmp-audio-chooser-unit.test.ts:1-54` adds fast in-process duplicate-cover refusal coverage; `bun run spur-check` passes with 5800/5800 tests and all publish adapters >= 90%/90%. |
-| R2 | MET | `scripts/bundle-plugins.ts:221-292` exports `isStagedPluginsStale()` and supports `--if-stale` (15 ms skip when fresh); `scripts/bundle-plugins.test.ts:684-728` verifies missing/drifted detection and fresh skip (27/27 pass); `package.json:25` wires `--if-stale` into `prepare`; `.lefthook.yml:14-32` wires `--if-stale` into `pre-commit`, `post-checkout`, and `post-merge`; `apps/cli/src/launch.ts` remains read-only (`apps/cli/tests/launch.test.ts` 30/30 pass). |
+| R1 | PARTIAL | bunfig.toml:13,28-32 retains the 90% floor and the fixture-runner ignore pattern. .spur/run/0429-0430-verified-fast.log:301-389 shows 5,791 tests passed, but all five named adapters missed 93% function coverage and WeChat flow missed 93% line coverage. The coverage report contains zero fixture runner entries. |
+| R2 | MET | scripts/bundle-plugins.ts:228-267 compares both trees and detects added, removed and updated manifests. scripts/bundle-plugins.test.ts:684-732 verifies fresh, drifted, missing and deleted sources. package.json:25 and .lefthook.yml:20-32 wire prepare, pre-commit, post-checkout and post-merge. The 57 bundle and read-only launch tests passed in .spur/run/0430-bundle-after.log. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | command | `bunfig.toml:13,28-32`, `bun run spur-check` exit 0 (5800 pass / 0 fail; `page.ts` 92.41% fn / 100.00% ln, `flow.ts` 90.49% fn / 91.52% ln, all publish adapters >= 90%/90%; `grep -c "tests/fixtures/.*-runner\.ts" .coverage/lcov.info` = 0). |
-| AC2 | MET | test | `scripts/bundle-plugins.test.ts:684-728` (27/27 pass; fresh `--if-stale` exits 0 in 15 ms without rewriting mtimes; missing/drifted `plugins/kk/{scripts,workflows}` detected as stale). |
-| AC3 | MET | test | `package.json:25`, `.lefthook.yml:14-32`, `apps/cli/tests/launch.test.ts` (30/30 pass, exit-5 refusal preserved), and `bun run spur-check` exit 0 (5800 pass, 0 fail, `recommended-pre-check` 60/60, `recommended-post-check` 3/3). |
+| AC1 | UNMET | command | Fast gate exited 0 but coverage was function/line: WeChat flow 90.49%/91.52%, WeChat page 91.25%/97.38%, XHS flow 90.73%/99.31%, Bilibili flow 90.77%/100%, Shipinhao audio 90.91%/98.68%. See .spur/run/0429-0430-verified-fast.log:301-389. |
+| AC2 | MET | test | scripts/bundle-plugins.test.ts:684-732 and .spur/run/0430-bundle-after.log verify fresh mtime preservation, drift detection and rebuild, missing bundle detection and deleted manifest detection. |
+| AC3 | MET | test | apps/cli/tests/launch.test.ts:312-337 verified exit 5, and the equivalent profiled spur-check ran 5,791 passing tests and 3 passing post-check rules in .spur/run/0429-0430-verified-fast.log:380-389. Ran all three Lefthook hooks against matching paths. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

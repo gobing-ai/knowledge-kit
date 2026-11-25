@@ -4,7 +4,7 @@ name: Split heavy and browser tests into test:heavy while preserving 90% per-fil
 status: done
 template: standard
 created_at: 2026-11-24T22:48:33.200Z
-updated_at: "2026-11-25T00:22:36.370Z"
+updated_at: "2026-11-25T01:56:58.356Z"
 
 ac_altitude: task-local
 ac_numbering: task-local
@@ -143,19 +143,19 @@ Split the test suite into a fast unit tier (`bun run test`, targeted by `bun run
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: FAIL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Profiled all 369 workspace `*.test.ts` files (`task-101`); implemented single-source-of-truth split in `scripts/test-suites.ts:1-166` (`HEAVY_TEST_PATTERNS`, `classifyTestFiles`, `discoverWorkspaceTests`, `--parallel=8`) and parity tests in `scripts/tests/test-suites.test.ts:1-72` (proving `fast ∩ heavy = ∅` and `fast ∪ heavy = all 369+ tests`). Cut `bun run test` from 1904 s to 257.55 s (`bun run spur-check` 281 s, 85% reduction; remaining tail is in-process unit tests required for R2 coverage). |
-| R2 | MET | `bunfig.toml:13` keeps `coverageThreshold = { lines = 0.9, functions = 0.9 }` and `.spur/rules/quality/coverage-gate.yaml:25` keeps `threshold: 90` with zero production `src/` files ignored (`bunfig.toml:16-19` ignores only the test preload helper `scripts/test-silence-output.ts`). `bun run spur-check` passed with 5797/5797 tests green, all 338 fast files clearing 90%/90%, and `recommended-post-check` 3/3 passed. `test:heavy` uses `.works/tmp/heavy-bunfig.toml` (`coverage = false`), verified `LCOV_UNCHANGED=OK` (`stat -f "%m %z" .coverage/lcov.info`). |
-| R3 | MET | `package.json:28-37` wires `test`, `test:heavy`, `spur-check`, and `spur-check-feature` (`bun run spur-check && bun run test:heavy`); `.spur/config.yaml:296` pins `builder.actions.check-feature: bun run spur-check-feature`; `docs/04_DESIGN.md:2585-2586` updated in the same commit (T3). |
+| R1 | PARTIAL | Profiled 371 files with no overlap in .spur/run/0429-fast-timings.json and .spur/run/0429-heavy-timings.json. scripts/test-suites.ts:33-60 routes the subprocess-only content-generate E2E suite to heavy. The fast gate took 316.56 s versus the strict 180 s limit. |
+| R2 | MET | bunfig.toml:13 and .spur/rules/quality/coverage-gate.yaml:25 preserve the 90% thresholds. The fast tests and post-check passed, and the SHA-256 remained unchanged after all 33 heavy files. The post-heavy post-check passed again. See .spur/run/0429-0430-verified-fast.log:380-389, .spur/run/0429-verified-heavy.log:5-13 and .spur/run/0429-verified-post-heavy.log:1-3. |
+| R3 | MET | package.json:28-36 and .spur/config.yaml:296 wire the feature gate to run fast then heavy. Both legs completed successfully in that order with Bun timing flags; see .spur/run/0429-0430-verified-fast.log:380-389 and .spur/run/0429-verified-heavy.log:5-13. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 | MET | test | `scripts/tests/test-suites.test.ts:15-40` proves disjointness and full union over all 369+ workspace tests; `bun run spur-check` ran 5797 tests across 338 fast files in 257.55 s (281 s total gate, down from 1904 s; remaining tail bounded by R2 coverage-bearing unit files). |
-| AC2 | MET | command | `bunfig.toml:13`, `.spur/rules/quality/coverage-gate.yaml:25`, `bun run spur-check` exit 0 (5797 pass, 0 fail, `recommended-post-check` 3/3 pass), and `bun --config=.works/tmp/heavy-bunfig.toml test` confirmed `.coverage/lcov.info` mtime/size unchanged (`1795565667 715494`). |
-| AC3 | MET | test | `package.json:29,37` (`test:heavy`, `spur-check-feature`), `.spur/config.yaml:296` (`check-feature: bun run spur-check-feature`), `docs/04_DESIGN.md:2585-2586`, and `scripts/tests/test-suites.test.ts:43-71` (`buildTestArgv` + `main` heavy dispatch). |
+| AC1 | UNMET | command | scripts/tests/test-suites.test.ts:15-41 and .spur/run/0429-test-file-parity.log prove all 371 files are partitioned into 338 fast and 33 heavy. The profiled fast gate passed in 316.56 s (.spur/run/0429-0430-verified-fast.log:380-389). XHS and WeChat publisher test files took 219.186 s and 165.282 s respectively (.spur/run/0429-fast-timings.json:4-5). |
+| AC2 | MET | command | 5,791 fast tests passed with the 90% coverage settings and 3/3 post-check rules green before heavy. All 576 heavy tests passed, SHA-256 was identical and 3/3 post-check rules passed afterward. See .spur/run/0429-0430-verified-fast.log:380-389, .spur/run/0429-verified-heavy.log:5-13 and .spur/run/0429-verified-post-heavy.log:1-3. |
+| AC3 | MET | command | Verified package.json:35-36 and .spur/config.yaml:296. The baseline invocation of bun run spur-check-feature stopped at a failing fast leg. After the fix its configured legs passed in sequence with timing flags to capture the per-file profile, with FAST_GATE_EXIT=0 and HEAVY_EXIT=0 in .spur/run/0429-0430-verified-fast.log:389 and .spur/run/0429-verified-heavy.log:12. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
