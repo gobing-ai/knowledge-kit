@@ -1437,6 +1437,15 @@ for both nouns. They resolve `content_types`, create/read the canonical run dire
   `expansion`/`reason`, and `ladder` with the widen decision's `chosen` rung and `ratioUsed`). The pre-existing keys
   (`workDir`, `type`, `generate`, `bundle`, `windows`) keep their shapes; the stage total is what the run recorded, not
   a workflow-wide denominator, because a day spans several verbs.
+- `kk news status` resolves the bundle the same way publish does (0435): `resolveBundlePath` (run root first,
+  `4-publish/` fallback), so a news run whose freeze wrote the root bundle reports `bundle.runId`, `bundle.frozen` and
+  the additive `bundle.variantCount` instead of `null`. The `4-publish/` article layout keeps its exact pre-0435
+  summary shape.
+- Every episode-length estimate prints its own denominator and provenance (0434): the extract ladder projects the
+  ADMITTED set (`poolChars × keepRate` converted at the recorded `keptRatio`), and `ladder.json`, the floor refusal and
+  the post-spend duration refusal each carry `keptRatio`/`keptRatioSource`, `keepRate`/`keepRateSource` and (refusals)
+  `keepRateAssumed`/`keepRateDrift`. A QC admission rate more than 5 points off the recorded day is reported on
+  stderr — the ladder-vs-gate disagreement that made a 22.8 min forecast face measure 12.6 min is no longer silent.
 - `generate` and `publish` are shipped (0365): lock → preflight → receipt → one `spur workflow run`
   child → cleanup, with `--dry-run` running the preflight only.
 - `publish` launches the shipped `kk-publish` workflow (0366) for both nouns and passes `noun`
