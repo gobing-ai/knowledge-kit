@@ -3,7 +3,7 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.46.0
+version: 2.47.0
 created_at: 2026-07-22
 updated_at: 2026-11-24
 derived_from: [00_ADR, 01_PRD]
@@ -737,6 +737,6 @@ News generation reconciles evidence-backed editorial judgments between final sel
 
 The frozen news bundle carries one episode title and the final editorial references. Podcast and image plugins own their output formats, and the shared publish workflow remains the single dispatch path. The [L3 design](design/daily-ai-news-editorial-delivery.md) specifies replay, notes, crop and channel-readiness behavior.
 
-## Daily AI news visual authoring (accepted design, ADR-057)
+## Daily AI news visual authoring (ADR-057 — shipped, L4 0424–0427)
 
-The master script plan delegates art direction to the daily cover and illustration skills. Daily stages continue to validate and render through `image-gen`. An opt-in inline plan uses the reviewed article and joins a supported target payload before variants review and freeze. See the [L4 design](design/daily-news-visual-skills.md).
+The master script plan delegates art direction to the daily cover and illustration skills. Daily stages continue to validate and render through `image-gen`. An opt-in inline plan uses the reviewed article and joins a supported target payload before variants review and freeze. Both skills and the shared `news-editorial/references/daily-visual-composition.md` resolve from the installed package root in checkout and installed modes alike, with no `vendors/` dependency — the packaged replay in `apps/cli/tests/kk-news-generate.e2e.test.ts` (0427) asserts it. See the [L4 design](design/daily-news-visual-skills.md).

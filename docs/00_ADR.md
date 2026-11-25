@@ -3,7 +3,7 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.47.0
+version: 1.48.0
 created_at: 2026-05-28
 updated_at: 2026-11-24
 edit_rules: 99 §6.1
@@ -2079,13 +2079,15 @@ cut-over readiness; the latter still requires real Mac mini evidence.
 
 ## ADR-057: Daily news cover and illustration art direction lives in dedicated skills
 
-**Status:** Accepted (design) · **Date:** 2026-11-22 · **Feature:** L4 · **Complements:** ADR-045, ADR-046, ADR-053
+**Status:** Accepted (implemented — L4 0424–0427) · **Date:** 2026-11-22 · **Feature:** L4 · **Complements:** ADR-045, ADR-046, ADR-053
 
 **Decision.** Put daily cover and illustration direction in two skills under `plugins/kk/skills`. News editorial retains the approved story, headline, and claims. Daily stages retain dispatch, validation, and packaging, and `image-gen` remains the renderer. Inline figures require opt-in and a verified path into the reviewed and frozen target payload.
 
 **Why.** Scheduled runs and direct requests need the same visual guidance while preserving the existing render and publishing contracts.
 
 **Detail:** [Daily AI news visual skills](design/daily-news-visual-skills.md).
+
+**Amendment (2026-11-24).** Status flipped from `Accepted (design)` to implemented: the two skills, the shared composition reference, opt-in inline figures (0424–0426) and the packaged replay that verifies installed skill discovery (0427) have shipped.
 
 ---
 

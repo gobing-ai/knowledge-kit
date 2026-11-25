@@ -2795,3 +2795,79 @@ Source: `.spur/run/75c9c199-b24a-44ad-be14-1972b5f419e5-wrapup-tasks.json` → `
 - **`AGENTS.md` is now the lagging surface here.** Its Build & verification block still presents `bun run test` as the full suite and its worktree-bundling prose predates `--if-stale` hooks. Left unedited because this wrap's authorized write scope was `docs/` only — the next task that touches `AGENTS.md` must sync both blocks.
 - **`docs/04_DESIGN.md` and `docs/design/*` needed no repair** for these two tasks: the one T3-owned sentence (`04:2585-2586`) was updated in the implementing commit, and no design spec under `docs/design/` describes the repo gate or the staging refresh.
 - **Batch drivers: one commit for two sibling tasks is fine when the seams are disjoint.** 0429 owned `package.json`/`.spur/config.yaml`/`scripts/test-suites.ts`; 0430 owned `bunfig.toml`/`bundle-plugins.ts`/`.lefthook.yml`/publish tests; only `bunfig.toml` was touched twice, and both edits were additive lines in different sections.
+Wrap complete. Task list from the run capture: `0427` only.
+
+**Drift repaired (4 files, all under `docs/`)**
+
+| File | Drift | Repair |
+| --- | --- | --- |
+| `docs/00_ADR.md:2081` | ADR-057 still `Accepted (design)` after L4 0424–0427 shipped (§6.1 rule 5; repeat of the 2026-08-16 lesson) | Status → `Accepted (implemented — L4 0424–0427)` + dated `**Amendment (2026-11-24).**` line; version 1.48.0 |
+| `docs/03_ARCHITECTURE.md:740` | heading `(accepted design, ADR-057)` — §6.4 rule 1 forbids accepted-design framing for built architecture | heading → `(ADR-057 — shipped, L4 0424–0427)`; added the installed-package resolution invariant the 0427 replay asserts; version 2.47.0 |
+| `docs/04_DESIGN.md:65` | §0 index said `planned (L4)` | `shipped (L4; 0424–0427, packaged replay verifies installed skill discovery)` |
+| `docs/04_DESIGN.md:1462` | §1 transcribed `kk article generate` without `--inline-illustrations` (§6.5 rule 4) | added the registered flag, news-only, from `apps/cli/src/commands/content-launch.ts:743` |
+| `docs/04_DESIGN.md` frontmatter | `updated_at: 2026-11-18` stale across two 11-24 edits (§4.3) | `2026-11-24`, version 2.67.0 |
+| `docs/design/daily-news-visual-skills.md:3` | `**Accepted design · 2026-11-22**` | `**Shipped · 2026-11-24 · L4 · ADR-057**`; §4 records what the 0427 packaged replay actually covers |
+
+Verified before editing: skills and shared reference exist at the claimed paths (`plugins/kk/skills/daily-news-cover|daily-news-illustrations/SKILL.md`, `plugins/kk/skills/news-editorial/references/daily-visual-composition.md`), the flag is registered, and the receipt `.works/tmp/test-news-generate/0427-packaged-replay-receipt.json` (keys `resolvedSkills`, `scenarios`, `replayCommand`) exists. `git status` shows only the four `docs/` files; no `docs/tasks*` or `docs/features*` writes; the absent 04 row was left absent.
+
+Left unfixed and flagged: `docs/05_FEATURES.md:128` still marks L4 `⏳ planned` while all four tasks are done — outside this run's allowed write scope; run `/sp:dev-refresh L4` (or `spur feature refresh`).
+
+Skipped: the full `bun run gate` — markdown-only change, nothing compilable moved; the reviewable artifact is this diff. Risk: none to code; the only unexecuted claim is that nothing references the old `planned (L4)` string in derived docs outside my scope.
+
+Artifact written: `/Users/robin/xprojects/knowledge-kit-run-0427-427a/.spur/run/1b877f12-ee3a-4461-9aff-29139b5e26b6-wrapup-learnings.md`
+
+---
+
+## 2026-11-24 — 0427 (Replay daily visual workflow and verify installed skill discovery, feature L4)
+
+### Packaged evidence: a directory shape is not a proof
+- A `package-shaped` fixture directory cannot establish shipped skill resolution. The only proof is
+  `bun pm pack` → `tar -xzf` into a temp dir **outside the repo**, then resolving through
+  `resolveContentType('news', {}, { packageRoot: extractedPkg })` and asserting the resolved path
+  starts with the extracted root plus a 64-hex `skillSha256`. Keep the fake at the provider/transport
+  boundary only.
+- Assert discovery by reading each resolved file, not by listing a directory: `daily-news-cover/SKILL.md`,
+  `daily-news-illustrations/SKILL.md`, `news-editorial/references/daily-visual-composition.md`, and that
+  none of them embeds a `vendors/` path — vendor-free packaging is a content contract, not a manifest one.
+
+### Replay fixtures
+- Cache behavior needs a *pre-seeded artifact* in the fixture (`card-1.png`), and the assertion is on
+  the delta (`renderedCards === ["card-2"]`), not on "no error".
+- Legacy input compatibility is proven by keeping the old shape (`{"subject": …}` cover brief) in the
+  default fixture, not by a mock returning success.
+- Opt-in paths must assert scope: inline figures materialize **only** in `article@wechatmp-pub`, with
+  per-figure SHA-256 matching the pinned `metadata.wechatmp.inlineFigures`, and `inlineCallCount === 0`
+  in the default run.
+- Store the replay command inside the receipt (`replayCommand`). It is a moving target: after 0429/0430
+  split the gate by tier it became `bun run test:heavy … -t "0427"`, so re-read it instead of trusting an
+  old note.
+
+### Flake classification
+- `apps/cli/tests/commands/daily.test.ts:80` fails only under `--parallel=8` (`.works/` snapshot race) and
+  passes 26/26 in isolation. Classify it as a pre-existing parallel snapshot race and say so; do not
+  widen the change or weaken the assertion to make the aggregate green.
+
+### Doc drift repaired at wrap (all inside `docs/`)
+- ADR-057 was still `Accepted (design)` after L4 shipped — the exact repeat of the 2026-08-16 lesson.
+  Status flipped to `Accepted (implemented — L4 0424–0427)` plus a dated `**Amendment (2026-11-24).**`
+  line so the append-only history still shows the transition.
+- Same-change satellite sweep: `docs/03_ARCHITECTURE.md` heading said `(accepted design, ADR-057)`,
+  `docs/04_DESIGN.md` §0 index said `planned (L4)`, and the design doc header said
+  `**Accepted design · 2026-11-22 …**`. All four had to flip together; flipping only the ADR leaves the
+  same claim standing three files away.
+- `docs/04_DESIGN.md` §1 transcribed `kk article generate` without `--inline-illustrations` even though the
+  §6 row documented it — signature lines must come from `configureGenerate` in
+  `apps/cli/src/commands/content-launch.ts:736-756`, not from an older revision of the doc.
+- Frontmatter: a doc edit bumps `version` minor and `updated_at`. `04_DESIGN.md` carried
+  `updated_at: 2026-11-18` through two 11-24 doc edits; contract-verify catches it, nothing else does.
+- Out-of-scope drift left flagged, not fixed: `docs/05_FEATURES.md` still lists L4 as `⏳ planned` while
+  all four tasks are done. Writing outside `docs/` (or into `docs/features/`, `docs/tasks/`) fails the wrap
+  scope check — flag it for the next `/sp:dev-refresh L4`.
+- Pre-existing 0424 naming drift survived into 04 for a while: the shared composition reference lives at
+  `plugins/kk/skills/news-editorial/references/daily-visual-composition.md` and both skills link it as
+  `../news-editorial/references/…`. Verify the real path before "fixing" a path that only looked wrong in a
+  combined `ls` output.
+
+### Scope discipline for a docs-only wrap
+- A markdown-only repair does not need the 281 s+ gate; the reviewable artifact is the diff plus a
+  `git status` that shows only `docs/`. State the skipped checks instead of implying the full gate ran.

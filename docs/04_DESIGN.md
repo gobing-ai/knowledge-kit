@@ -3,9 +3,9 @@ name: Design
 doc: 04_DESIGN
 owns: "SURFACE — concrete shapes: every CLI command, flag, config key, env var, table, DTO"
 authority: derived
-version: 2.66.0
+version: 2.67.0
 created_at: 2026-07-22
-updated_at: 2026-11-18
+updated_at: 2026-11-24
 derived_from: [00_ADR, 01_PRD, 03_ARCHITECTURE]
 edit_rules: 99 §6.5
 sync: [T3]
@@ -62,7 +62,7 @@ sync: [T3]
 | [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 | [collect-store-views.md](design/collect-store-views.md) | Collect module read-only store views: cadence overview, run funnel, label quality, items browser and downstream yield over `.works/kk.db` | accepted design (G81) |
 | [daily-news-podcast-cover.md](design/daily-news-podcast-cover.md) | Quasi-news podcast cover rendering via layered generation and deterministic typography compositing (ADR-046) | done (L2; tasks 0347–0349, 2026-11-10) |
-| [daily-news-visual-skills.md](design/daily-news-visual-skills.md) | Daily AI news cover, card and optional inline illustration authoring (ADR-057) | planned (L4) |
+| [daily-news-visual-skills.md](design/daily-news-visual-skills.md) | Daily AI news cover, card and optional inline illustration authoring (ADR-057) | shipped (L4; 0424–0427, packaged replay verifies installed skill discovery) |
 | [music-gen.md](design/music-gen.md) | Music brief → prompt text → `POST /api/lyria/generate`: brief schema and render order, request mapping with no instance defaults, preset precedence over portable data, non-idempotent paid-call policy, digest input, artifact record | shipped (D8; 0397 contract, 0398 plugin, 0399 presets, 0400 spend guard, 0401 `kk music`, 0402 authoring + judge, 0403 `kk-music` workflow, 0405 checks/delivery; 0404 dogfooded one accepted track 2026-11-20) |
 
 ## 1. CLI commands
@@ -1459,6 +1459,7 @@ kk article generate-check --work-dir <dir> --step outline|judge|adapt        # s
 kk article generate-bundle --work-dir <dir> --stage variants|freeze          # shipped (0367/0368)
 
 kk news <same verbs, --type fixed to news, --run-date <YYYYMMDD> instead of --slug>
+kk news generate    [--inline-illustrations]                        # news-only: inline figures in the WeChat article (0426)
 kk news prepare | generate-render | generate-voice [--engine voxcpm|gemini|omnivoice|voicebox|vibe-voice] | generate-cards | report --work-dir <dir> …   # shipped (0367; vibe-voice G16)
 kk news prepare --work-dir <dir> [--refresh] [--ledger-sync]   # --refresh: drop the frozen pool + plan
 ```

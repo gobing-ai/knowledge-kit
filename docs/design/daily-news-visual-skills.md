@@ -1,6 +1,6 @@
 # Daily AI news cover and illustration skills
 
-**Accepted design · 2026-11-22 · L4 · ADR-057**
+**Shipped · 2026-11-24 · L4 · ADR-057** (design accepted 2026-11-22; tasks 0424–0427)
 
 [Vendor and repository comparison](../plans/2026-11-22-daily-news-visual-skills-brainstorm.md)
 
@@ -32,4 +32,4 @@ Place each skill and its focused examples under `plugins/kk/skills/`. Put shared
 
 ## 4. Verification
 
-Use a fixture episode with a stable lead and Chinese Hook, one cached card, both cover crops, two valid inline anchors, an ambiguous anchor and a target without body-media support. Capture the runner's plugin requests, cover and card outputs, anchored captions and frozen variant payload. Replay with opt-in off and on, then retry against the same run directory to prove no duplicate spend for complete outputs. Exercise missing/legacy cover data and installed skill discovery. Pair the automated replay with a side-by-side contact sheet for product announcement, abstract story and comparison when real renders are authorized. Score focal readability at thumbnail size, factual grounding, crop clearance, typographic integrity and card/figure fit. Existing image-gen presets and providers are sufficient for the planned architecture. Any later plugin change must identify the blocked fixture, preserve generic callers and remain provider-neutral.
+Use a fixture episode with a stable lead and Chinese Hook, one cached card, both cover crops, two valid inline anchors, an ambiguous anchor and a target without body-media support. Capture the runner's plugin requests, cover and card outputs, anchored captions and frozen variant payload. Replay with opt-in off and on, then retry against the same run directory to prove no duplicate spend for complete outputs. Exercise missing/legacy cover data and installed skill discovery. The packaged replay (L4 0427, `apps/cli/tests/kk-news-generate.e2e.test.ts`) covers that half: it packs and extracts the CLI outside the repo, asserts discovery of both `SKILL.md` files and the shared `news-editorial/references/daily-visual-composition.md` with no `vendors/` dependency, and replays the default, cache and opt-in paths into `.works/tmp/test-news-generate/0427-packaged-replay-receipt.json`. Pair the automated replay with a side-by-side contact sheet for product announcement, abstract story and comparison when real renders are authorized. Score focal readability at thumbnail size, factual grounding, crop clearance, typographic integrity and card/figure fit. Existing image-gen presets and providers are sufficient for the planned architecture. Any later plugin change must identify the blocked fixture, preserve generic callers and remain provider-neutral.
