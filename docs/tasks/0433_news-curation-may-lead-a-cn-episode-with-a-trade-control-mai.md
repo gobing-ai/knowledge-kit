@@ -64,7 +64,7 @@ Then the check passes and the run continues to the floor gate
 
 #### Q&A entry — 2026-11-25T16:39:44.897Z
 
-Implementation shipped (deterministic pre-spend CN-lead gate, wired into daily-curate-check). Verification did not certify: six review visits measured a residual recall gap (22/30 held-out class leads) and a 12% product-lead false-positive rate after the widening. Calibration continues in 0437, which the `## Review` reports of the last visit size (E1/E3: 29-30/30 recall, 92% product precision, all 32 shipped fixture rows still correct).
+Implementation shipped (deterministic pre-spend CN-lead gate, wired into daily-curate-check). Verification did not certify: six review visits measured a residual recall gap (22/30 held-out class leads) and a 12% product-lead false-positive rate after the widening. Calibration continues in 0438, which the `## Review` reports of the last visit size (E1/E3: 29-30/30 recall, 92% product precision, all 32 shipped fixture rows still correct).
 
 ### Design
 

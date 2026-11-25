@@ -3,15 +3,15 @@ schema_version: 1
 name: Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%)
 status: todo
 template: issue
-created_at: 2026-11-25T16:39:32.284Z
-updated_at: "2026-11-25T16:39:33.556Z"
+created_at: 2026-11-25T20:50:28.401Z
+updated_at: "2026-11-25T20:50:35.785Z"
 feature_id: L3
 
 ac_numbering: task-local
 ac_altitude: task-local
 ---
 
-## 0437. Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%)
+## 0438. Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%)
 
 ### Background
 

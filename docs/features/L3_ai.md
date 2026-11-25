@@ -147,22 +147,24 @@ Feature: Daily AI News editorial and delivery uplift
 | 0390 | Redesign Daily AI Voice Board around generation and publishing evidence | done |
 | 0396 | Deliver traceable public corrections in the next eligible episode | done |
 | 0394 | Preserve RSS ingestion metadata and render traceable source citations | done |
-| 0433 | News curation may lead a CN episode with a trade-control mainline the CN platforms block | todo |
-| 0435 | kk news status reports bundle null for a news run whose bundle sits at the run root | todo |
+| 0433 | News curation may lead a CN episode with a trade-control mainline the CN platforms block | blocked |
+| 0435 | kk news status reports bundle null for a news run whose bundle sits at the run root | done |
 | 0385 | Refine daily audience, spoken script and canonical episode title | done |
+| 0438 | Calibrate the CN-lead gate against held-out lead families (recall 22/30, product false positives 12%) | todo |
 | 0384 | Reconcile and protect daily editorial judgments | done |
 | 0410 | Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post | done |
 | 0389 | Replay the editorial-to-publish flow and synchronize documentation | done |
-| 0434 | Extract ladder projects the pool while the floor gate projects the admitted set | todo |
+| 0434 | Extract ladder projects the pool while the floor gate projects the admitted set | done |
 | 0386 | Restore concise podcast notes and reuse episode cards | done |
 | 0409 | surfdash-pub cannot see the en/ja locale files when it invokes postsurfing from kk | done |
-| 0432 | surfdash cover patch fails when the podcast row never uploaded a remote cover | todo |
+| 0432 | surfdash cover patch fails when the podcast row never uploaded a remote cover | done |
 | 0408 | Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one | done |
-| 0431 | Daily promos cannot ship when the podcast row is held by the safety verdict | todo |
-| 0436 | Session checks refuse a fresh sign-in and orphaned browser leases block the login itself | todo |
+| 0431 | Daily promos cannot ship when the podcast row is held by the safety verdict | done |
+| 0436 | Session checks refuse a fresh sign-in and orphaned browser leases block the login itself | done |
 | 0393 | Verify and repair series-scoped selection continuity | done |
 | 0391 | Bind Daily AI Voice Board to current news run and publish evidence | done |
 | 0387 | Compose news covers for the two centered crops | done |
+| 0437 | LinkedIn post rail cannot open the composer from a signed-in profile | todo |
 | 0395 | Bind WeChat Channels cards to the confirmed Official Account article | done |
 | 0392 | Calibrate daily topic filters and report candidate losses | done |
 | 0407 | shipinhao audio publish cannot read its works row, so every submission is unknown | done |
