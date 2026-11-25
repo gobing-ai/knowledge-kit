@@ -11,7 +11,7 @@ ac_altitude: task-local
 ac_numbering: task-local
 ---
 
-## 0423. surfdash cover patch fails when the podcast row never uploaded a remote cover
+## 0432. surfdash cover patch fails when the podcast row never uploaded a remote cover
 
 ### Background
 
