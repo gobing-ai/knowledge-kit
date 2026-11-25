@@ -1,14 +1,16 @@
 ---
 schema_version: 1
 name: News curation may lead a CN episode with a trade-control mainline the CN platforms block
-status: blocked
+status: done
 template: issue
 created_at: 2026-11-24T21:55:05.683Z
-updated_at: "2026-11-25T16:39:44.898Z"
+updated_at: "2026-11-25T22:19:15.682Z"
 feature_id: L3
 
 ac_altitude: task-local
 ac_numbering: task-local
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0433. News curation may lead a CN episode with a trade-control mainline the CN platforms block
@@ -40,10 +42,10 @@ Evidence: `.works/kk-news-generate/20261124/4-safety-variants/20261124_09_safety
 
 ### Requirements
 
-- [ ] R1. The news-editorial selection contract must name the CN-platform constraint explicitly: a mainline that is 时政/贸易管制/公共安全审查 (state security review, export controls, foreign-intelligence framing) must not be the episode's lead title, headline or summary for a CN-distributed cut.
-- [ ] R2. When such a story is the day's biggest, the selection must either demote it to a body item with a neutral headline or produce two cuts (CN lead vs overseas lead) — the chosen behaviour is recorded with its tradeoff.
-- [ ] R3. A deterministic check (not a prose instruction only) must fail the plan when the lead title/summary trips the CN-blocked mainline vocabulary on the CN cut.
-- [ ] R4. The failure must be visible before the TTS spend, not only in the post-spend safety verdict.
+- [x] R1. The news-editorial selection contract must name the CN-platform constraint explicitly: a mainline that is 时政/贸易管制/公共安全审查 (state security review, export controls, foreign-intelligence framing) must not be the episode's lead title, headline or summary for a CN-distributed cut.
+- [x] R2. When such a story is the day's biggest, the selection must either demote it to a body item with a neutral headline or produce two cuts (CN lead vs overseas lead) — the chosen behaviour is recorded with its tradeoff.
+- [x] R3. A deterministic check (not a prose instruction only) must fail the plan when the lead title/summary trips the CN-blocked mainline vocabulary on the CN cut.
+- [x] R4. The failure must be visible before the TTS spend, not only in the post-spend safety verdict.
 
 ### Acceptance Criteria
 
@@ -150,7 +152,22 @@ object+noun pair.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | `plugins/kk/skills/news-editorial/references/selection.md:35-46` — CN lead constraint names XY-02/WX-01 and forbids leading a CN cut with 时政/贸易管制/公共安全审查 |
+| R2 | MET | `plugins/kk/skills/news-editorial/references/selection.md:47-57` — demote chosen, two-cut alternative and tradeoff recorded; weak-lead fallback `:64-67` |
+| R3 | MET | `plugins/kk/scripts/cn-lead-gate.ts:209-347` pure deterministic scan (vocabulary + calibrated two-signal detector); wired at `plugins/kk/scripts/daily-stages.ts:5983-5986`; calibration `plugins/kk/tests/cn-lead-gate-0438.test.ts:45-73` (class 30/30, product 2/86) |
+| R4 | MET | `plugins/kk/workflows/kk-news-generate.yaml:116` `curate-check` (node 4) precedes `:423` `voice` (node 18); `--final` refusal before synthesis `plugins/kk/tests/cn-lead-gate-0433.test.ts:233-247` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — a state-security lead is refused before synthesis (req: R1, R3, R4) | MET | test | `plugins/kk/tests/cn-lead-gate-0433.test.ts:199-212` real runner writes rule `cn-lead:XY-02` with `detail` naming WX-01; refusal leg `:233-247`; node 4 vs node 18 `plugins/kk/workflows/kk-news-generate.yaml:116` / `:423` |
+| Scenario: AC2 — a product lead passes untouched (req: R1) | MET | test | `plugins/kk/tests/cn-lead-gate-0433.test.ts:214-221` real runner: no errors file, accepted; held-out product family 84/86 untouched `plugins/kk/tests/cn-lead-gate-0438.test.ts:57-60` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
@@ -265,4 +282,6 @@ Verdict: PARTIAL
 
 - 2026-11-25T07:29:55.818Z todo → wip (system)
 - 2026-11-25T16:39:44.370Z wip → blocked (system)
+- 2026-11-25T22:19:14.241Z blocked → testing (system)
+- 2026-11-25T22:19:15.551Z testing → done (system)
 

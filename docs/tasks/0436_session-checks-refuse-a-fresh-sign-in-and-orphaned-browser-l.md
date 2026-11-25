@@ -4,7 +4,7 @@ name: Session checks refuse a fresh sign-in and orphaned browser leases block th
 status: done
 template: issue
 created_at: 2026-11-25T06:28:00.101Z
-updated_at: "2026-11-25T21:52:41.730Z"
+updated_at: "2026-11-25T22:09:35.203Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -142,20 +142,20 @@ Each is fixed where it lives; no channel was special-cased in the shared harness
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
 | R1 | MET | `packages/publish-harness/src/profile-lease.ts:94` retries after reclaim; `packages/publish-harness/src/profile-lease.ts:292-311` reclaimDeadOwnerLease (rename + token re-check, rename-back on mismatch); child-holder guard `:266`; tests `packages/publish-harness/tests/profile-lease.test.ts:179,237,259,270` |
 | R2 | MET | `plugins/publishings/wechatmp-pub/src/index.ts:238` selectRestoreCookies (live profile cookie shadows saved one); `plugins/publishings/wechatmp-pub/src/index.ts:274` restoreWechatSessionState; tests `plugins/publishings/wechatmp-pub/tests/wechatmp-session-state-0436.test.ts:56,82,107,146` |
-| R3 | PARTIAL | Predicate fixed offline: `plugins/publishings/weibo-pub/src/index.ts:238-245` weiboSurfaceReady, `:258` isWeiboAuthenticated, `plugins/publishings/weibo-pub/plugin.json:10` homeUrl → mobile composer; tests `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:902,908,916`. The requirement's "re-measured against a live logged-in home page" was not performed — the task Solution ("What could not be measured here") records it as open debt |
+| R3 | MET | Live re-measurement 2026-11-25: `kk plugin check weibo-pub --json` → `status: verified`, detail "authenticated weibo session observed headlessly via profile ~/.config/kk/browser-profiles/weibo (read-only)", exit 0 (this run). The check opens `WEIBO_CONFIG.homeUrl` = `WEIBO_MOBILE_COMPOSE_URL` (`plugins/publishings/weibo-pub/src/index.ts:51`, `:297`), the composer `runPostFlow` drives; predicate `plugins/publishings/weibo-pub/src/index.ts:238-245` weiboSurfaceReady, `:259-278` isWeiboAuthenticated; headless sufficed, so `checkHeadedOnly` stays false; offline tests `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:902,908,916` |
 | R4 | MET | `plugins/publishings/linkedin-pub/src/index.ts:247` LINKEDIN_AUTH_COOKIE, `:262` hasLinkedinAuthCookie, login throws without ticket `:290-300`; tests `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:875,888,905` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
 | AC1 | MET | test | `packages/publish-harness/tests/profile-lease.test.ts:237`, `:259`; four 0436 suites → 118 pass / 0 fail (this run) |
 | AC2 | MET | test | `plugins/publishings/wechatmp-pub/tests/wechatmp-session-state-0436.test.ts:146` |
-| AC3 | PARTIAL | test | `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:916` uses a fake page; no run against an authenticated weibo profile (`kk bot open weibo` then `kk plugin check weibo`) exists |
+| AC3 | MET | command | `kk plugin check weibo-pub --json` against the authenticated profile → `verified` (exit 0, 2026-11-25, this run); surface = `WEIBO_MOBILE_COMPOSE_URL` `plugins/publishings/weibo-pub/src/index.ts:51,297`, the post flow's composer; paired with `plugins/publishings/weibo-pub/tests/weibo-pub.test.ts:916` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
