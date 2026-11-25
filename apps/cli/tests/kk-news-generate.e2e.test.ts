@@ -31,6 +31,8 @@ import {
     mkdtempSync,
     readdirSync,
     readFileSync,
+    realpathSync,
+    renameSync,
     rmSync,
     symlinkSync,
     writeFileSync,
@@ -38,7 +40,6 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { itemId, openStore } from '@gobing-ai/kk-store';
-import { resolveContentType } from '../src/content-types';
 
 const REPO = resolve(import.meta.dir, '../../..');
 const EVIDENCE = join(REPO, '.works/tmp/test-news-generate');
@@ -321,7 +322,7 @@ fi
 exit 0
 `;
 
-function makeFixture(): Fixture {
+function makeFixture(packageRoot?: string): Fixture {
     const root = mkdtempSync(join(tmpdir(), 'kk-0367-ac3-'));
     roots.push(root);
     const bin = join(root, 'bin');
@@ -336,14 +337,19 @@ function makeFixture(): Fixture {
     mkdirSync(join(root, '.spur'), { recursive: true });
     // The shipped kk assets resolve through the fixture root (skills, workflow YAMLs); the report
     // generator resolves through the fixture's own `generations/` so the real plugin never runs.
-    symlinkSync(join(REPO, 'plugins/kk'), join(plugins, 'kk'));
+    if (!packageRoot) symlinkSync(join(REPO, 'plugins/kk'), join(plugins, 'kk'));
 
-    const wrapper = join(pkg, 'apps/cli/src/index.ts');
-    writeFileSync(
-        wrapper,
-        `import { main } from ${JSON.stringify(join(REPO, 'apps/cli/src/main.ts'))};\nprocess.exit(await main(['bun', import.meta.path, ...Bun.argv.slice(2)]));\n`,
-    );
-    writeFileSync(join(pkg, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts'), STAGE_STUB);
+    const wrapper = packageRoot ? join(packageRoot, 'dist/index.js') : join(pkg, 'apps/cli/src/index.ts');
+    if (!packageRoot) {
+        writeFileSync(
+            wrapper,
+            `import { main } from ${JSON.stringify(join(REPO, 'apps/cli/src/main.ts'))};\nprocess.exit(await main(['bun', import.meta.path, ...Bun.argv.slice(2)]));\n`,
+        );
+    }
+    const stagePath = packageRoot
+        ? join(packageRoot, 'plugins/kk/scripts/kk-workflow-stages.ts')
+        : join(pkg, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts');
+    writeFileSync(stagePath, STAGE_STUB);
     writeFileSync(
         join(plugins, 'generations/news-report-gen/plugin.json'),
         JSON.stringify({ name: 'news-report-gen', kind: 'generator', entry: 'entry.ts', version: '0.0.1' }),
@@ -413,7 +419,7 @@ exec "` +
             '      agent: claude',
             '      model: stub/model-1',
             '      tier: capable-1',
-            `decisions:\n  paths:\n    - ${join(REPO, 'plugins/kk/decisions')}\n`,
+            `decisions:\n  paths:\n    - ${join(packageRoot ?? REPO, 'plugins/kk/decisions')}\n`,
             '',
         ].join('\n'),
     );
@@ -458,7 +464,7 @@ function runEnv(fixture: Fixture, extraEnv: Record<string, string> = {}): Record
         HOME: join(fixture.root, 'home'),
         KK_CONFIG: fixture.config,
         KK_STUB_DOCS: fixture.docsFile,
-        KK_STUB_ATTEMPTS: join(REPO, 'plugins/kk/scripts/topic-selection-attempts.ts'),
+        KK_STUB_ATTEMPTS: join(fixture.plugins, 'kk/scripts/topic-selection-attempts.ts'),
         KK_AGENT_LOG: fixture.agentLog,
         KK_PLUGIN_PATH: join(REPO, 'plugins/kk'),
         ...extraEnv,
@@ -684,10 +690,8 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
 
     function packAndExtractCli(): { tarball: string; extractedPkg: string } {
         const cliDir = join(REPO, 'apps/cli');
-        if (!existsSync(join(cliDir, 'dist', 'index.js')) || !existsSync(join(cliDir, 'plugins', 'kk', 'skills'))) {
-            const prepack = Bun.spawnSync(['bun', 'run', 'prepack'], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' });
-            expect(prepack.exitCode, prepack.stderr.toString()).toBe(0);
-        }
+        const prepack = Bun.spawnSync(['bun', 'run', 'prepack'], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' });
+        expect(prepack.exitCode, prepack.stderr.toString()).toBe(0);
         const packDir = mkdtempSync(join(tmpdir(), 'kk-0427-pack-'));
         roots.push(packDir);
         const pack = Bun.spawnSync(['bun', 'pm', 'pack', '--destination', packDir], {
@@ -703,7 +707,10 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         mkdirSync(extractDir, { recursive: true });
         const untar = Bun.spawnSync(['tar', '-xzf', tarball, '-C', extractDir], { stdout: 'pipe', stderr: 'pipe' });
         expect(untar.exitCode, untar.stderr.toString()).toBe(0);
-        return { tarball, extractedPkg: join(extractDir, 'package') };
+        const extractedPkg = join(extractDir, 'package');
+        // Reuse installed external dependencies; product code and resources come from the tarball.
+        symlinkSync(join(REPO, 'node_modules'), join(extractedPkg, 'node_modules'));
+        return { tarball, extractedPkg };
     }
 
     it('discovers shipped visual skills from an extracted tarball and replays default, cache, and inline opt-in paths', async () => {
@@ -718,10 +725,8 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
             expect(p.startsWith(extractedPkg)).toBe(true);
             expect(readFileSync(p, 'utf-8')).not.toContain('vendors/');
         }
-        // Installed skill discovery from outside the checkout resolves inside the extracted tarball.
-        const resolvedNews = await resolveContentType('news', {}, { packageRoot: extractedPkg });
-        expect(resolvedNews.skillDir.startsWith(extractedPkg)).toBe(true);
-        expect(resolvedNews.skillSha256).toMatch(/^[0-9a-f]{64}$/);
+        const newsSkill = join(extractedSkills, 'news-editorial', 'SKILL.md');
+        expect(existsSync(join(extractedPkg, 'src'))).toBe(false);
 
         const packagedWorkflow = join(extractedPkg, 'plugins', 'kk', 'workflows', 'kk-news-generate.yaml');
         expect(existsSync(packagedWorkflow)).toBe(true);
@@ -748,6 +753,7 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
                     env: runEnv(fx, {
                         KK_PROVIDER_LOG: providerLog,
                         KK_PLUGIN_PATH: join(extractedPkg, 'plugins', 'kk'),
+                        KK_STUB_ATTEMPTS: join(extractedPkg, 'plugins/kk/scripts/topic-selection-attempts.ts'),
                     }),
                     stdout: 'pipe',
                     stderr: 'pipe',
@@ -764,7 +770,9 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         };
 
         // ── 1. Default run (inline_illustrations=false, legacy cover brief fallback) ──
-        const fxDefault = makeFixture();
+        const fxDefault = makeFixture(extractedPkg);
+        expect(readFileSync(join(fxDefault.bin, 'kk'), 'utf-8')).toContain(join(extractedPkg, 'dist', 'index.js'));
+        expect(existsSync(join(fxDefault.plugins, 'kk'))).toBe(false);
         await seedStore(fxDefault);
         const defaultWork = join(fxDefault.works, 'kk-news-generate', DIGITS);
         const defaultProviderLog = join(fxDefault.root, 'provider-default.jsonl');
@@ -780,6 +788,27 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         );
         expect(defaultOut.code, defaultOut.err).toBe(0);
         expect(defaultOut.state).toBe('done');
+        const status = () =>
+            Bun.spawnSync([join(fxDefault.bin, 'kk'), 'news', 'status', '--work-dir', defaultWork], {
+                cwd: fxDefault.root,
+                env: runEnv(fxDefault),
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+        const presentSkill = status();
+        expect(presentSkill.exitCode, presentSkill.stderr.toString()).toBe(0);
+        expect(JSON.parse(presentSkill.stdout.toString()).workDir).toBe(defaultWork);
+        const canonicalNewsSkill = realpathSync(newsSkill);
+        renameSync(newsSkill, `${newsSkill}.fixture-backup`);
+        let missingSkillCode: number | null;
+        try {
+            const missingSkill = status();
+            missingSkillCode = missingSkill.exitCode;
+            expect(missingSkillCode, missingSkill.stderr.toString()).toBe(5);
+            expect(missingSkill.stderr.toString()).toContain(canonicalNewsSkill);
+        } finally {
+            renameSync(`${newsSkill}.fixture-backup`, newsSkill);
+        }
         const defaultProviders = readProviderLog(defaultProviderLog);
         expect(defaultProviders.filter((p) => p.kind === 'inline')).toHaveLength(0);
         expect(existsSync(join(defaultWork, '22-article', 'illustrations', 'plan.json'))).toBe(false);
@@ -801,7 +830,7 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         expect(defaultAgents).toContain(sharedRef);
 
         // ── 2. Cache replay (pre-populated card-1.png + legacy cover brief) ──
-        const fxCache = makeFixture();
+        const fxCache = makeFixture(extractedPkg);
         await seedStore(fxCache);
         const cacheWork = join(fxCache.works, 'kk-news-generate', DIGITS);
         mkdirSync(join(cacheWork, '25-xhs'), { recursive: true });
@@ -834,7 +863,7 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         expect(cacheCoverReceipt.subject).toBe('Legacy brief glowing chip on dark slate');
 
         // ── 3. Explicit inline opt-in run (inline_illustrations=true) ──
-        const fxInline = makeFixture();
+        const fxInline = makeFixture(extractedPkg);
         await seedStore(fxInline);
         const inlineWork = join(fxInline.works, 'kk-news-generate', DIGITS);
         const inlineProviderLog = join(fxInline.root, 'provider-inline.jsonl');
@@ -872,19 +901,47 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
         expect(inlineEpisode.metadata?.wechatmp?.inlineFigures).toBeUndefined();
         const inlineBundle = readBundle(inlineWork);
         expect(inlineBundle.safety?.status).toBe('pass');
+        for (const requests of [defaultProviders, cacheProviders, inlineProviders]) {
+            expect(requests.length).toBeGreaterThan(0);
+            for (const request of requests) {
+                expect(request).toMatchObject({ provider: 'minimax', model: 'image-01' });
+            }
+        }
 
         // ── Machine-readable replay receipt (R2) ──
         mkdirSync(EVIDENCE, { recursive: true });
+        const artifactRoot = mkdtempSync(join(EVIDENCE, '0427-replay-'));
+        cpSync(tarball, join(artifactRoot, 'package.tgz'));
+        for (const [name, workDir] of [
+            ['defaultRun', defaultWork],
+            ['cacheReplay', cacheWork],
+            ['inlineOptIn', inlineWork],
+        ] as const) {
+            cpSync(workDir, join(artifactRoot, name), { recursive: true });
+        }
+        writeFileSync(join(artifactRoot, 'fixture-stage.ts'), STAGE_STUB);
+        writeFileSync(join(artifactRoot, 'fixture-agent.sh'), AGENT_STUB);
         const receipt = {
             task: '0427',
             feature: 'L4',
-            tarball,
+            tarball: join(artifactRoot, 'package.tgz'),
+            tarballSha256: sha256File(tarball),
+            cliEntry: join(extractedPkg, 'dist/index.js'),
+            cliEntrySha256: sha256File(join(extractedPkg, 'dist/index.js')),
+            artifactRoot,
+            scenarioOutputs: {
+                defaultRun: { sourceRoot: defaultWork, retainedRoot: join(artifactRoot, 'defaultRun') },
+                cacheReplay: { sourceRoot: cacheWork, retainedRoot: join(artifactRoot, 'cacheReplay') },
+                inlineOptIn: { sourceRoot: inlineWork, retainedRoot: join(artifactRoot, 'inlineOptIn') },
+            },
+            skillDiscoveryProbe: { presentExitCode: presentSkill.exitCode, missingExitCode: missingSkillCode },
+            stageBoundary: 'Offline stage fixtures; real stage semantics are checked in kk-workflow-stages.test.ts',
             extractedPackageRoot: extractedPkg,
             resolvedSkills: {
                 dailyNewsCover: { path: coverSkill, sha256: sha256File(coverSkill) },
                 dailyNewsIllustrations: { path: illusSkill, sha256: sha256File(illusSkill) },
                 sharedCompositionRef: { path: sharedRef, sha256: sha256File(sharedRef) },
-                newsWriterSkillDir: resolvedNews.skillDir,
+                newsWriterSkillDir: dirname(newsSkill),
                 insideExtractedPackage: true,
                 vendorDependencyFree: true,
             },
@@ -926,10 +983,14 @@ describe('0427 — packaged daily visual workflow replay and installed skill dis
                     safetyStatus: inlineBundle.safety?.status ?? null,
                 },
             },
-            replayCommand: 'bun run test:heavy -- apps/cli/tests/kk-news-generate.e2e.test.ts -t "0427"',
+            replayCommand: 'bun run test:heavy -- --test-name-pattern 0427',
         };
         const receiptPath = join(EVIDENCE, '0427-packaged-replay-receipt.json');
         writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
         expect(existsSync(receiptPath)).toBe(true);
+        expect(sha256File(join(artifactRoot, 'package.tgz'))).toBe(receipt.tarballSha256);
+        expect(sha256File(join(artifactRoot, 'inlineOptIn', '30-variants', 'article.content.json'))).toBe(
+            receipt.scenarios.inlineOptIn.variantHashes.article,
+        );
     }, 240_000);
 });

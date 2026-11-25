@@ -6,7 +6,7 @@ status: active
 priority: P2
 tags: []
 created_at: "2026-11-23T01:18:56.027Z"
-updated_at: "2026-11-23T05:21:51.055Z"
+updated_at: "2026-11-25T04:38:49.927Z"
 ---
 
 # L4: Daily AI news cover and illustration skills
@@ -87,6 +87,8 @@ Feature: Daily AI news cover and illustration skills
 <!-- END AUTO-GENERATED -->
 
 ## Notes
+
+0427 re-audit (2026-11-24): packaged replay runs the extracted dist/index.js from a cwd without project kk assets and checks missing shipped-writer-skill refusal. The tarball, fixture doubles and scenario outputs are retained beside the machine receipt. Offline workflow stages are wiring fixtures; real cover/card/inline and target-variant checks provide stage semantics. See docs/design/daily-news-visual-skills.md Verification.
 
 ## History
 
