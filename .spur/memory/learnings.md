@@ -2750,3 +2750,48 @@ Verification of this wrap
   `plugins/publishings/*/.works/tmp/**`; stage explicit paths, and prefer `git rm --cached` + amend
   when it happens.
 
+Doc-evolve wrapup done. Drift audit (detection via `git show a72334f7`, `grep` of the doc surface, `spur task show 0429/0430`):
+
+**Repaired — `docs/00_ADR.md`**
+- Added **ADR-058** (repo gate splits into a fast per-task tier and a heavy per-feature tier), the T1 decision both implementing commits owed and neither recorded. Frontmatter `1.46.0 → 1.47.0`, `updated_at → 2026-11-24`.
+
+**Repaired — `docs/03_ARCHITECTURE.md`**
+- `§ Quality boundary` rewritten from `Tests | bun run test` (now only the fast tier — a false gate statement) into fast tier / heavy tier / per-task gate / feature gate rows, plus the enforceable invariants (`fast ∩ heavy = ∅`, `fast ∪ heavy = all`, fast tier alone ≥ 90%/90%, heavy never rewrites `.coverage/lcov.info`).
+- `§ Execution boundary integrity` → Distribution row now records `--if-stale` staging refresh at `prepare` + globbed `pre-commit`/`post-checkout`/`post-merge`, and that `runPreflight` stays read-only (exit 5). Frontmatter `2.45.0 → 2.46.0`, `updated_at → 2026-11-24`.
+
+**Zero delta — `docs/04_DESIGN.md`**: the one T3-owned sentence (`04:2585-2586`, `check-feature` → `spur-check-feature` = fast + heavy) was already updated in `a72334f7`. No row re-added.
+**Zero delta — `docs/design/*`**: no spec describes the repo gate or the staging refresh; the `bundle-plugins` mentions in `multi-root-plugin-discovery.md` / `vibe-voice-driver.md` are about inlining assets, unchanged by these tasks.
+
+Scope and verification: `git status --porcelain` = exactly `M docs/00_ADR.md`, `M docs/03_ARCHITECTURE.md` (plus the run-scoped learnings artifact). No `docs/tasks*` / `docs/features*` writes. `bun run lint` not run — the diff is markdown-only and Biome cannot process markdown (it exits 1 with "No files were processed" on a docs-only change set), so it would produce a false failure rather than signal.
+
+Skipped: `AGENTS.md` sync (its Build & verification block still calls `bun run test` the full suite and its worktree prose predates `--if-stale`) — outside this wrap's `docs/`-only write scope; flagged in the learnings. Risk: that block is now the single stale surface for this batch, so an agent reading only AGENTS.md will believe `bun run test` runs every test.
+
+# Working learnings — batch 0429, 0430 (2026-11-24)
+
+Source: `.spur/run/75c9c199-b24a-44ad-be14-1972b5f419e5-wrapup-tasks.json` → `["0429","0430"]`; landed in one commit `a72334f7`.
+
+## 2026-11-24 — 0429 (test-suite split into `test:heavy`)
+
+- **A gate that runs everything is a per-task tax.** Baseline `bun run test` = 1904 s across 369 files; after routing 32 files to `test:heavy`, `spur-check` = 281 s (test step 257.55 s), 5797 tests green. The tail that remains is in-process unit tests that carry coverage — you cannot buy more speed without breaking the 90% floor.
+- **One classification source, both directions.** `scripts/test-suites.ts` `HEAVY_TEST_PATTERNS` feeds `fast` and `heavy`; `scripts/tests/test-suites.test.ts` proves `fast ∩ heavy = ∅` and `fast ∪ heavy = all 369` workspace `*.test.ts`. Two hand-edited glob lists in `package.json` would have drifted silently: a file removed from `fast` and forgotten in `heavy` drops out of the gate with no error.
+- **Do not rely on `--no-coverage` to beat `bunfig.toml`.** `coverage = true` in bunfig wins often enough that the safe route is a generated `--config=.works/tmp/heavy-bunfig.toml` with `coverage = false` (keeping the preload). Prove it empirically: `stat -f "%m %z" .coverage/lcov.info` before and after `test:heavy` must print the same pair (`LCOV_UNCHANGED=OK`).
+- **Subsetting the suite makes test-helper coverage subset-dependent.** `scripts/test-silence-output.ts` (the `[test] preload` noop sink) had to be added to `bunfig.toml` `coveragePathIgnorePatterns`: its functions are only invoked when some test echoes without capturing output, so per-file function coverage changed with which tier ran. Any test-only preload/helper belongs in `coveragePathIgnorePatterns`, never production `src/`.
+- **`bun test <file>` exits 1 on coverage, not on failures**, and `coverageThreshold` is enforced per file, not on the aggregate (98% overall still exits 1 when two files sit at 88%). Read the exit code plus the per-file block; `0 fail` alone proves nothing.
+- **The two config seams move together.** `package.json` `spur-check-feature` and `.spur/config.yaml` `builder.actions.check-feature` (L296) must change in one edit — the config comment now names the fast+heavy contract. `.github/workflows/ci.yml` was left untouched on purpose: workflow policy needs separate operator approval, and bare `bun test` there still runs everything.
+- **Refine before implementing paid off twice.** The refine pass caught a stale test-file count (task said 370, tree had 369) and literal `\n` escapes plus `- R2:` bullets in `Requirements`/`Plan` — formatting defects inherited from a previous write, fixed before the pipeline read them as acceptance text.
+
+## 2026-11-24 — 0430 (DOM-script coverage isolation + worktree plugin bundling)
+
+- **Verify a task's root-cause premise before building on it.** R1 claimed uninstrumentable `page.evaluate((…)=>{})` callbacks needed extracting; `rg -n "page\.evaluate\(\s*(async\s*)?\("` returned 0 matches — all 48 calls already pass string expressions. The real gap was 116 uncovered Node/Bun lines (`flow.ts:3329-3444`, the audio cover-chooser branch reachable only through the subprocess DOM runner) plus scattered catch paths. Re-pointing the requirement at the measured gap turned a risky extraction into a 54-line unit test.
+- **Wildcards beat enumeration for fixture runners.** Seven hand-listed `**/tests/fixtures/<name>-runner.ts` ignores became one `**/tests/fixtures/*-runner.ts`, covering all 11 subprocess-only Playwright runners and ending the recurring "new runner shows up as uncovered" cycle. Verify with `grep -c "tests/fixtures/.*-runner\.ts" .coverage/lcov.info` = 0.
+- **Coverage razor margins are a design smell, not a test problem.** `flow.ts` sat at 90.5% fn because the branch lived behind a subprocess; `page.ts` at 91.3% because a browser-executed callback counted as an uncovered Node function. Replacing the serialized `button.evaluate((el, key) => …)` with a `raw.evaluate` string expression (with a `document` fallback for Playwright-only pseudo-selectors) took `page.ts` to 92.41% fn / 100% ln without touching the 90% threshold.
+- **Fix staleness at the write/checkout boundary, never in the preflight.** `apps/cli/src/launch.ts` `runPreflight` must stay a read-only refusal (exit 5 pinned by `apps/cli/tests/launch.test.ts`); outside a checkout the target is a global install `bundle-plugins.ts` cannot rebuild. `--if-stale` (byte-compare `plugins/kk/{scripts,workflows}` + `plugin.json` mtime vs `apps/cli/plugins`, 15 ms skip vs 2–4 s `Bun.build`) was wired into `prepare` and lefthook `pre-commit` (globbed on those paths), `post-checkout`, `post-merge`.
+- **In a worktree, the symptom of a stale staging copy looks like a product bug.** A gitignored `apps/cli/plugins/` copy older than `plugins/kk/{scripts,workflows}` makes every `kk … generate` refuse with `checkout diverges from installed kk` (exit 5). Before chasing logic, run `bun scripts/bundle-plugins.ts` (or `--if-stale`) and re-check.
+- **Sibling tasks can share a coverage budget.** 0429 and 0430 both move publish-plugin tests; near-90% adapters (`xhs-pub/src/flow.ts` 90.73% fn, `flow.ts` 90.49%) needed headroom before their heavy tests could leave `fast`, or the fast tier would have fallen under 90% with no failing test to explain it. Soft ordering (0430 → 0429) was enough; no dependency edge was required.
+
+## 2026-11-24 — cross-task / process
+
+- **A gate-tier change is a cross-cutting decision, so it owes `00` + `03` in the same commit.** Both implementers updated `04` (the `check-feature` sentence) but left `03` § Quality boundary saying `Tests | bun run test`, which after the split names only the fast tier — a reader would believe the gate still runs every test. Repaired at wrap with ADR-058 and a rewritten quality-boundary table plus the invariant (`fast ∩ heavy = ∅`, `fast ∪ heavy = all`, fast tier alone ≥ 90%/90%, heavy never rewrites lcov). Config-key prose is not a substitute for the mechanism doc.
+- **`AGENTS.md` is now the lagging surface here.** Its Build & verification block still presents `bun run test` as the full suite and its worktree-bundling prose predates `--if-stale` hooks. Left unedited because this wrap's authorized write scope was `docs/` only — the next task that touches `AGENTS.md` must sync both blocks.
+- **`docs/04_DESIGN.md` and `docs/design/*` needed no repair** for these two tasks: the one T3-owned sentence (`04:2585-2586`) was updated in the implementing commit, and no design spec under `docs/design/` describes the repo gate or the staging refresh.
+- **Batch drivers: one commit for two sibling tasks is fine when the seams are disjoint.** 0429 owned `package.json`/`.spur/config.yaml`/`scripts/test-suites.ts`; 0430 owned `bunfig.toml`/`bundle-plugins.ts`/`.lefthook.yml`/publish tests; only `bunfig.toml` was touched twice, and both edits were additive lines in different sections.
