@@ -4,7 +4,7 @@ name: Daily promos cannot ship when the podcast row is held by the safety verdic
 status: done
 template: issue
 created_at: 2026-11-24T21:55:01.377Z
-updated_at: "2026-11-25T06:50:27.460Z"
+updated_at: "2026-11-25T21:52:39.498Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -128,15 +128,15 @@ the pre-fix behaviour exactly.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — when the podcast row has no succeeded receipt, a promo carrying `{{podcast_url}}` must not fail `unresolved-link`: it either falls back to the tier-0 article URL or is skipped with a named reason saying the podcast link is missing | MET | Fallback arm: `apps/cli/src/publish-matrix.ts:530-545` (declared `fallback: 'article'` at `:506-509`, own receipt wins) resolved for every promo in `apps/cli/tests/publish-matrix-0431.test.ts:160-238`; skip arm returns the named reason at `apps/cli/src/publish-matrix.ts:1984-1990`, asserted for all three promos at `apps/cli/tests/publish-matrix-0431.test.ts:240-283` (`error: 'podcast-link-missing'`, `effect: 'none'`, not dispatched). Ran: 3 pass / 0 fail. |
-| R2 — the fallback is visible in the receipt/event so an operator can see which link a post carried | MET | One `link-fallback` event per substituted slot with `id`/`placeholder`/`source: 'article'`/`url`/`mode` (`apps/cli/src/publish-matrix.ts:1930-1947`), asserted for `x-pub.post`, `threads-pub.post`, `jike-pub.post` at `apps/cli/tests/publish-matrix-0431.test.ts:211-223`; the row's receipt is `succeeded` (`:222`). |
-| R3 — a same-day re-point of one channel's copy must not require deleting a frozen `bundle.json` | MET | Met by obviation, the Solution's declared design: no writer or freeze file is in the diff (`git diff --stat` = one source file), and the fallback rides the frozen bytes — `apps/cli/tests/publish-matrix-0431.test.ts:225-233` asserts `social:x`'s frozen digest still matches the variant bytes after the send and that the resolved URL never enters `bundle.json`. Caveat recorded, not scored against the requirement: the freeze refusal itself is untouched, so an actual copy edit would still need a fresh freeze — the requirement is satisfied because the edit is no longer needed. |
+| R1 | MET | `apps/cli/src/publish-matrix.ts:500-509` (`{{podcast_url}}` slot declares `fallback: 'article'`); `apps/cli/src/publish-matrix.ts:530` substituteLinkPlaceholders; skip reason `apps/cli/src/publish-matrix.ts:2032` (`podcast-link-missing`); tests `apps/cli/tests/publish-matrix-0431.test.ts:160` and `:240` |
+| R2 | MET | `apps/cli/src/publish-matrix.ts:1979` appends a `link-fallback` event per substitution (Solution cites 1930-1947; anchor drifted to ~1971-1990, behaviour unchanged); test `apps/cli/tests/publish-matrix-0431.test.ts:160` |
+| R3 | MET | Fallback is resolved at send time from receipts (`apps/cli/src/publish-matrix.ts:511-545`), so no bundle.json edit is needed; test `apps/cli/tests/publish-matrix-0431.test.ts:160` runs against an unmodified frozen bundle |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — a promo supplies the article link when the podcast link is missing | MET | test | `apps/cli/tests/publish-matrix-0431.test.ts:195-209`: the plan has no `podcast-pub.episode` row (`:187-190`, safety-excluded), `x-pub` is dispatched, the resolved payload carries `https://example.test/surfdash-pub` and no `{{podcast_url}}`, and the event is `sent` with no `unresolved-link` failure. Ran: 3 pass / 0 fail. Gap named: the test drives `sendPublishMatrix` over the whole plan rather than the CLI's `--tier 3`; that flag is pre-existing, untouched by this diff, and separately covered at `apps/cli/tests/publish-matrix.test.ts:607-611`. |
-| AC2 — the fallback is recorded | MET | test | `apps/cli/tests/publish-matrix-0431.test.ts:211-223`: a `link-fallback` entry with `source: 'article'`, `placeholder: '{{podcast_url}}'` and the substituted `url` is present in `4-publish/publish-events.jsonl` for all three promo ids. |
-| AC3 — the chosen behaviour on a missing tier-0 URL is covered by a test, and it fails when the substitution is removed | MET | test | Both arms asserted at `apps/cli/tests/publish-matrix-0431.test.ts:160-283` (article substitution; `effect: none` skip carrying `podcast-link-missing`). Fails-when-removed reproduced this visit: with `apps/cli/src/publish-matrix.ts` at `HEAD` the suite gives 1 pass / 2 fail (`expected [ 'surfdash-pub', 'wechatmp-pub' ] to contain 'x-pub'`, `expected 'unresolved-link' to be 'podcast-link-missing'`); source restored byte-identical. |
+| AC1 | MET | test | `apps/cli/tests/publish-matrix-0431.test.ts:160`; `bun test apps/cli/tests/publish-matrix-0431.test.ts` → 3 pass / 0 fail (this run) |
+| AC2 | MET | test | `apps/cli/tests/publish-matrix-0431.test.ts:240` (skip names `podcast-link-missing`) |
+| AC3 | MET | test | `apps/cli/tests/publish-matrix-0431.test.ts:285` (0383 draft-body invariant still refuses) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: Extract ladder projects the pool while the floor gate projects the admitte
 status: done
 template: issue
 created_at: 2026-11-24T21:55:06.445Z
-updated_at: "2026-11-25T17:06:34.505Z"
+updated_at: "2026-11-25T21:52:40.606Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -119,15 +119,15 @@ and was regenerated, never hand-edited.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — ladder and gate share one denominator (or the ladder states its keep-rate assumption) | MET | One arithmetic `spokenLength` (`plugins/kk/scripts/daily-stages.ts:730-738`), one bridge `projectKeptChars` (`:763-765`). Ladder: `keptChars = round(poolChars × keepRate)` then `spokenLength(keptChars, keptRatio)` (`:973-976`); gate: `estimateSpokenMinutes(docs, vdriver, calibration.keptRatio)` over the admitted chars (`:805-810`); post-spend: same call (`:1404-1405`). The assumption is stated, not implied: `keepRate` + `keepRateSource` in `ladder.json` (`:1007-1008`), printed per rung on stderr (`:988`). Pinned by `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:206,245,334` and `plugins/kk/tests/daily-extract-ladder.test.ts:170` |
-| R2 — every estimate artifact prints the ratio, its source path and the assumed keep rate | MET | `ladder.json`: `ratioUsed`/`ratioSource`, `keptRatio`/`keptRatioSource`, `keepRate`/`keepRateSource`, `spokenPerPoolChar`, `rungs[].keptChars` (`plugins/kk/scripts/daily-stages.ts:1003-1010`). Floor refusal: `expansion`/`expansionSource`, `keepRate`/`keepRateSource`, `keepRateAssumed`/`keepRateAssumedSource`, `keepRateDrift` (`:844-852`). Post-spend refusal: the same measures (`:1418-1423`). Run report: "Driving measure" + one line per measure with its source (`apps/cli/src/commands/daily.ts:653-656`). Asserted at `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:245-282,334-386`, `apps/cli/tests/commands/daily.test.ts:369-376` |
-| R3 — drift beyond a stated bound is reported, not absorbed | MET | Stated bound `KEEP_RATE_DRIFT_BOUND = 0.05` with its rationale (`plugins/kk/scripts/daily-stages.ts:416-422`); `keepRateDrift` prints on stderr with the observed %, the assumed % and its source, and the direction word (`:647-662`), called before the verdict branch so a **passing** gate reports it too (`:815`, `:826-833`); the refusal records the delta (`:852`). Observed measured from `10-collect/pool.json` vs the admitted candidates (`:626-634`), i.e. today's rate, never the assumed one. Pinned by `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:283` (fires at −20 pts) and `:313` (quiet at −3 pts) |
-| R4 — one test pins ladder/gate/settle arithmetic so a future change on either side fails | MET | `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:334` drives extract → floor gate → post-spend refusal on one fixture and asserts all three report 19.9 min. Verified by mutation: switching the ladder to pool chars fails 3/5 tests (`66.2` vs `19.9`), the gate to the pool ratio fails 2/5 (`6.1` vs `19.9`), the settle to the 1.4 default fails 1/5 (`54` vs `19.9`); source restored byte-identical (`md5 ba7bc40e96472491f3e6600c053d58ad`) and the suite re-run green |
+| R1 | MET | One calibration feeds both estimates: `plugins/kk/scripts/daily-stages.ts:570` readSpokenCalibration, used by spokenLength `:730` and applyFloorGate `:785`; ladder records `spokenPerPoolChar` `:1009`; test `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:206` |
+| R2 | MET | Provenance printed: `apps/cli/src/commands/daily.ts:653` (`Driving measure`); test `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:245` |
+| R3 | MET | `plugins/kk/scripts/daily-stages.ts:422` (`KEEP_RATE_DRIFT_BOUND = 0.05`), keepRateDrift `:647-654`; tests `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:283,313` |
+| R4 | MET | `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:334` (one fixture, three estimates agree) |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — ladder and gate agree on one fixture, and the test fails if either side switches denominator | MET | test | Cold-start fixture: ladder `rungs[0].keptChars = 12,000` of 40,000 pool at 0.30, both artifacts 10.9 min vs the pool-denominated 36.0 (`plugins/kk/tests/daily-estimate-denominator-0434.test.ts:206-243`); recorded-rate fixture: both 19.9 min, `refusal.candidateChars === rung.keptChars` (`:245-282`, `:334-386`). Mutation runs prove the failure direction (see R4). `bun test plugins/kk/tests/daily-estimate-denominator-0434.test.ts plugins/kk/tests/daily-extract-ladder.test.ts` → 11 pass / 0 fail |
-| AC2 — a keep-rate shift is named: the ladder records the assumption and the run reports the drift on stderr | MET | test | `ladder.keepRate = 0.5` with `keepRateSource` pointing at the recorded sibling file (`plugins/kk/tests/daily-estimate-denominator-0434.test.ts:283-311`), and the gate's stderr carries `keep rate drifted … 30% … 50%`. Quiet case at −3 pts (`:313-332`). Manual probe on a scratch workspace: recorded 20%, admitted 77%, gate **passed** (49.7 min > 15) and still printed `keep rate drifted: QC admitted 77% of the pool, the ladder estimate assumed 20% (…kept 0.20 of pool) — the estimate under-predicts the episode by ~285%` |
+| AC1 | MET | test | `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:206`, `:245` |
+| AC2 | MET | test | `plugins/kk/tests/daily-estimate-denominator-0434.test.ts:283`, `:313`; four suites (incl. `apps/cli/tests/commands/daily.test.ts`, `apps/cli/tests/kk-workflow-stages.test.ts`) → 218 pass / 0 fail (this run) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

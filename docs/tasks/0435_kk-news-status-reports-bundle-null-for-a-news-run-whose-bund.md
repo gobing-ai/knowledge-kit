@@ -4,7 +4,7 @@ name: kk news status reports bundle null for a news run whose bundle sits at the
 status: done
 template: issue
 created_at: 2026-11-24T22:43:08.788Z
-updated_at: "2026-11-25T17:20:39.354Z"
+updated_at: "2026-11-25T21:52:41.164Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -100,14 +100,14 @@ freeze writes one there — so the root shape reports `frozen: true` plus an add
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — status reads the bundle through `resolveBundlePath`, not a hard-coded `4-publish/bundle.json` | MET | `apps/cli/src/commands/content.ts:394` (`resolveBundlePath`, imported at `:16`); no hard-coded bundle read remains in the file (only the `4-publish` dir for window outcomes, `:407`); tests `apps/cli/tests/content-status-bundle-0435.test.ts:76-101` |
-| R2 — a frozen root bundle reports `bundle.frozen`, `bundle.runId` and its variant count | MET | `apps/cli/src/commands/content.ts:396-405`; `variantCount` helper `:365-369`; tests `content-status-bundle-0435.test.ts:76-89` assert `frozen: true`, `runId: '20261124-gen-1'`, non-null `variants`, `variantCount: 2` |
-| R3 — an article run (bundle under `4-publish/`) reports exactly what it reported today | MET | `apps/cli/src/commands/content.ts:401-404` (non-root branch byte-identical to base); tests `content-status-bundle-0435.test.ts:103-126`; regression suite `apps/cli/tests/content-status-progress.test.ts` (6 tests) and `apps/cli/tests/content-nouns.e2e.test.ts` (4 tests) pass |
+| R1 | MET | `apps/cli/src/commands/content.ts:16` imports resolveBundlePath; `apps/cli/src/commands/content.ts:394` reads through it; test `apps/cli/tests/content-status-bundle-0435.test.ts:76`, `:91` |
+| R2 | MET | `apps/cli/src/commands/content.ts:365` variantCount; root branch `apps/cli/src/commands/content.ts:387-405`; test `apps/cli/tests/content-status-bundle-0435.test.ts:76` |
+| R3 | MET | `4-publish/` branch unchanged in `apps/cli/src/commands/content.ts:387-405`; tests `apps/cli/tests/content-status-bundle-0435.test.ts:103`, `:120` |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — a frozen news bundle at the run root is visible in status (`bundle.runId` frozen run id, `bundle.variants` non-null) | MET | test | `apps/cli/tests/content-status-bundle-0435.test.ts:76-89` (root layout) and `:91-101` (root wins over a leftover `4-publish` copy); `NODE_ENV=test bun test apps/cli/tests/content-status-bundle-0435.test.ts` → 4 pass / 0 fail; same test at base 9b45f160 → 2 fail (negative control) |
-| AC2 — the article layout is unchanged | MET | test | `apps/cli/tests/content-status-bundle-0435.test.ts:103-126` (`toEqual` pins the exact pre-change summary, including `frozen: null`); `NODE_ENV=test bun test apps/cli/tests/content-status-progress.test.ts apps/cli/tests/content-nouns.e2e.test.ts` → 10 pass / 0 fail |
+| AC1 | MET | test | `apps/cli/tests/content-status-bundle-0435.test.ts:76`, `:91`; `bun test apps/cli/tests/content-status-bundle-0435.test.ts` → 4 pass / 0 fail (this run) |
+| AC2 | MET | test | `apps/cli/tests/content-status-bundle-0435.test.ts:103`, `:120` |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
