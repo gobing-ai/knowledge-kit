@@ -627,6 +627,11 @@ function appendLadderReport(body: string, workDir: string): string {
         const ladder = parseJson(readFileSync(path, 'utf-8')) as {
             ratioUsed?: unknown;
             ratioSource?: unknown;
+            keptRatio?: unknown;
+            keptRatioSource?: unknown;
+            keepRate?: unknown;
+            keepRateSource?: unknown;
+            spokenPerPoolChar?: unknown;
             chosen?: unknown;
             rungs?: unknown;
         };
@@ -642,7 +647,13 @@ function appendLadderReport(body: string, workDir: string): string {
         const section = [
             '## Pool ladder',
             '',
-            `- Driving measure: ${String(ladder.ratioUsed ?? 'unknown')} spoken/raw ratio (${String(ladder.ratioSource ?? 'unknown source')})`,
+            // 0434 R2: the rung minutes convert a projected ADMITTED set, so the report names the
+            // admission rate and both ratios with the path each came from — the same three numbers
+            // the floor refusal prints, comparable without recomputing either artifact.
+            `- Driving measure: ${String(ladder.spokenPerPoolChar ?? 'unknown')} spoken chars per pool char (keep rate ${String(ladder.keepRate ?? 'unknown')} × kept ratio ${String(ladder.keptRatio ?? 'unknown')})`,
+            `- Keep rate: ${String(ladder.keepRate ?? 'unknown')} (${String(ladder.keepRateSource ?? 'unknown source')})`,
+            `- Kept ratio: ${String(ladder.keptRatio ?? 'unknown')} (${String(ladder.keptRatioSource ?? 'unknown source')})`,
+            `- Recorded pool ratio: ${String(ladder.ratioUsed ?? 'unknown')} (${String(ladder.ratioSource ?? 'unknown source')})`,
             `- Chosen window: ${String(ladder.chosen ?? 'unknown')}`,
             '',
             '| Window | Items | Characters | Estimated minutes | Clears floor |',

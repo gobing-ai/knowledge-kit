@@ -335,9 +335,15 @@ describe('kk daily run-report', () => {
                 chosen: '96h',
                 ratioUsed: 0.28,
                 ratioSource: 'previous-run',
+                // 0434: the projection the rung minutes were computed from, with its provenance.
+                keptRatio: 0.515,
+                keptRatioSource: '20261106_09_spoken-ratio.json',
+                keepRate: 0.3,
+                keepRateSource: '20261106_09_spoken-ratio.json (kept 0.30 of pool)',
+                spokenPerPoolChar: 0.155,
                 rungs: [
-                    { window: '24h', items: 3, chars: 2400, minutes: 2.1, clears: false },
-                    { window: '96h', items: 9, chars: 9000, minutes: 7.8, clears: false },
+                    { window: '24h', items: 3, chars: 2400, keptChars: 720, minutes: 2.1, clears: false },
+                    { window: '96h', items: 9, chars: 9000, keptChars: 2700, minutes: 7.8, clears: false },
                 ],
             }),
         );
@@ -363,6 +369,13 @@ describe('kk daily run-report', () => {
         expect(report).toContain('previous-run');
         expect(report).toContain('| 24h | 3 | 2400 | 2.1 | false |');
         expect(report).toContain('| 96h | 9 | 9000 | 7.8 | false |');
+        // 0434 R2: the report states the projection and both denominators with their sources, so it
+        // compares against the floor refusal without recomputation.
+        expect(report).toContain(
+            'Driving measure: 0.155 spoken chars per pool char (keep rate 0.3 × kept ratio 0.515)',
+        );
+        expect(report).toContain('Kept ratio: 0.515 (20261106_09_spoken-ratio.json)');
+        expect(report).toContain('Keep rate: 0.3 (20261106_09_spoken-ratio.json (kept 0.30 of pool))');
     });
 
     it('0266 R2/R3 — names the post-spend duration refusal, which wins over the floor artifact', async () => {

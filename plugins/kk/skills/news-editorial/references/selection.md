@@ -32,6 +32,34 @@ Every candidate `id` from `21-plan/<date>_04_quality-control-content_candidates.
    gives the per-driver character rates. If kept items cannot reach the floor, keep more in-scope items rather
    than padding.
 
+## CN lead constraint (0433)
+
+The plan feeds a **CN-distributed cut** (小宇宙 / 微信公众号 / 视频号 / 即刻) and the overseas surfaces from the
+same script. Platform review items `XY-02` (`../content-safety/references/platforms/xiaoyuzhou.md`) and `WX-01`
+(`.../wechatmp.md`) block a 单集 whose mainline is **时政 / 贸易管制 / 公共安全审查** — political affairs, export
+or trade controls (出口管制/实体清单/关税/制裁), state- or public-security review (国家安全审查/情报/审查委员会),
+foreign-intelligence framing. So:
+
+- **Never lead a CN cut with that mainline.** It may not be the lead title, the cover headline or the episode
+  summary. It normally stays in scope as an **item** (SKILL.md shared rule 2 keeps regulation and export
+  controls that decide AI capacity reportable, and the 2026-11-24 operator ruling grades an overseas vendor
+  under its own regulator as `note`); only the lead position is constrained.
+- **Chosen behaviour when it is also the day's biggest story: demote.** Move it to the best body position and
+  lead with the first clean in-scope story, and rewrite the demoted title/`metadata.brief` as a neutral
+  headline that names the AI-industry fact (融资、产能、客户、定价、产品) instead of the state-security or
+  trade-control framing. Keep every fact, number and name — this is a framing change, never a fact change.
+- **Tradeoff, recorded.** The alternative was **two cuts** (a CN lead and an overseas lead). The pipeline
+  ships one zh script, one TTS pass and one bundle, so two leads would mean a second render path, a second
+  headline slot and two audio variants — far more than the day's loss. Demote keeps one cut and one
+  synthesis bill, at the cost of the CN surface not leading with the day's biggest story. If the losing
+  story is genuinely the only consequential one, the run refuses before synthesis instead
+  (`daily-curate-check --final` writes `21-plan/<date>_03_cn-lead-refusal.json` and exits non-zero rather
+  than pay for an episode the CN rows would drop afterwards).
+- **Enforced in code, not by this prose.** `daily-curate-check` runs `plugins/kk/scripts/cn-lead-gate.ts` on
+  the lead (plan index 0, `title` + `metadata.brief`) and rejects the plan with rule `cn-lead:XY-02`, naming
+  the matched terms in the error's `detail`. The vocabulary lives in that module, which cites `XY-02`/`WX-01`
+  as its source of truth — re-verify against the platform files when a platform ruling changes.
+
 ## Spoken Chinese adaptation
 
 For kept items (especially those marked `needsTranslation`), adapt `title`, `body` and `metadata.brief` into spoken simplified Chinese:
@@ -49,3 +77,7 @@ When `daily-curate-check` writes `21-plan/<date>_03_curate_errors.json` (`[{ "it
 - `missing-item`: add the missing candidate id either to `--out-plan` (translated) or to `--out-excluded` (with a Chinese reason).
 - `conflict-id`: remove the id from one of the two files so it appears in only one.
 - `unknown-id`: remove any id that does not exist in `candidates.json`'s `metadata.docs`.
+- `cn-lead:XY-02`: the lead (plan index 0) carries a 时政/贸易管制/公共安全审查 mainline in its `title` or
+  `metadata.brief`; the error's `detail` names the matched terms. Demote that item to a body position, lead
+  with the first clean in-scope story, and rewrite the demoted `title`/`metadata.brief` into a neutral headline
+  (see § CN lead). Do **not** drop the item: it is still reportable, just not as the lead.

@@ -39,6 +39,36 @@ export interface PatchPostRequest {
     episodeTitle?: string;
     /** Optional uploader converting a local cover into an `https://` remote URL (e.g. Microfeed R2). */
     uploadLocalCover?: (filePath: string) => Promise<string>;
+    /**
+     * The live page these posts serve (0432), named in the cover-skip diagnostic so an operator can
+     * check the page instead of hunting the slug. Optional: a caller that does not know it (a
+     * fixture, an offline replay) records an empty one rather than inventing a URL.
+     */
+    pageUrl?: string;
+}
+
+/**
+ * The remote-cover verdict of one patch pass (0432).
+ *
+ * A post whose cover cannot be sourced is NOT a failure: the page is already live and its og:image
+ * resolves from the CMS row, so the patch only lacks a URL to write into `image`/`og_image`. It
+ * records `skipped` with the reason and the page URL instead of throwing — a live, correct page was
+ * being reported as a failed target (2026-11-24 dogfood) because the only https cover the run knew
+ * about was the one `podcast-pub` hosts, and that row was held by the safety verdict.
+ */
+export interface CoverPatchOutcome {
+    /** `applied` when every locale that has a post carries a remote cover; `skipped` otherwise. */
+    status: 'applied' | 'skipped';
+    /** Locales whose post carries a remote https cover after this pass (written or kept). */
+    applied: PatchLocale[];
+    /** Locales left on their local/relative image because no https source existed. */
+    skipped: PatchLocale[];
+    /** Operator-facing reason naming the skipped locales; '' when nothing was skipped. */
+    reason: string;
+    /** The published page the skip concerns (`request.pageUrl`); '' when the caller supplied none. */
+    pageUrl: string;
+    /** Why the local-cover upload produced no URL (env/presign/network), absent when it was never tried. */
+    uploadError?: string;
 }
 
 /** What the file pass changed; the caller commits exactly {@link PatchPostOutcome.written}. */
@@ -53,6 +83,8 @@ export interface PatchPostOutcome {
     images: Record<string, string>;
     /** The primary post's directory name, for the commit message. */
     slug: string;
+    /** What happened to the remote cover this pass (0432); never a fatal outcome by itself. */
+    coverPatch: CoverPatchOutcome;
 }
 
 /**
@@ -130,8 +162,13 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
     const written: string[] = [];
     const absent: PatchLocale[] = [];
     const images: Record<string, string> = {};
+    const coverSkipped: PatchLocale[] = [];
     let changed = 0;
     let uploadedFallbackCover: string | undefined;
+    // 0432 R2/P3: the local upload is an environment step (base URL, key, presign, network). Its
+    // failure leaves no sourceable cover, which is the recorded warning below — never a failed
+    // target on a page that is already live.
+    let uploadError: string | undefined;
     for (const locale of PATCH_LOCALES) {
         const indexMd = localeIndexPath(request.postPath, locale);
         if (indexMd === undefined || !(await fs.exists(indexMd))) {
@@ -160,20 +197,34 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
             request.localCover !== '' &&
             (await fs.exists(request.localCover))
         ) {
-            if (uploadedFallbackCover === undefined) {
-                const uploaded = await request.uploadLocalCover(request.localCover);
-                if (!/^https:\/\//.test(uploaded)) {
-                    throw new Error(`uploaded cover must be an absolute https:// URL, got: ${uploaded}`);
+            if (uploadedFallbackCover === undefined && uploadError === undefined) {
+                let uploaded: string | undefined;
+                try {
+                    uploaded = await request.uploadLocalCover(request.localCover);
+                } catch (error) {
+                    uploadError = error instanceof Error ? error.message : String(error);
                 }
-                uploadedFallbackCover = uploaded;
+                if (uploaded !== undefined) {
+                    // A non-https RESULT is an argument defect, not an environment failure: it stays loud.
+                    if (!/^https:\/\//.test(uploaded)) {
+                        throw new Error(`uploaded cover must be an absolute https:// URL, got: ${uploaded}`);
+                    }
+                    uploadedFallbackCover = uploaded;
+                }
             }
-            md = upsertFrontmatterKey(md, 'image', uploadedFallbackCover);
-            md = upsertFrontmatterKey(md, 'og_image', uploadedFallbackCover);
-            images[locale] = uploadedFallbackCover;
+            if (uploadedFallbackCover === undefined) {
+                coverSkipped.push(locale);
+            } else {
+                md = upsertFrontmatterKey(md, 'image', uploadedFallbackCover);
+                md = upsertFrontmatterKey(md, 'og_image', uploadedFallbackCover);
+                images[locale] = uploadedFallbackCover;
+            }
         } else {
-            throw new Error(
-                `${locale} post has no remote https:// cover: coverUrl is empty and frontmatter has no https:// image key`,
-            );
+            // 0432 R2: no https cover anywhere (the podcast row never uploaded one, the frontmatter
+            // has none and no local cover is uploadable). The page is live and its og:image resolves,
+            // so this is a recorded warning on an otherwise successful patch — never a failed target.
+            // The episode identity and the cross-link below are still written.
+            coverSkipped.push(locale);
         }
         if (locale === 'zh' && (request.episodeTitle ?? '') !== '') {
             // The article states the episode identity the podcast ships (0385). The site renders it
@@ -204,5 +255,23 @@ export async function patchPostFiles(request: PatchPostRequest): Promise<PatchPo
             changed += 1;
         }
     }
-    return { written, changed, absent, images, slug: basename(dirname(request.postPath)) };
+    const applied = PATCH_LOCALES.filter((locale) => images[locale] !== undefined);
+    return {
+        written,
+        changed,
+        absent,
+        images,
+        slug: basename(dirname(request.postPath)),
+        coverPatch: {
+            status: coverSkipped.length === 0 ? 'applied' : 'skipped',
+            applied,
+            skipped: coverSkipped,
+            reason:
+                coverSkipped.length === 0
+                    ? ''
+                    : `${coverSkipped.join('/')} post has no remote https:// cover: coverUrl is empty, the frontmatter has no https:// image key and no local cover was uploadable${uploadError === undefined ? '' : ` (local cover upload failed: ${uploadError})`}`,
+            ...(uploadError === undefined ? {} : { uploadError }),
+            pageUrl: request.pageUrl ?? '',
+        },
+    };
 }

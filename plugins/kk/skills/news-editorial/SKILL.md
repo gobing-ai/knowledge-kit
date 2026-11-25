@@ -68,7 +68,21 @@ validator enforces mechanically, so violating them means the plan is rejected.
    corroborates it. Unverified inference has exactly two legal shapes — explicit attribution (据报道 / 当事人称 /
    公司未证实) or omission. Keep hedges (据报道 / 称 / 承诺); never add scaffold hedges (读者宜另行核实 /
    仍待验证) to look careful. If the material is thin, write less — omission is the default, not a softening.
-4. **Copy discipline.** Use reader-facing spoken Chinese. Do not use scaffold labels (可做角度 / 背景 /
+4. **CN lead constraint (0433 R1/R2 — enforceable, not advisory).** Every episode this skill plans is
+   written for a CN-distributed cut (小宇宙 / 微信公众号 / 视频号 / 即刻) as well as the overseas surfaces.
+   A mainline in **时政 / 贸易管制 / 公共安全审查** — political affairs, export or trade controls,
+   state-/public-security review, foreign-intelligence framing — must **not** be the episode's lead title,
+   headline or summary on that cut: platform review items `XY-02`
+   (`../content-safety/references/platforms/xiaoyuzhou.md`) and `WX-01` (`.../wechatmp.md`) block it, and a
+   blocked lead costs the day its primary channel *after* the audio is paid for. Such a story usually stays
+   **in scope as an item** (shared rule 2 keeps export controls and regulation that decide AI capacity
+   reportable) — it is the **lead position** that is constrained, not the story. Chosen behaviour when the
+   blocked story is the day's biggest: **demote it to a body item with a neutral headline and let the first
+   clean in-scope story lead** (one cut, one synthesis bill, no second render path; tradeoff recorded in
+   `references/selection.md` § CN lead). `daily-curate-check` enforces this deterministically
+   (`plugins/kk/scripts/cn-lead-gate.ts`) and rejects the plan with rule `cn-lead:XY-02`, naming the matched
+   terms — that rejection is the instruction, not a warning.
+5. **Copy discipline.** Use reader-facing spoken Chinese. Do not use scaffold labels (可做角度 / 背景 /
    潜在影响) or hedge labels (读者宜另行核实 / 仍待验证), use 「」 for quotes, and never add a greeting,
    sign-off or AI-production footer. The builder adds those.
 
@@ -95,7 +109,10 @@ At the episode level, write:
 - `cover`: either one concrete visual scene in English (a plain string, ≤240 chars: objects, settings, symbols, metaphor; no text, letters, numbers, logos, flags, or recognizable people — compose it per `references/daily-visual-composition.md`) or — required for the 0385 R4 title — the object form
   `{ "scene": "…", "headline": "…", "sourceIds": ["<plan item id>"] }`:
   - `headline` (required, ≤25 chars): the 当日要点 the episode title freezes — one line, the day's most important
-    development in plain language, no date/issue/column name. The title prefix supplies the rest.
+    development in plain language, no date/issue/column name. The title prefix supplies the rest. **This title
+    publishes to the CN channels, so it obeys shared rule 4 too:** when the day's biggest story was demoted for
+    the CN lead constraint, the headline anchors the story that now leads instead — never restate the demoted
+    mainline's 时政/贸易管制/公共安全审查 framing as the episode's 当日要点.
   - `scene` (optional for validation, but then the cover image falls back to the default subject): same English
     visual contract as the string form.
   - `sourceIds` (optional): the plan item id(s) the point rests on — normally the lead. Name them so that when
@@ -157,7 +174,7 @@ See `references/selection.md`. Reads QC candidates (`--in`) and writes two JSON 
 1. `--out-plan` (`21-plan/<date>_03_plan_plan.json`): bare `Doc[]` of **kept** items only, in editorial order (lead first), with `title`, `body` and `metadata.brief` adapted into spoken simplified Chinese.
 2. `--out-excluded` (`21-plan/<date>_03_curate_excluded.json`): `[{"id":"<Doc.id>","reason":"<具体中文原因>"}]` for every dropped candidate (`[]` when none dropped). Every candidate id must land in **exactly one** of the two files.
 
-With `--fix <errors.json>` (`missing-plan`, `invalid-json`, `unknown-id`, `missing-item`, `conflict-id`, `empty-plan`), repair the partition so every candidate id is accounted for exactly once and at least one in-scope item is kept.
+With `--fix <errors.json>` (`missing-plan`, `invalid-json`, `unknown-id`, `missing-item`, `conflict-id`, `empty-plan`, `cn-lead:XY-02`), repair the partition so every candidate id is accounted for exactly once and at least one in-scope item is kept. `cn-lead:XY-02` (its `detail` carries the matched terms and the message) is not an inventory problem: move that item out of the lead position and rewrite its title/`metadata.brief` into a neutral headline that names the AI-industry fact, keeping every fact and number — see `references/selection.md` § CN lead.
 
 ## Mode: align
 

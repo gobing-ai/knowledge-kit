@@ -85,6 +85,8 @@ interface SurfdashPubOptions {
     dateIso?: unknown;
     /** `patch`: the episode's frozen identity title (0385 R4); the zh post's `episode_title`. */
     episodeTitle?: unknown;
+    /** `patch`: the live page URL, named in the cover-skip warning (0432 R2). */
+    pageUrl?: unknown;
 }
 
 /**
@@ -1010,10 +1012,10 @@ async function syncPost(options: SurfdashPubOptions): Promise<Result> {
     }
 }
 
-/** `options.<key>` when it is a string, trimmed; else ''. `patch`'s four optional fields read this way. */
+/** `options.<key>` when it is a string, trimmed; else ''. `patch`'s optional fields read this way. */
 function strOption(
     options: SurfdashPubOptions,
-    key: 'coverUrl' | 'showNotesUrl' | 'localCover' | 'dateIso' | 'episodeTitle',
+    key: 'coverUrl' | 'showNotesUrl' | 'localCover' | 'dateIso' | 'episodeTitle' | 'pageUrl',
 ): string {
     const raw = options[key];
     return typeof raw === 'string' ? raw.trim() : '';
@@ -1050,12 +1052,20 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
             localCover: strOption(options, 'localCover'),
             dateIso: strOption(options, 'dateIso'),
             episodeTitle: strOption(options, 'episodeTitle'),
+            pageUrl: strOption(options, 'pageUrl'),
             uploadLocalCover: uploadCoverToMicrofeed,
         });
     } catch (error: unknown) {
         return fail(`patch error: ${error instanceof Error ? error.message : String(error)}`);
     }
     if (outcome.changed === 0) echoError(`patch: no post bytes changed for ${outcome.slug}`);
+    if (outcome.coverPatch.status === 'skipped') {
+        // 0432 R2: a live page whose cover could not be sourced is a warning with its URL, never a
+        // failed target — the CMS row still serves the og:image this patch wanted to write.
+        echoError(
+            `patch: cover patch skipped for ${outcome.slug} — ${outcome.coverPatch.reason} (page ${outcome.coverPatch.pageUrl === '' ? 'unknown' : outcome.coverPatch.pageUrl})`,
+        );
+    }
     const synced = await syncPost({ postPath: postPath.postPath });
     const commitPaths = new Set(outcome.written.map((path) => relative(surfdashRoot, path)));
     if (process.env.SURFDASH_AUTO_PUSH !== '0') {
@@ -1078,6 +1088,7 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
         absentLocales: outcome.absent,
         cmsResync: synced.ok ? 'ok' : 'failed',
         gitCommit: commit.hash,
+        coverPatch: outcome.coverPatch,
     };
     if (!synced.ok) {
         // The posts are patched and committed; only the CMS rows keep the unservable cover. Reported
@@ -1093,7 +1104,10 @@ async function patchPost(options: SurfdashPubOptions): Promise<Result> {
     return ResultSchema.parse({
         ok: true,
         target: TARGET,
-        message: `patched ${outcome.changed} post(s) for ${outcome.slug}`,
+        message:
+            outcome.coverPatch.status === 'skipped'
+                ? `patched ${outcome.changed} post(s) for ${outcome.slug}; cover patch skipped — ${outcome.coverPatch.reason}`
+                : `patched ${outcome.changed} post(s) for ${outcome.slug}`,
         metadata,
     });
 }
@@ -1108,6 +1122,12 @@ interface PreparedPost {
     /** Prepared daily publishes carry all translated sibling directories into the deploy commit. */
     relPostDirs?: string[];
     articleUrl: string;
+    /**
+     * The `https://` cover this prepare uploaded for the post (0432 R1). Reported in the publish
+     * result so the post-publish patch can heal `image`/`og_image` from the SURFDASH side when the
+     * podcast row never ran — that row used to be the run's only known cover source.
+     */
+    coverUrl?: string;
 }
 
 interface PreparedLocaleIdentity {
@@ -1484,6 +1504,7 @@ async function preparePost(payload: PublishTransportPayload): Promise<PrepareOut
             relPostDir: join('content', 'posts', 'articles', locale, slug),
             relPostDirs: mintedDirs,
             articleUrl,
+            ...(coverUrl !== undefined ? { coverUrl } : {}),
         },
     };
 }
@@ -1501,6 +1522,7 @@ async function preparePostResult(payload: PublishTransportPayload): Promise<Resu
             articleUrl: outcome.prepared.articleUrl,
             dateStamp: outcome.prepared.dateStamp,
             slug: outcome.prepared.slug,
+            ...(outcome.prepared.coverUrl !== undefined ? { coverUrl: outcome.prepared.coverUrl } : {}),
         },
     });
 }
@@ -1511,7 +1533,10 @@ async function publishPreparedFile(
     identity?: Pick<PreparedLocaleIdentity, 'runDate' | 'fingerprint'> & { postSha256?: string },
 ): Promise<Result> {
     const postsurfingBin = process.env.POSTSURFING_BIN ?? 'postsurfing';
-    const { surfdashRoot, locale, dateStamp, filePath, relPostDir, relPostDirs, articleUrl } = prepared;
+    const { surfdashRoot, locale, dateStamp, filePath, relPostDir, relPostDirs, articleUrl, coverUrl } = prepared;
+    // 0432 R1: the cover this publish hosted is what the patch heals from when the podcast row is
+    // held, so it travels with the receipt instead of being re-derived (and lost) downstream.
+    const coverMetadata = coverUrl === undefined ? {} : { coverUrl };
     const identityMetadata = identity
         ? {
               runDate: identity.runDate,
@@ -1571,6 +1596,7 @@ async function publishPreparedFile(
                 metadata: {
                     postPath: filePath,
                     ...identityMetadata,
+                    ...coverMetadata,
                     refinedTitle: refined?.title,
                     refinedCanonical: refined?.canonical,
                 },
@@ -1601,6 +1627,7 @@ async function publishPreparedFile(
             metadata: {
                 postPath: filePath,
                 ...identityMetadata,
+                ...coverMetadata,
                 gitCommit: pushed.hash,
                 live,
                 refinedTitle: refined?.title,

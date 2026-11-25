@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
+import { runProfileCli } from '@gobing-ai/publish-harness/browser';
 import {
     type BrowserLauncher,
     BrowserProfileMissingError,
@@ -28,7 +29,9 @@ import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils
 import type { BrowserContext, Page } from 'playwright';
 import {
     getPublishTransport,
+    hasLinkedinAuthCookie,
     isLinkedinAuthenticated,
+    LINKEDIN_AUTH_COOKIE,
     LINKEDIN_CONFIG,
     LINKEDIN_HOME_URL,
     LINKEDIN_LOGIN_INSTRUCTION,
@@ -41,6 +44,8 @@ import {
     processPublishIO,
     resolveOperation,
 } from '../src/index';
+
+type StoredCookie = Parameters<typeof hasLinkedinAuthCookie>[0][number];
 
 const TMP_DIR = join(process.cwd(), '.works/tmp/test-linkedin-pub');
 const DEFAULT_DIR = join(homedir(), '.config', 'kk', 'browser-profiles', 'linkedin');
@@ -229,7 +234,7 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
 }
 
 /** Launcher fake returning recording contexts; every publish/preflight launch is logged. */
-function makeFakeLauncher(options: FakePageOptions = {}): LauncherHandle {
+function makeFakeLauncher(options: FakePageOptions = {}, jar: StoredCookie[] = []): LauncherHandle {
     const requests: ProfileLaunchRequest[] = [];
     const calls: string[] = [];
     let closes = 0;
@@ -240,6 +245,8 @@ function makeFakeLauncher(options: FakePageOptions = {}): LauncherHandle {
             const context = {
                 pages: () => [page],
                 newPage: async () => page,
+                // 0436 R4: `login` asserts the profile stored the auth cookie before it reports verified.
+                cookies: async () => jar,
                 close: async () => {
                     closes += 1;
                 },
@@ -851,5 +858,58 @@ describe('linkedin-pub environment restoration', () => {
         expect(process.env.LINKEDIN_PROFILE_DIR).toBe(originalChannelDir);
         expect(process.env.KK_BROWSER_PROFILE_DIR).toBe(originalSharedDir);
         expect(process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT).toBe(originalFake);
+    });
+});
+
+describe('linkedin-pub login asserts the stored auth cookie (0436 R4)', () => {
+    /** One live `li_at` as Playwright reports it: the session ticket every later check depends on. */
+    const liveTicket = {
+        name: LINKEDIN_AUTH_COOKIE,
+        value: 'AQED-session-ticket',
+        expires: Math.floor(Date.now() / 1000) + 86_400,
+    };
+    const NOW = Date.now();
+
+    test('a live ticket is a session; a missing, expired or empty one is not', () => {
+        expect(hasLinkedinAuthCookie([liveTicket], NOW)).toBe(true);
+        expect(hasLinkedinAuthCookie([{ name: 'lang', value: 'v2' }], NOW)).toBe(false);
+        expect(hasLinkedinAuthCookie([], NOW)).toBe(false);
+        expect(
+            hasLinkedinAuthCookie(
+                [{ name: LINKEDIN_AUTH_COOKIE, value: 'x', expires: Math.floor(NOW / 1000) - 60 }],
+                NOW,
+            ),
+        ).toBe(false);
+        expect(hasLinkedinAuthCookie([{ name: LINKEDIN_AUTH_COOKIE, value: '' }], NOW)).toBe(false);
+    });
+
+    test('a sign-in that stored no auth cookie fails loud instead of reporting a session', async () => {
+        // Measured 2026-11-24: two operator sign-ins left `li_at` at 0 rows, so every later `check`
+        // called the profile expired with no statement about the login that produced it.
+        const fake = makeFakeLauncher();
+        const lines: string[] = [];
+        const code = await runProfileCli(LINKEDIN_CONFIG, ['login'], {
+            launcher: fake.launcher,
+            stdout: (line) => lines.push(line),
+        });
+        expect(code).toBe(1);
+        const output = lines.join('\n');
+        expect(output).toContain('profile login failed');
+        expect(output).toContain(LINKEDIN_AUTH_COOKIE);
+        expect(output).toContain(LINKEDIN_LOGIN_INSTRUCTION);
+        expect(output).not.toContain('login verified');
+    });
+
+    test('a sign-in that stored the auth cookie reports the verified login', async () => {
+        const fake = makeFakeLauncher({}, [liveTicket]);
+        const lines: string[] = [];
+        const code = await runProfileCli(LINKEDIN_CONFIG, ['login'], {
+            launcher: fake.launcher,
+            stdout: (line) => lines.push(line),
+        });
+        expect(code).toBe(0);
+        expect(lines.join('\n')).toContain('profile login verified');
+        // The ticket value never reaches the operator surface.
+        expect(lines.join('\n')).not.toContain('AQED-session-ticket');
     });
 });

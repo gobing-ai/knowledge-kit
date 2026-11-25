@@ -49,6 +49,9 @@ export const WEIBO_ARTICLE_URL = 'https://card.weibo.com/article/v3/editor';
  * image through `input[type="file"]` natively, which an episode announcement needs.
  */
 export const WEIBO_MOBILE_COMPOSE_URL = 'https://m.weibo.cn/compose/';
+
+/** The mobile composer host — the only page where the bare `textarea` fallback is trusted. */
+const MOBILE_COMPOSE_URL_RE = /^https:\/\/m\.weibo\.cn\//;
 /** Login and passport redirects: while the browser sits on one, the composer never renders. */
 export const LOGIN_URL_RE = /(passport\.weibo\.com|\/login)/;
 
@@ -208,25 +211,90 @@ function resolveDriver(
 }
 
 /**
- * Weibo-owned readiness predicate: no login redirect and either the home composer or the 头条文章
- * editor reachable. Shared by the publish preflight and the operator profile CLI, so both apply one
- * gate (R6, R7). Both surfaces are accepted because the preflight always opens the home page while
- * the article flow's post-goto confirmation opens the editor.
+ * What one weibo page actually rendered, as the readiness gate reads it (0436 R3). Plain facts, so
+ * the accept/reject decision is testable without a browser and the one deliberate conjunction below
+ * is visible in a single line.
+ */
+export interface WeiboSurfaceFacts {
+    /** Final URL after the navigation: a login/passport redirect means there is no session. */
+    url: string;
+    /** The composer textarea the post flow fills. */
+    composer: boolean;
+    /** Whether that textarea matched a composer PLACEHOLDER (`分享新鲜事`), not the bare fallback. */
+    composerLabelled: boolean;
+    /** The 头条文章 title field the article flow fills. */
+    articleTitle: boolean;
+}
+
+/**
+ * The readiness decision for one surface (0436 R3).
+ *
+ * The post leg needs the composer the flow FILLS, and nothing else: `runPostFlow` submits through
+ * the page's own mobile API (`POST /api/statuses/update`, measured 0246), so the render of a send
+ * control is not evidence of a session and demanding one would refuse a valid console that lacks it
+ * (0436 review). The article leg keeps its title field — that flow's post-goto confirmation runs on
+ * the card.weibo.com editor.
+ */
+export function weiboSurfaceReady(facts: WeiboSurfaceFacts): boolean {
+    if (LOGIN_URL_RE.test(facts.url)) return false;
+    // A labelled composer is the session evidence; the bare `textarea` fallback also matches a
+    // search box, so it only counts when the page IS the mobile composer.
+    if (facts.composer && (facts.composerLabelled || MOBILE_COMPOSE_URL_RE.test(facts.url))) return true;
+    return facts.articleTitle;
+}
+
+/**
+ * Weibo-owned readiness predicate: no login redirect and either the post composer (with the send
+ * control the flow clicks) or the 头条文章 editor reachable. Shared by the publish preflight and the
+ * operator profile CLI, so both apply one gate (R6, R7). Both surfaces are accepted because the
+ * preflight opens the post composer while the article flow's post-goto confirmation opens the
+ * editor.
+ *
+ * Re-measured 2026-11-24 (0436 R3): both the headless and the headed check refused a profile whose
+ * `SUB`/`SUBP` cookies were live until 2027-11-24 — on the desktop home page. The selectors that
+ * have to hold are the ones the post flow itself drives, so the session check now opens that
+ * surface (see {@link WEIBO_CONFIG}) instead of a home feed this account may never render.
  */
 export const isWeiboAuthenticated: IsAuthenticatedPredicate = async (page) => {
-    if (LOGIN_URL_RE.test(page.url())) return false;
-    if ((await trySelectors(page, WEIBO_POST_SELECTORS.composer, { visible: false })).found) return true;
-    return (await trySelectors(page, WEIBO_ARTICLE_SELECTORS.title, { visible: false })).found;
+    const facts: WeiboSurfaceFacts = { url: page.url(), composer: false, composerLabelled: false, articleTitle: false };
+    if (LOGIN_URL_RE.test(facts.url)) return false;
+    if ((await trySelectors(page, WEIBO_POST_SELECTORS.composer, { visible: false })).found) {
+        facts.composer = true;
+        // The placeholder is what distinguishes the compose box from the bare `textarea` fallback
+        // (which also matches a search box) — not the send button, which the flow never clicks
+        // because it submits through the mobile API.
+        facts.composerLabelled = (
+            await trySelectors(
+                page,
+                WEIBO_POST_SELECTORS.composer.filter((s) => s.includes('placeholder')),
+                {
+                    visible: false,
+                },
+            )
+        ).found;
+        if (weiboSurfaceReady(facts)) return true;
+    }
+    facts.articleTitle = (await trySelectors(page, WEIBO_ARTICLE_SELECTORS.title, { visible: false })).found;
+    return weiboSurfaceReady(facts);
 };
 
 /**
  * Site-owned config for the shared session check and operator CLI (ADR-032). The publish preflight
  * never forwards `checkHeadedOnly`: it is the operator CLI's setting, and a refusal must never
  * escalate to a headed window on its own (R6).
+ *
+ * `homeUrl` is the surface the post flow drives, not the desktop feed (0436 R3): measured 2026-11-24,
+ * `https://weibo.com` refused both the headless and the headed pass on a profile with live
+ * `SUB`/`SUBP` cookies, while `post` can only post through the mobile composer — a server-rendered
+ * page measured 2026-10-12 (task 0246). Checking where the flow goes is what makes `verified` mean
+ * "this channel can post"; the article leg keeps its own gate (the editor's title field).
+ *
+ * `checkHeadedOnly` stays `false`: the headed pass refused exactly like the headless one on that
+ * same measurement, so a headless refusal here is not a headless-only artifact.
  */
 export const WEIBO_CONFIG: ChannelBrowserConfig = {
     channel: TARGET,
-    homeUrl: WEIBO_HOME_URL,
+    homeUrl: WEIBO_MOBILE_COMPOSE_URL,
     isAuthenticated: isWeiboAuthenticated,
     loginTimeoutMs: LOGIN_TIMEOUT_MS,
     checkHeadedOnly: false,

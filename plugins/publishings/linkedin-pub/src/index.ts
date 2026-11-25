@@ -230,6 +230,36 @@ export const isLinkedinAuthenticated: IsAuthenticatedPredicate = async (page) =>
 };
 
 /**
+ * LinkedIn's session ticket. The readiness predicate only sees the rendered page, so a profile can
+ * pass it and still carry no session at all — the measured 2026-11-24 shape was `li_at` at 0 rows
+ * (`select count(*) from cookies where name='li_at'`) after two separate operator sign-ins. Name
+ * only: this module never reads, logs or returns the value.
+ */
+export const LINKEDIN_AUTH_COOKIE = 'li_at';
+
+/** The cookie facts this assertion reads — everything but the value. */
+export interface StoredCookie {
+    name: string;
+    value?: string;
+    /** Seconds since the epoch; Playwright reports a session cookie as `-1`. */
+    expires?: number;
+}
+
+/**
+ * `true` when the jar holds a usable {@link LINKEDIN_AUTH_COOKIE} (0436 R4). A non-empty value that
+ * has not expired is the whole test: an expired or empty ticket cannot authenticate anything, so
+ * reporting a login from it would leave exactly the profile every later check calls "expired".
+ */
+export function hasLinkedinAuthCookie(cookies: readonly StoredCookie[], nowMs: number = Date.now()): boolean {
+    return cookies.some(
+        (cookie) =>
+            cookie.name === LINKEDIN_AUTH_COOKIE &&
+            (cookie.value ?? '') !== '' &&
+            (cookie.expires === undefined || cookie.expires <= 0 || cookie.expires * 1000 > nowMs),
+    );
+}
+
+/**
  * Site-owned config for the shared session check and operator CLI (ADR-032). The publish preflight
  * never forwards a headed fallback: it is the operator CLI's setting, and a refusal must never
  * escalate to a headed window on its own.
@@ -245,6 +275,22 @@ export const LINKEDIN_CONFIG: ChannelBrowserConfig = {
     // guaranteed burn, and the post flow is headed anyway — so the preflight probes headed, the
     // same shape medium-pub carries for its Cloudflare interstitial.
     checkHeadedOnly: true,
+    // This channel has no `storageState` artifact — the profile's own cookie store is the session —
+    // so the hook is used as the post-login ASSERTION instead of a capture: a sign-in the page
+    // predicate accepted but that stored no auth ticket fails here, at the login that produced it,
+    // rather than silently leaving a profile every later `check` refuses (0436 R4). A hook throw
+    // already fails the verb and suppresses the `verified` verdict, so the bot parent promotes
+    // nothing. No cookie name/value pair is ever logged: the message names the cookie only.
+    sessionState: {
+        onAuthenticated: async ({ context }) => {
+            const cookies = await context.cookies(LINKEDIN_HOME_URL).catch(() => [] as StoredCookie[]);
+            if (hasLinkedinAuthCookie(cookies)) return;
+            throw new Error(
+                `the sign-in stored no ${LINKEDIN_AUTH_COOKIE} session cookie in this profile, so no session was ` +
+                    `saved — confirm the browser shows your own feed after signing in, then run ${LINKEDIN_LOGIN_INSTRUCTION} again`,
+            );
+        },
+    },
 };
 
 /**

@@ -176,30 +176,24 @@ describe('dead-child residue guidance (0276 P3)', () => {
         rmSync(leaseDir, { recursive: true, force: true });
     });
 
-    test('a lease owned by a dead pid names the death and the exact rm -rf recovery (0423 R5)', async () => {
-        // The measured shape: a Ctrl-C'd `kk bot open` left an owner record naming a pid that no
-        // longer exists, and the operator had to hand-remove it before any publish could run.
-        const proc = Bun.spawn(['bun', FIXTURE, profileDir, leaseRoot], { stdout: 'pipe', stderr: 'pipe' });
-        const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-        expect(out.trim().split('\n')[0]).toBe('acquired');
-        const [id] = readdirSync(leaseRoot);
-        const leaseDir = join(leaseRoot, id as string);
-        const owner = JSON.parse(readFileSync(join(leaseDir, 'owner.json'), 'utf8')) as { pid: number };
-        expect(() => process.kill(owner.pid, 0)).toThrow();
+    test('a dead owner with a live child holder is NOT reclassified: a running child still owns it', async () => {
+        // One-writer guarantee (0436 R1): reclassifying a dead owner's lease must never hand the
+        // profile to a second live owner. A live child holder is a live user of the profile.
+        const lease = await acquireProfileLease(profileDir, { leaseRoot });
+        const env = await lease.delegatedEnv(join(root, 'stage'));
+        const child = await enterDelegatedLease(env, join(root, 'stage'));
+        const ownerPath = join(leaseRoot, lease.id, 'owner.json');
+        const owner = JSON.parse(readFileSync(ownerPath, 'utf8')) as { pid: number };
+        writeFileSync(ownerPath, JSON.stringify({ ...owner, pid: 999_999 }));
 
-        let caught: unknown;
-        try {
-            await acquireProfileLease(profileDir, { leaseRoot });
-        } catch (error) {
-            caught = error;
-        }
-        const message = (caught as BotError).message;
-        expect(message).toContain(`is held by pid ${owner.pid}`);
-        expect(message).toContain(`pid ${owner.pid} is no longer running`);
-        expect(message).toContain(`rm -rf ${leaseDir}`);
-        // Guidance only: stale ownership is never auto-removed (0276 frozen invariant).
-        expect(existsSync(leaseDir)).toBe(true);
-    }, 30_000);
+        await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(/child holders/);
+        // Nothing was reclassified: the lease still sits at its own id.
+        expect(existsSync(join(leaseRoot, lease.id, 'owner.json'))).toBe(true);
+        expect(readdirSync(leaseRoot).filter((name) => name.includes('.stale-'))).toEqual([]);
+
+        await child.release();
+        await lease.release();
+    });
 
     test('an owner-less lease with no holder records keeps the crashed-acquire wording', async () => {
         const lease = await acquireProfileLease(profileDir, { leaseRoot });
@@ -211,5 +205,72 @@ describe('dead-child residue guidance (0276 P3)', () => {
             /already exists with no owner record/,
         );
         rmSync(leaseDir, { recursive: true, force: true });
+    });
+});
+
+describe('dead-owner lease reclassification (0436 R1)', () => {
+    let root: string;
+    let leaseRoot: string;
+    let profileDir: string;
+
+    beforeEach(() => {
+        root = mkdtempSync(join(tmpdir(), 'kk-lease-reclaim-'));
+        leaseRoot = join(root, 'leases');
+        profileDir = join(root, 'profiles', 'alice');
+    });
+    afterEach(() => {
+        rmSync(root, { recursive: true, force: true });
+    });
+
+    /** Spawn the two-process probe, which acquires and exits without releasing: a dead-owner lease. */
+    async function leaveDeadOwnerLease(): Promise<{ leaseDir: string; owner: { pid: number } }> {
+        const proc = Bun.spawn(['bun', FIXTURE, profileDir, leaseRoot], { stdout: 'pipe', stderr: 'pipe' });
+        const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+        expect(out.trim().split('\n')[0]).toBe('acquired');
+        const [id] = readdirSync(leaseRoot);
+        const leaseDir = join(leaseRoot, id as string);
+        const owner = JSON.parse(readFileSync(join(leaseDir, 'owner.json'), 'utf8')) as { pid: number };
+        expect(() => process.kill(owner.pid, 0)).toThrow();
+        return { leaseDir, owner };
+    }
+
+    test('adopts a dead-pid lease: reclassified to .stale-<ts>, the acquire proceeds', async () => {
+        // Measured 2026-11-24: leases from pids 75743 (linkedin) and 68156 (weibo) were dead and
+        // refused both operator sign-in attempts. A dead owner is no owner.
+        const { leaseDir, owner } = await leaveDeadOwnerLease();
+
+        const lease = await acquireProfileLease(profileDir, { leaseRoot });
+        expect(lease.id).toBe(leaseDir.slice(leaseRoot.length + 1));
+
+        const names = readdirSync(leaseRoot).filter((name) => name !== lease.id);
+        expect(names).toHaveLength(1);
+        // `<id>.stale-<stamp>-<pid>-<6 hex>`: the random tail keeps two reclaims in one minute apart.
+        expect(names[0]).toMatch(/^[0-9a-f]{64}\.stale-\d{4}-\d{2}-\d{2}T\d{4}-\d+-[0-9a-f]{6}$/);
+        // The dead lease is evidence, not garbage: reclassified, never deleted.
+        const staleDir = join(leaseRoot, names[0] as string);
+        const staleOwner = JSON.parse(readFileSync(join(staleDir, 'owner.json'), 'utf8')) as { pid: number };
+        expect(staleOwner.pid).toBe(owner.pid);
+
+        const fresh = JSON.parse(readFileSync(join(leaseDir, 'owner.json'), 'utf8')) as { pid: number };
+        expect(fresh.pid).toBe(process.pid);
+        await lease.release();
+    }, 30_000);
+
+    test('the reclassified lease no longer refuses the next acquire, twice over', async () => {
+        const { leaseDir } = await leaveDeadOwnerLease();
+        const first = await acquireProfileLease(profileDir, { leaseRoot });
+        // A dead owner reclassified once leaves the profile free; a second login must not re-refuse.
+        await first.release();
+        const second = await acquireProfileLease(profileDir, { leaseRoot });
+        expect(second.id).toBe(first.id);
+        expect(existsSync(join(leaseDir, 'owner.json'))).toBe(true);
+        await second.release();
+    }, 30_000);
+
+    test('a LIVE owner is never reclassified (one writer per profile)', async () => {
+        const held = await acquireProfileLease(profileDir, { leaseRoot });
+        await expect(acquireProfileLease(profileDir, { leaseRoot })).rejects.toThrow(/is held by pid/);
+        expect(readdirSync(leaseRoot).filter((name) => name.includes('.stale-'))).toEqual([]);
+        await held.release();
     });
 });

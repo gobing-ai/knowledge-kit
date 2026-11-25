@@ -3367,6 +3367,8 @@ describe('browser seam (stubbed openPersistentBrowser)', () => {
     function stubCookieContext(page: Page): BrowserContext {
         return {
             addCookies: async () => undefined,
+            // 0436 R2: the restore reads the profile's own jar to decide what the saved state may add.
+            cookies: async () => [],
             pages: () => [page],
             newPage: async () => page,
             waitForEvent: async () => page,

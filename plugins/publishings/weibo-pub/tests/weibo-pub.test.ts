@@ -11,6 +11,7 @@ import type { BrowserContext, Page } from 'playwright';
 import { runInvoke } from '../../../../apps/cli/src/invoke';
 import {
     getPublishTransport,
+    isWeiboAuthenticated,
     LOGIN_INSTRUCTION,
     LOGIN_URL_RE,
     main,
@@ -750,8 +751,10 @@ describe('weibo-pub profile-check (R7)', () => {
 
     test('the profile-check entry is a usage error with no browser when run bare', () => {
         const proc = Bun.spawnSync({
-            cmd: [process.execPath, 'plugins/publishings/weibo-pub/src/profile-check.ts', 'nope'],
-            cwd: process.cwd(),
+            // Resolved from this file, not cwd: the suite must pass from the workspace dir too, which
+            // is where the light gate runs it (0436 remediation).
+            cmd: [process.execPath, join(import.meta.dir, '..', 'src', 'profile-check.ts'), 'nope'],
+            cwd: join(import.meta.dir, '..'),
             stdout: 'pipe',
             stderr: 'pipe',
         });
@@ -845,7 +848,12 @@ describe('weibo-pub fake transport and IO (R9)', () => {
         process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT = 'fake';
         try {
             expect(
-                await runInvoke({ plugin: 'weibo-pub', inPath, outPath, pluginsRoot: join(process.cwd(), 'plugins') }),
+                await runInvoke({
+                    plugin: 'weibo-pub',
+                    inPath,
+                    outPath,
+                    pluginsRoot: join(import.meta.dir, '..', '..', '..'),
+                }),
             ).toBe(0);
         } finally {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
@@ -863,5 +871,59 @@ describe('weibo-pub environment restoration', () => {
         const fake = makeFakeLauncher({ onSaveDraft: 'url' });
         const result = await transport(fake).publish({ content: { ...content, metadata: {} } });
         expect(result.ok).toBe(true);
+    });
+});
+
+/** Session checks after 0436 R3: the gate must be measured on the surface the flow drives. */
+describe('weibo-pub readiness on the surface the flow uses (0436 R3)', () => {
+    /** A page that renders a bare textarea (a search box) and nothing the post flow touches. */
+    function searchOnlyPage(url: string): { url: () => string; locator: (selector: string) => unknown } {
+        return {
+            url: () => url,
+            locator: (selector: string) => ({
+                first: () => ({ count: async () => (selector === 'textarea' ? 1 : 0) }),
+                count: async () => (selector === 'textarea' ? 1 : 0),
+            }),
+        };
+    }
+
+    /** A page rendering only the mobile composer's two controls the post flow needs. */
+    function mobileComposerPage(url: string): { url: () => string; locator: (selector: string) => unknown } {
+        const rendered = new Set<string>([WEIBO_POST_SELECTORS.composer[0], WEIBO_POST_SELECTORS.send[0]]);
+        return {
+            url: () => url,
+            locator: (selector: string) => ({
+                first: () => ({ count: async () => (rendered.has(selector) ? 1 : 0) }),
+                count: async () => (rendered.has(selector) ? 1 : 0),
+            }),
+        };
+    }
+
+    test('a bare textarea (a search box) is not a session: the composer AND its send control must render', async () => {
+        // The composer ladder ends in a bare `textarea`, which matched any page with one — including
+        // the login-free search box — so "composer alone" was never the read the post flow depends on.
+        expect(await isWeiboAuthenticated(searchOnlyPage(WEIBO_HOME_URL) as unknown as Page)).toBe(false);
+    });
+
+    test('the mobile composer the post flow drives is a verified surface', async () => {
+        expect(await isWeiboAuthenticated(mobileComposerPage(WEIBO_MOBILE_COMPOSE_URL) as unknown as Page)).toBe(true);
+    });
+
+    test('a login/passport redirect is refused before any selector is read', async () => {
+        expect(await isWeiboAuthenticated(mobileComposerPage(LOGIN_URL) as unknown as Page)).toBe(false);
+    });
+
+    test('check probes the composer the post flow drives, not the desktop home', async () => {
+        // Measured 2026-11-24: with live SUB/SUBP cookies, `check` (and `check --headed`) refused on
+        // https://weibo.com while the post flow can only post through https://m.weibo.cn/compose/.
+        expect(WEIBO_CONFIG.homeUrl).toBe(WEIBO_MOBILE_COMPOSE_URL);
+        expect(WEIBO_CONFIG.checkHeadedOnly).toBe(false);
+        const lines: string[] = [];
+        const fake = makeFakeLauncher();
+        expect(
+            await runProfileCli(WEIBO_CONFIG, ['check'], { launcher: fake.launcher, stdout: (l) => lines.push(l) }),
+        ).toBe(0);
+        expect(fake.calls).toContain(`goto:${WEIBO_MOBILE_COMPOSE_URL}`);
+        expect(fake.calls).not.toContain(`goto:${WEIBO_HOME_URL}`);
     });
 });

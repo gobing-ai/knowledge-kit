@@ -3,7 +3,7 @@ import { homedir, hostname } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { BotError } from './bot';
-import { chmod, lstat, mkdirExclusive, readlink, realpath, rmdir, unlink } from './bot-fs';
+import { chmod, lstat, mkdirExclusive, readlink, realpath, rename, rmdir, unlink } from './bot-fs';
 
 /**
  * Frozen shared per-profile lease (task 0276, design §Lease module). Every
@@ -11,6 +11,11 @@ import { chmod, lstat, mkdirExclusive, readlink, realpath, rmdir, unlink } from 
  * Chromium's native singleton lock are the supported exclusion set — arbitrary same-user
  * software is out of scope. A lease is never killed or auto-removed; stale/incomplete
  * ownership is refused with recovery guidance naming paths and PIDs.
+ *
+ * 0436 R1 amends one case of that invariant: a lease whose owner PID is *gone* is reclassified
+ * (`<lease>.stale-<ts>-<pid>`, evidence intact) so the next `kk plugin login`/`check` proceeds
+ * instead of refusing. Nothing is deleted, and a LIVE owner — or a live child holder, i.e. a real
+ * second user of the profile — is still refused, so the one-writer guarantee is unchanged.
  */
 
 /** Default lease root. Injected (`leaseRoot`) in tests/probes — never the real home. */
@@ -83,7 +88,15 @@ export async function acquireProfileLease(
     const leaseDir = join(leaseRoot, id);
     await fileSystem.ensureDir(leaseRoot);
     if (!mkdirExclusive(leaseDir, 0o700)) {
-        throw new BotError('busy', await busyGuidance(fileSystem, leaseDir));
+        // 0436 R1: a killed login/browser leaves its marker behind, and refusing that dead owner
+        // cost two measured sign-in attempts (2026-11-24, pids 75743/68156). Reclassify it and retry
+        // the exclusive mkdir — the atomic mkdir is still what decides which live invocation wins.
+        if (!(await reclaimDeadOwnerLease(fileSystem, leaseDir))) {
+            throw new BotError('busy', await busyGuidance(fileSystem, leaseDir));
+        }
+        if (!mkdirExclusive(leaseDir, 0o700)) {
+            throw new BotError('busy', await busyGuidance(fileSystem, leaseDir));
+        }
     }
     const token = randomBytes(16).toString('hex');
     const owner: LeaseOwner = {
@@ -247,11 +260,73 @@ async function busyGuidance(fileSystem: FileSystem, leaseDir: string): Promise<s
     }
     // 0423 R5: a lease left by a DEAD owner is the exact state a Ctrl-C'd `kk bot open` leaves
     // behind, and the recovery is one command — name the pid's death and print it. The directory is
-    // still never removed automatically (0276 frozen invariant).
-    const suffix = isProcessAlive(owner.pid)
-        ? 'confirm that process and any browser for this profile have stopped; stale ownership is never auto-removed'
-        : `pid ${owner.pid} is no longer running — confirm no browser for this profile is open, then remove the stale lease with: rm -rf ${leaseDir}`;
+    // still never removed automatically (0276 frozen invariant). 0436 R1 auto-reclassifies the plain
+    // dead-owner case, so reaching this branch with a dead pid means a live child holder kept it —
+    // name that child instead of sending the operator after a lease that released nothing.
+    const live = isProcessAlive(owner.pid) ? [] : await liveChildHolders(fileSystem, leaseDir);
+    const suffix =
+        live.length > 0
+            ? `pid ${owner.pid} is gone but child holders ${live.join(', ')} are still running — stop those processes before retrying`
+            : isProcessAlive(owner.pid)
+              ? 'confirm that process and any browser for this profile have stopped; stale ownership is never auto-removed'
+              : `pid ${owner.pid} is no longer running and the lease could not be reclassified — confirm no browser for this profile is open, then remove the stale lease with: rm -rf ${leaseDir}`;
     return `browser lease ${leaseDir} is held by pid ${owner.pid} (logical ${owner.logicalPath}) — ${suffix}`;
+}
+
+/**
+ * Reclassify a lease whose owner PID is gone, and report whether the lease path is free to re-acquire
+ * (0436 R1). All three guards must pass before anything moves:
+ *
+ * 1. an owner record exists — an owner-less directory is a crashed acquire, whose ambiguity the
+ *    operator still has to confirm (0276 P3);
+ * 2. that PID is not running — a live owner keeps the one-writer guarantee;
+ * 3. no child holder is still running — a live child is a live user of the profile, even when its
+ *    parent died (`holder-<pid>.json` records exactly that).
+ *
+ * The rename is the atomic claim: two invocations that both see a dead owner cannot both move it,
+ * and the exclusive mkdir that follows still decides the single winner. A `false` from `rename`
+ * means a peer moved it first — the path is free either way, so the caller retries the mkdir.
+ * Nothing is deleted: the dead owner's `owner.json` and holder records stay on disk under the
+ * `.stale-<ts>-<pid>` suffix as the evidence 0276 requires.
+ */
+async function reclaimDeadOwnerLease(fileSystem: FileSystem, leaseDir: string): Promise<boolean> {
+    const owner = await readOwner(fileSystem, leaseDir);
+    if (owner === null || isProcessAlive(owner.pid)) return false;
+    if ((await liveChildHolders(fileSystem, leaseDir)).length > 0) return false;
+    const target = staleLeaseDir(leaseDir);
+    try {
+        rename(leaseDir, target);
+    } catch {
+        // A rename this process may not perform (permissions, a foreign volume), or a name another
+        // reclaimer already took, must keep the refuse-and-guide path rather than claim the profile.
+        return false;
+    }
+    // The decision above was a snapshot: between reading the owner and moving the directory another
+    // invocation may have released the dead lease and acquired it, so what moved might be THAT live
+    // lease. Re-read the moved owner record and put it back unless it is still the dead owner this
+    // call judged — otherwise one process could take the profile from a live holder.
+    const moved = await readOwner(fileSystem, target);
+    if (moved !== null && moved.token !== owner.token) {
+        try {
+            rename(target, leaseDir);
+        } catch {
+            // Leaving it beside the path is the lesser harm: the next acquire reclaims or refuses it.
+        }
+        return false;
+    }
+    return true;
+}
+
+/**
+ * `<lease>.stale-<iso-stamp>-<pid>` — the same compacted-ISO + pid shape the profile quarantine uses
+ * (`browser.ts` `.broken-<stamp>`): sortable by time, unique per reclaiming invocation.
+ */
+function staleLeaseDir(leaseDir: string): string {
+    // Minute-resolution alone collided: the same pid reclassifying a second dead lease inside one
+    // minute renamed onto the first and refused with ENOTEMPTY, i.e. a dead lease still blocked the
+    // next login (0436 review). A per-call random suffix makes the name unique per reclaim.
+    const stamp = new Date().toISOString().replace(/[:.]/g, '').slice(0, 15);
+    return `${leaseDir}.stale-${stamp}-${process.pid}-${randomBytes(3).toString('hex')}`;
 }
 
 /** Count dead-child holder records, or null when the directory carries none. */

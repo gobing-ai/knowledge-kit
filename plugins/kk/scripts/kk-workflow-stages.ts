@@ -1539,6 +1539,24 @@ function publishMatrixPartial(args: string[]): void {
 }
 
 /**
+ * 0432 R2/R3: the warning a skipped cover patch deserves, or undefined when the cover was applied.
+ *
+ * A patch whose only shortfall is the remote cover is NOT a failed target: the post is already live
+ * and its og:image resolves from the CMS row, so reporting the row failed invited a needless
+ * re-publish (2026-11-24 dogfood). The diagnostic is the plugin's `metadata.coverPatch`, and the
+ * page URL is what makes the warning actionable.
+ */
+function coverPatchWarning(metadata: Record<string, unknown>, fallbackPageUrl = ''): string | undefined {
+    const coverPatch = metadata.coverPatch;
+    if (coverPatch === null || typeof coverPatch !== 'object' || Array.isArray(coverPatch)) return undefined;
+    const entry = coverPatch as Record<string, unknown>;
+    if (entry.status !== 'skipped') return undefined;
+    const pageUrl = typeof entry.pageUrl === 'string' && entry.pageUrl !== '' ? entry.pageUrl : fallbackPageUrl.trim();
+    const reason = typeof entry.reason === 'string' && entry.reason !== '' ? entry.reason : 'no remote https:// cover';
+    return `patch-surfdash: WARNING: cover patch skipped — ${reason} (page ${pageUrl === '' ? 'unknown' : pageUrl}); the post is already live and its og:image resolves, so nothing is republished`;
+}
+
+/**
  * `publish-matrix-patch-surfdash` (0333): patch podcast links into a real surfdash post.
  *
  * The patch payload is derived from the window's own receipts, not from legacy aggregate files and
@@ -1614,6 +1632,7 @@ function publishMatrixPatchSurfdash(args: string[]): void {
             typeof podReceipt?.aggregatePath === 'string' ? podReceipt.aggregatePath : undefined,
         );
         const podMeta = (podTarget.metadata ?? {}) as Record<string, unknown>;
+        const sdMeta = (sdTarget.metadata ?? {}) as Record<string, unknown>;
         const runDate = String(readJson(join(publishDir, `outcome.${window}.json`))?.runDate ?? '');
         const compactDate = runDate.replaceAll('-', '');
         const bundle = readJson(join(workDir, 'bundle.json')) as { episode?: { title?: unknown } } | null;
@@ -1632,6 +1651,22 @@ function publishMatrixPatchSurfdash(args: string[]): void {
                   : typeof bundle?.episode?.title === 'string'
                     ? bundle.episode.title
                     : '';
+        // 0432 R1: the cover source, in precedence order.
+        //   1. the podcast row's own media URL (what a successful episode hosts today);
+        //   2. the SURFDASH side's hosted cover — the URL its `publish` uploaded to podcast-media and
+        //      now reports in its receipt, which is the only https cover a held podcast row leaves;
+        //   3. this run's rendered cover file, which the plugin uploads itself (`uploadLocalCover`).
+        // Sourcing 2/3 is what stops a live page from failing the patch when `podcast-pub.episode`
+        // is excluded by the safety verdict (2026-11-24 dogfood).
+        const podcastCover = podReal && typeof podMeta.imageUrl === 'string' ? podMeta.imageUrl.trim() : '';
+        const surfdashCover = typeof sdMeta.coverUrl === 'string' ? sdMeta.coverUrl.trim() : '';
+        const coverUrl = podcastCover !== '' ? podcastCover : surfdashCover;
+        const localCover =
+            compactDate.length === 8 && isFile(join(workDir, '23-cover', `${compactDate}_07_cover_cover.png`))
+                ? join(workDir, '23-cover', `${compactDate}_07_cover_cover.png`)
+                : '';
+        // 0432 R2: the live page the patch heals, so a cover skip names a URL instead of a slug.
+        const pageUrl = typeof sdTarget.url === 'string' ? sdTarget.url.trim() : '';
         const payload = join(publishDir, 'patch-surfdash.payload.json');
         sted('write', payload, () =>
             writeJqText(payload, {
@@ -1639,8 +1674,10 @@ function publishMatrixPatchSurfdash(args: string[]): void {
                 options: {
                     operation: 'patch',
                     postPath,
-                    coverUrl: podReal && typeof podMeta.imageUrl === 'string' ? podMeta.imageUrl : '',
+                    coverUrl,
                     showNotesUrl: podReal && typeof podTarget.url === 'string' ? podTarget.url : '',
+                    ...(localCover !== '' ? { localCover } : {}),
+                    ...(pageUrl !== '' ? { pageUrl } : {}),
                     ...(episodeTitle !== '' ? { episodeTitle } : {}),
                     ...(compactDate.length === 8
                         ? {
@@ -1663,19 +1700,28 @@ function publishMatrixPatchSurfdash(args: string[]): void {
             soft: true,
         });
         const result = readJson(resultPath);
+        const meta = (result?.metadata ?? {}) as Record<string, unknown>;
+        const coverWarning = coverPatchWarning(meta, pageUrl);
         if (result?.ok === true) {
-            const meta = (result.metadata ?? {}) as Record<string, unknown>;
             console.error(
                 `patch-surfdash: ${String(result.message ?? 'patched')} — cms-resync ${String(meta.cmsResync ?? 'ok')}`,
             );
+            if (coverWarning !== undefined) console.error(coverWarning);
             return;
         }
-        const meta = (result?.metadata ?? {}) as Record<string, unknown>;
+        // 0432 R2/R3: a cover the patch could not source is a WARNING, not a failed target — the post
+        // is already live and its og:image resolves. Every other patch failure keeps failing here.
+        // Order matters (review P2): a failed CMS re-sync is a real soft-channel failure and must be
+        // reported as such even when the cover was skipped too, so it is checked first.
         if (meta.cmsResync === 'failed') {
             // The posts are patched and committed; only the CMS re-sync (a soft channel) failed.
             console.error(
                 `patch-surfdash: WARNING: cms re-sync failed — ${String(result?.error ?? `exit ${status}`)}; fix: kk executor run surfdash-pub --in ${payload} --out ${resultPath}`,
             );
+            return;
+        }
+        if (coverWarning !== undefined) {
+            console.error(coverWarning);
             return;
         }
         failWith(1, `patch-surfdash: ${String(result?.error ?? `surfdash-pub patch exited ${status}`)}`);
@@ -1925,10 +1971,14 @@ function dailyPatchSurfdash(args: string[]): void {
         );
         const result = isFile(resultPath) ? readJson(resultPath) : null;
         const meta = (result?.metadata ?? {}) as Record<string, unknown>;
+        // 0432 R2: the same cover-skip warning the matrix stage reports — the plugin no longer fails
+        // for it, and the operator needs the page URL either way.
+        const coverWarning = coverPatchWarning(meta);
         if (result?.ok === true) {
             console.error(
                 `patch-surfdash: ${String(result.message ?? 'patched')} — cms-resync ${String(meta.cmsResync ?? 'ok')}, commit ${String(meta.gitCommit ?? 'unchanged')}${Array.isArray(meta.absentLocales) && meta.absentLocales.length > 0 ? `, no post for ${(meta.absentLocales as string[]).join('/')}` : ''}`,
             );
+            if (coverWarning !== undefined) console.error(coverWarning);
             return;
         }
         // The posts are patched and committed; only the EmDash rows keep the unservable cover. That is

@@ -12,6 +12,12 @@ import { join, resolve } from 'node:path';
  * spoken script (6.2 min) and the TTS gate refused it after a full authoring pass. The ratio the
  * writer delivers is 2,053 / 7,244 = 0.28x, not the 1.4x the estimate assumed, so the ladder that
  * exists to fill a thin day from the backlog never climbed a single rung.
+ *
+ * 0434: the ladder no longer multiplies the WHOLE pool — it projects the set QC will admit (pool
+ * chars × the recorded admission rate) and converts that at the spoken/kept ratio, which is the
+ * floor gate's arithmetic. `rungs[].chars` stays the raw pool, `rungs[].keptChars` is what the
+ * rung's minutes were computed from. Fixtures here therefore carry either a recorded calibration
+ * or a pool large enough for the cold-start 0.30 admission rate to clear the floor.
  */
 describe('daily-extract floor ladder uses the authored-script measure (0377)', () => {
     const runner = resolve(import.meta.dir, '../scripts/kk-workflow-stages.ts');
@@ -23,7 +29,10 @@ describe('daily-extract floor ladder uses the authored-script measure (0377)', (
         return Array.from({ length: docs }, (_, i) => ({ id: `doc-${i}`, title, body: 'b'.repeat(perDoc) }));
     }
 
-    function withFixture(docs: unknown[]): {
+    function withFixture(
+        docs: unknown[],
+        calibration?: Record<string, unknown>,
+    ): {
         root: string;
         workDir: string;
         windows: () => string[];
@@ -37,6 +46,13 @@ describe('daily-extract floor ladder uses the authored-script measure (0377)', (
         const limitLog = join(root, 'limits.log');
         mkdirSync(binDir, { recursive: true });
         mkdirSync(join(workDir, '10-collect'), { recursive: true });
+        // The sibling run whose `21-plan/<date>_09_spoken-ratio.json` the ladder calibrates from
+        // (`workDir`'s parent is the workflow directory, so this lands where the reader looks).
+        if (calibration !== undefined) {
+            const sibling = join(root, '20261120', '21-plan');
+            mkdirSync(sibling, { recursive: true });
+            writeFileSync(join(sibling, '20261120_09_spoken-ratio.json'), JSON.stringify(calibration));
+        }
         const body = JSON.stringify(docs);
         const shimPath = join(binDir, 'kk');
         writeFileSync(
@@ -107,7 +123,10 @@ writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
         const fixture = withFixture(pool(20, 27704));
         const res = fixture.run('40');
         expect(res.status, res.stderr).toBe(0);
-        expect(fixture.limits()).toEqual(['40']);
+        // The cap rides on EVERY rung: a 27,704-char pool projects ≈2,300 admitted chars at the
+        // cold-start 0.30 keep rate, so this fixture walks the ladder and each store call needs it.
+        expect(fixture.limits().length).toBeGreaterThan(0);
+        expect([...new Set(fixture.limits())]).toEqual(['40']);
         rmSync(fixture.root, { recursive: true, force: true });
     });
 
@@ -132,29 +151,50 @@ writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
         rmSync(root, { recursive: true, force: true });
     });
 
-    it('stops at the configured window when the pool is rich', () => {
-        const { root, windows, run } = withFixture(pool(20, 27704));
+    it('stops at the configured window when the projected admitted set is rich', () => {
+        // 27,704 pool chars at the recorded day's 60% admission and 0.60 spoken/kept ratio ≈ 33 min,
+        // so the first rung clears the 15 min floor and the ladder never widens.
+        const { root, windows, run } = withFixture(pool(20, 27704), {
+            poolChars: 40000,
+            keptChars: 24000,
+            spokenChars: 12000,
+            ratio: 0.3,
+            keptRatio: 0.6,
+        });
         const res = run();
         expect(res.status, res.stderr).toBe(0);
         expect(windows()).toEqual(['24h']);
         rmSync(root, { recursive: true, force: true });
     });
 
-    it('judges the pool by the ratio a previous run recorded, not by the calibrated constant (R2)', () => {
-        // A rich pool by the 0.28 default (27,704 x 0.28 = 7,757 chars ≈ 27 min) but a thin one for a
-        // workflow whose last run delivered 0.10x of its pool (≈ 2,770 chars ≈ 9.6 min < 15).
-        const fixture = withFixture(pool(20, 27704));
-        const previous = join(fixture.root, 'kk-news-generate-20261114-1', '21-plan');
-        mkdirSync(previous, { recursive: true });
-        writeFileSync(
-            join(previous, '20261114_09_spoken-ratio.json'),
-            JSON.stringify({ runDate: '20261114', poolChars: 20000, spokenChars: 2000, ratio: 0.1 }),
-        );
-        const res = fixture.run();
-        expect(res.status, res.stderr).toBe(0);
-        // Today's behaviour would keep 24h; the recorded ratio makes the same pool a thin day.
-        expect(fixture.windows().length).toBeGreaterThan(1);
-        rmSync(fixture.root, { recursive: true, force: true });
+    it('projects the admitted set from the recorded keep rate, not from the pool alone (R1)', () => {
+        // The SAME 27,704-char pool, two recorded days: 2026-11-15 admitted 33% of its pool at a 0.515
+        // spoken/kept ratio (27,704 x 0.34 x 0.52 ≈ 4,800 spoken chars ≈ 15.5 min ⇒ clears), while a
+        // day that admitted 10% at 0.30 (≈ 830 spoken chars ≈ 2.8 min) makes it a thin day. A ladder
+        // that multiplied the pool alone could not tell these two days apart.
+        const rich = withFixture(pool(20, 27704), {
+            poolChars: 55242,
+            keptChars: 18525,
+            spokenChars: 9540,
+            ratio: 0.173,
+            keptRatio: 0.515,
+        });
+        const richRun = rich.run();
+        expect(richRun.status, richRun.stderr).toBe(0);
+        expect(rich.windows()).toEqual(['24h']);
+        rmSync(rich.root, { recursive: true, force: true });
+
+        const thin = withFixture(pool(20, 27704), {
+            poolChars: 20000,
+            keptChars: 2000,
+            spokenChars: 600,
+            ratio: 0.03,
+            keptRatio: 0.3,
+        });
+        const thinRun = thin.run();
+        expect(thinRun.status, thinRun.stderr).toBe(0);
+        expect(thin.windows().length).toBeGreaterThan(1);
+        rmSync(thin.root, { recursive: true, force: true });
     });
 
     it('writes the ladder decision as an artifact the run report can explain (R3)', () => {
@@ -164,14 +204,29 @@ writeFileSync(outPath, process.env.KK_SHIM_POOL ?? '[]');
         const ladder = JSON.parse(readFileSync(join(fixture.workDir, '10-collect', 'ladder.json'), 'utf-8')) as {
             ratioUsed: number;
             ratioSource: string;
+            keptRatio: number;
+            keptRatioSource: string;
+            keepRate: number;
+            keepRateSource: string;
+            spokenPerPoolChar: number;
             chosen: string;
-            rungs: Array<{ window: string; chars: number; minutes: number; clears: boolean }>;
+            rungs: Array<{ window: string; chars: number; keptChars: number; minutes: number; clears: boolean }>;
         };
         expect(ladder.ratioUsed).toBeGreaterThan(0);
         expect(ladder.ratioSource).toContain('default');
+        // 0434 R2: the artifact names the ratio, its source AND the admission rate it projected with,
+        // so a reader can rebuild the rung minutes without recomputing either side's denominator.
+        expect(ladder.keptRatio).toBe(0.28);
+        expect(ladder.keptRatioSource).toContain('default');
+        expect(ladder.keepRate).toBe(0.3);
+        expect(ladder.keepRateSource).toContain('default');
+        expect(ladder.spokenPerPoolChar).toBe(0.084);
         expect(ladder.chosen).not.toBe('24h');
         expect(ladder.rungs.length).toBeGreaterThan(1);
         expect(ladder.rungs[0]?.clears).toBe(false);
+        // `chars` is the raw pool, `keptChars` the projected admitted set the minutes came from.
+        expect(ladder.rungs[0]?.chars).toBe(7244);
+        expect(ladder.rungs[0]?.keptChars).toBe(Math.round(7244 * 0.3));
         // The shim returns the same pool at every rung, so the ladder walks to its ceiling and keeps
         // the widest attempt: the artifact must name the rung it actually chose.
         expect(ladder.rungs.at(-1)?.window).toBe(ladder.chosen);

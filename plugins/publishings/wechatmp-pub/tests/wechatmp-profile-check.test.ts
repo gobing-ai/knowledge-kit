@@ -24,6 +24,8 @@ interface FakeContext {
     newPage: () => Promise<unknown>;
     close: () => Promise<void>;
     addCookies?: (cookies: unknown[]) => Promise<void>;
+    /** 0436 R2: the restore compares the saved state against what the profile itself holds. */
+    cookies?: () => Promise<unknown[]>;
     storageState?: (opts: { path: string }) => Promise<void>;
 }
 
@@ -36,6 +38,7 @@ function fakeContext(page: unknown, closed: string[] = [], closeError?: string):
             if (closeError !== undefined) throw new Error(closeError);
         },
         addCookies: async () => {},
+        cookies: async () => [],
         storageState: async ({ path }: { path: string }) => {
             await mkdir(dirname(path), { recursive: true });
             await writeFile(path, '{}');
@@ -255,6 +258,7 @@ describe('wechatmp-pub profile-check `open` verb (0277)', () => {
                     if (event === 'close') listener();
                 },
                 addCookies: async () => {},
+                cookies: async () => [],
                 close: async () => void closed.push('closed'),
             };
             return context as never;

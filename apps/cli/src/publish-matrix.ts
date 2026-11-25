@@ -480,19 +480,69 @@ export async function runPublishMatrixValidate(args: string[], deps: PublishMatr
     return 0;
 }
 
+/** One owned surface whose published URL fills a link placeholder (design §5). */
+interface LinkSource {
+    placeholder: string;
+    plugin: string;
+    receipt: 'article' | 'podcast';
+    /**
+     * The other owned surface whose URL may stand in when `receipt` has no succeeded one (0431 R1).
+     *
+     * The variants safety gate can exclude the podcast row (`excludedPlatforms: [xiaoyuzhou]`) or its
+     * publish can fail, and a promo whose frozen copy already carries the episode link must still
+     * ship pointing at an approved page instead of failing with `unresolved-link` — that failure was
+     * only repairable by re-authoring frozen variant copy, which the freeze refuses (0431 R3).
+     * `{{article_url}}` declares no fallback: the article is the primary page nothing substitutes.
+     */
+    fallback?: 'article' | 'podcast';
+}
+
 /**
  * Tier-0 targets whose published URL fills a link placeholder (design §5).
  *
  * This is the publication contract, not a channel table: the owned surfaces are what every
  * downstream channel links to, so they are the only ones whose URL can be resolved.
  */
-const LINK_SOURCES: ReadonlyArray<{ placeholder: string; plugin: string; receipt: 'article' | 'podcast' }> = [
+const LINK_SOURCES: ReadonlyArray<LinkSource> = [
     { placeholder: '{{article_url}}', plugin: 'surfdash-pub', receipt: 'article' },
-    { placeholder: '{{podcast_url}}', plugin: 'podcast-pub', receipt: 'podcast' },
+    { placeholder: '{{podcast_url}}', plugin: 'podcast-pub', receipt: 'podcast', fallback: 'article' },
 ];
 
 /** Resolved link targets for placeholder substitution. */
 type LinkMap = Partial<Record<'article' | 'podcast', string>>;
+
+/** One placeholder this pass had to fill from a fallback source, kept for the audit trail (0431 R2). */
+interface LinkFallback {
+    placeholder: string;
+    /** The owned surface the URL actually came from (`article` in 0431's dogfood). */
+    source: 'article' | 'podcast';
+    url: string;
+}
+
+/**
+ * Substitute the `LINK_SOURCES` placeholders into a payload's JSON text.
+ *
+ * An own-receipt URL always wins. When it has no succeeded receipt for this bundle revision, the
+ * source's declared `fallback` fills in instead and the substitution is RETURNED, so the caller can
+ * record which link the post carried (0431 R1/R2). The payload is JSON text: the URL is escaped as a
+ * string fragment so a quote or backslash in it cannot break the document.
+ */
+function substituteLinkPlaceholders(payloadText: string, links: LinkMap): { text: string; fallbacks: LinkFallback[] } {
+    let text = payloadText;
+    const fallbacks: LinkFallback[] = [];
+    for (const source of LINK_SOURCES) {
+        // Only a payload that actually carries the slot needs it filled (and recorded).
+        if (!text.includes(source.placeholder)) continue;
+        const own = links[source.receipt];
+        const url = own ?? (source.fallback === undefined ? undefined : links[source.fallback]);
+        if (url === undefined) continue;
+        if (own === undefined && source.fallback !== undefined) {
+            fallbacks.push({ placeholder: source.placeholder, source: source.fallback, url });
+        }
+        text = text.split(source.placeholder).join(JSON.stringify(url).slice(1, -1));
+    }
+    return { text, fallbacks };
+}
 
 /** Read the plan's rows for one window, failing on a missing or malformed plan. */
 async function readPlan(fs: FileSystem, workDir: string, window: PublishWindow): Promise<PublishPlan> {
@@ -1270,6 +1320,9 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
             unresolved.push({ id: row.id, reason: `prepared as ${receipt.mode ?? 'unknown'}, not published live` });
         }
     }
+    // 0432 R3: "content published, cover patch skipped" must not read like "content not published".
+    // The diagnostic rides the settlement record and NEVER enters `unresolved`.
+    const coverPatch = await readCoverPatchDiagnostic(fs, publishDir);
     const settlement = {
         schemaVersion: 1,
         window: parsedWindow.data,
@@ -1277,6 +1330,7 @@ export async function runPublishMatrixSettle(args: string[], deps: PublishMatrix
         parentRunId,
         marked: unresolved.length === 0,
         unresolved,
+        ...(coverPatch !== undefined ? { coverPatch } : {}),
     };
     await fs.ensureDir(publishDir);
     const settlementPath = join(publishDir, `settlement.${parsedWindow.data}.json`);
@@ -1550,6 +1604,45 @@ async function readOfficialAccountArticleIds(fs: FileSystem, publishDir: string,
     return ids;
 }
 
+/**
+ * The post-publish cover patch's verdict for this window (0432 R3).
+ *
+ * `publish-matrix-patch-surfdash` runs immediately before settlement and leaves
+ * `4-publish/patch-surfdash.result.json`. A live page whose cover the patch could not source reads
+ * `status: 'skipped'` WITH its page URL — that is what separates "content published, cover patch
+ * skipped" from the `unresolved` rows, which mean "content not published". It is recorded, never
+ * blocking: the post is already live and its og:image resolves, so holding the selection over a
+ * cosmetic patch would invite a needless resend.
+ */
+export interface CoverPatchDiagnostic {
+    status: 'applied' | 'skipped';
+    /** Why the cover was not patched; '' when it was applied. */
+    reason: string;
+    /** The live page the patch concerns; '' when the plugin was not told it. */
+    pageUrl: string;
+}
+
+/** Read the patch stage's cover verdict, or undefined when this window produced no patch artifact. */
+async function readCoverPatchDiagnostic(fs: FileSystem, publishDir: string): Promise<CoverPatchDiagnostic | undefined> {
+    const path = join(publishDir, 'patch-surfdash.result.json');
+    if (!(await fs.exists(path))) return undefined;
+    try {
+        const result = JSON.parse(await fs.readFile(path)) as { metadata?: { coverPatch?: unknown } };
+        const coverPatch = result.metadata?.coverPatch;
+        // An absent or malformed verdict is not evidence of a patched cover: say nothing.
+        if (coverPatch === null || typeof coverPatch !== 'object' || Array.isArray(coverPatch)) return undefined;
+        const entry = coverPatch as Record<string, unknown>;
+        if (entry.status !== 'applied' && entry.status !== 'skipped') return undefined;
+        return {
+            status: entry.status,
+            reason: typeof entry.reason === 'string' ? entry.reason : '',
+            pageUrl: typeof entry.pageUrl === 'string' ? entry.pageUrl : '',
+        };
+    } catch {
+        return undefined;
+    }
+}
+
 /** Mode ordering for ledger adoption: a wider earlier dispatch covers a narrower later one. */
 const DISPATCH_MODE_RANK: Record<DispatchMode, number> = { off: 0, dummy: 1, draft: 2, live: 3 };
 
@@ -1579,9 +1672,12 @@ function ledgerSuppresses(row: PublishPlanRow, entry: DispatchEntry | undefined,
  * `publish-matrix-send`: dispatch the plan's rows in tier order and record one receipt per row.
  *
  * Tier 0 is the publication contract: serial and first, because every later tier's
- * `{{article_url}}` / `{{podcast_url}}` resolves from its receipts. A failed tier-0 row fails only
- * the later rows whose payload actually asks for the missing link (`unresolved-link`, effect none);
- * unrelated channels still dispatch. Resend rules are the itc ones, inherited through `sendRows` —
+ * `{{article_url}}` / `{{podcast_url}}` resolves from its receipts. A missing tier-0 link fails only
+ * the later rows whose payload actually asks for it: `{{podcast_url}}` falls back to the tier-0
+ * article URL (the substitution is recorded as a `link-fallback` event, 0431 R1/R2), and a row whose
+ * link AND fallback are both missing fails with `effect: none` and a named reason
+ * (`podcast-link-missing`; `unresolved-link` for a slot that declares no fallback). Unrelated
+ * channels still dispatch. Resend rules are the itc ones, inherited through `sendRows` —
  * a succeeded row is skipped, a live row with an unknown effect is never resent, and `--retry` only
  * resends `effect: none` failures.
  */
@@ -1874,13 +1970,23 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                             });
                         }
                     }
-                    let resolved = raw;
-                    for (const source of LINK_SOURCES) {
-                        const url = links[source.receipt];
-                        if (url === undefined) continue;
-                        // The payload is JSON text: escape the URL as a string fragment so a quote or
-                        // backslash in it cannot break the document.
-                        resolved = resolved.split(source.placeholder).join(JSON.stringify(url).slice(1, -1));
+                    const substitution = substituteLinkPlaceholders(raw, links);
+                    let resolved = substitution.text;
+                    for (const fallback of substitution.fallbacks) {
+                        // 0431 R2: a substituted link is named in the event trail, so an operator can
+                        // see WHICH link a post carried when the placeholder's own surface is missing.
+                        await appendEvent(fs, publishDir, {
+                            event: 'link-fallback',
+                            window: plan.window,
+                            id: row.key,
+                            placeholder: fallback.placeholder,
+                            source: fallback.source,
+                            url: fallback.url,
+                            mode: row.mode,
+                        });
+                        echo(
+                            `publish-matrix-send: ${row.key} carries the ${fallback.source} link in place of ${fallback.placeholder} (no succeeded receipt for it)`,
+                        );
                     }
                     if (cardLink !== undefined) {
                         // The confirmed link rides the APPROVED card bytes: the shared `cards` variant
@@ -1893,29 +1999,37 @@ export async function sendPublishMatrix(args: string[], deps: PublishMatrixDeps 
                             `publish-matrix-send: ${row.key} carries the confirmed Official Account link (${carried.placement})`,
                         );
                     }
-                    if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
+                    let stillUnresolved = LINK_SOURCES.filter((source) => resolved.includes(source.placeholder));
+                    if (stillUnresolved.length > 0 && row.mode === 'draft') {
                         // A draft may proceed without the cross-link (0383 follow-up): WeChat's
                         // `originalUrl` is optional and a draft is reviewed before it publishes, so
                         // a missing surfdash URL must not block the draft. A live row keeps refusing —
                         // a published article carrying an unresolved placeholder is worse than none.
-                        const unresolved = LINK_SOURCES.filter((source) => resolved.includes(source.placeholder)).map(
-                            (source) => source.placeholder,
+                        // Only the optional `originalUrl` slot is dropped; a body that carries the
+                        // placeholder still fails, so nothing publishes a literal `{{article_url}}`.
+                        const draftMayDropLink = stillUnresolved.every(
+                            (source) => source.placeholder === '{{article_url}}',
                         );
-                        const draftMayDropLink =
-                            row.mode === 'draft' &&
-                            unresolved.every((placeholder) => placeholder === '{{article_url}}');
-                        if (draftMayDropLink) {
-                            resolved = resolved.replace(
-                                /"originalUrl"\s*:\s*"\{\{article_url\}\}"/,
-                                '"originalUrl": ""',
-                            );
+                        const dropped = draftMayDropLink
+                            ? resolved.replace(/"originalUrl"\s*:\s*"\{\{article_url\}\}"/, '"originalUrl": ""')
+                            : resolved;
+                        if (dropped !== resolved) {
+                            resolved = dropped;
+                            // Re-scan instead of clearing: the drop only removed the optional
+                            // `originalUrl` slot, and a body that still carries the placeholder must
+                            // keep refusing (the invariant the comment above states).
+                            stillUnresolved = LINK_SOURCES.filter((source) => resolved.includes(source.placeholder));
                             echo(
                                 `publish-matrix-send: ${row.key} is a draft — dropped the unresolved {{article_url}} cross-link`,
                             );
                         }
                     }
-                    if (LINK_SOURCES.some((source) => resolved.includes(source.placeholder))) {
-                        return { error: 'unresolved-link' };
+                    if (stillUnresolved.length > 0) {
+                        // 0431 R1: a slot that declares a fallback and is STILL empty means both its own
+                        // surface and the fallback are missing, so the row is skipped with a reason that
+                        // names the missing link instead of the generic code the operator has to decode.
+                        const namable = stillUnresolved.find((source) => source.fallback !== undefined);
+                        return { error: namable === undefined ? 'unresolved-link' : `${namable.receipt}-link-missing` };
                     }
                     const resolvedPath = join(workDir, '4-publish', 'payloads', `content.${row.key}.resolved.json`);
                     await fs.writeFile(resolvedPath, resolved);

@@ -35,6 +35,8 @@ const topicSelectionAttempts = join(import.meta.dir, '../../../plugins/kk/script
 const newsEditorialLedger = join(import.meta.dir, '../../../plugins/kk/scripts/news-editorial-ledger.ts');
 const sourceCitation = join(import.meta.dir, '../../../plugins/kk/scripts/source-citation.ts');
 const episodeIdentity = join(import.meta.dir, '../../../plugins/kk/scripts/episode-identity.ts');
+// 0433: daily-stages imports the deterministic CN-lead gate, so a lone-runner copy ships it too.
+const cnLeadGate = join(import.meta.dir, '../../../plugins/kk/scripts/cn-lead-gate.ts');
 
 // A real 1x1 JPEG (generated once via `sips -s format jpeg` from a 1x1 png) so the jpg transcode
 // test exercises sips with data it can actually decode.
@@ -1202,10 +1204,13 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
     it('daily-extract widens the store window only while the pool misses the floor (2026-10-19)', () => {
         withTempDir((dir) => {
             const calls = join(dir, 'calls.log');
-            // 24h answers three 600-char items; every wider window answers eight 2.1k-char items.
-            // 0377: the widen decision uses the worst measured ratio (0.28) at voxcpm's 5.2 cps, so the
-            // rich rung is 8 x 2,110 = 16,880 chars -> 909 s = 15.1 min, just over the 15 min floor.
-            // The stage must stop at the first window that clears it.
+            // 24h answers three 600-char items; every wider window answers eight 6.95k-char items.
+            // 0434: the widen decision projects the ADMITTED set — cold start 0.30 admission x 0.28
+            // spoken/kept — at voxcpm's 5.2 cps, so the rich rung needs 8 x 6,950 = 55,600 pool chars:
+            // 55,600 x 0.30 x 0.28 / 5.2 = 898 s + 8 s intro = 906 s = 15.1 min, just over the floor.
+            // The stage must stop at the first window that clears it. The old 16,880-char fixture was
+            // "rich" only by its raw chars — the 2026-11-24 pool that forecast 22.8 min for an episode
+            // that measured 12.6, so it must NOT clear the floor any more.
             const env = fakeKk(
                 dir,
                 [
@@ -1215,7 +1220,7 @@ describe('kk workflow stage runner — kk-daily-ai-voice verbs (0133)', () => {
                     "const out = args[args.indexOf('--out') + 1];",
                     'fs.appendFileSync(process.env.CALLS, win + "\\n");',
                     'const thin = win === "24h";',
-                    'const docs = Array.from({ length: thin ? 3 : 8 }, (_, i) => ({ id: win + i, title: "T" + i, body: (thin ? "x" : "y").repeat(thin ? 600 : 2100) }));',
+                    'const docs = Array.from({ length: thin ? 3 : 8 }, (_, i) => ({ id: win + i, title: "T" + i, body: (thin ? "x" : "y").repeat(thin ? 600 : 6950) }));',
                     'fs.writeFileSync(out, JSON.stringify(docs));',
                 ].join('\n'),
             );
@@ -4873,6 +4878,7 @@ describe('F613 (0162) — script-write stage wiring', () => {
             copyFileSync(newsEditorialLedger, join(dir, 'news-editorial-ledger.ts'));
             copyFileSync(sourceCitation, join(dir, 'source-citation.ts'));
             copyFileSync(episodeIdentity, join(dir, 'episode-identity.ts'));
+            copyFileSync(cnLeadGate, join(dir, 'cn-lead-gate.ts'));
             const result = run(
                 ['daily-script-style', dir, '20260925'],
                 { HOME: dir, KK_WORKFLOWS_DIR: '' },

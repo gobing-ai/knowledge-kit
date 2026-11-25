@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { resolveBundlePath } from '../publish-matrix';
 import { gatePayload, progressPayload } from '../status-progress';
 import { registerContentGenerateVerbs } from './content-generate';
 import { registerContentLaunchVerbs } from './content-launch';
@@ -360,6 +361,13 @@ async function readJson(fs: FileSystem, path: string): Promise<JsonObject | null
     }
 }
 
+/** How many variants a bundle summary advertises, or null when the map is not shaped like one. */
+function variantCount(variants: unknown): number | null {
+    if (Array.isArray(variants)) return variants.length;
+    if (isObject(variants)) return Object.keys(variants).length;
+    return null;
+}
+
 async function statusPayload(
     fs: FileSystem,
     workDir: string,
@@ -376,14 +384,24 @@ async function statusPayload(
                   executor: optionalString(receipt.executor),
                   checkoutCommit: optionalString(receipt.checkoutCommit),
               };
-    const bundle = await readJson(fs, join(workDir, '4-publish', 'bundle.json'));
+    // 0435: one bundle location rule for the whole CLI. `resolveBundlePath` prefers the run root
+    // because the news freeze writes the bundle there (0382) and resolves every variant path
+    // relative to it, so reading a hard-coded `4-publish/bundle.json` reported `bundle: null` for a
+    // frozen, already-published news run — the status surface said "nothing shipped" exactly when
+    // something had. A bundle resolved at the run root is frozen by construction: only the freeze
+    // writes one there. The `4-publish/` article layout keeps the exact summary shape it had before
+    // this change (R3), which is why the count is an addition to the root shape alone.
+    const bundlePath = await resolveBundlePath(fs, workDir);
+    const bundle = await readJson(fs, bundlePath);
+    const atRunRoot = bundlePath === join(workDir, 'bundle.json');
     const bundleSummary =
         bundle === null
             ? null
             : {
-                  frozen: typeof bundle.frozen === 'boolean' ? bundle.frozen : null,
+                  frozen: typeof bundle.frozen === 'boolean' ? bundle.frozen : atRunRoot ? true : null,
                   runId: optionalString(bundle.runId),
                   variants: bundle.variants ?? null,
+                  ...(atRunRoot ? { variantCount: variantCount(bundle.variants) } : {}),
               };
     const windows: JsonObject = {};
     const publishDir = join(workDir, '4-publish');

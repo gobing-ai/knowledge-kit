@@ -116,6 +116,8 @@ async function runDefaultLauncher(options: {
     let injected: unknown;
     let snapshots = 0;
     const context = {
+        // 0436 R2: restore reads the jar before injecting anything; this fixture's profile holds none.
+        cookies: async () => [],
         addCookies: async (cookies: unknown) => {
             injected = cookies;
         },

@@ -1895,22 +1895,25 @@ describe('surfdash-pub post-patch (2026-10-12 boundary move from the kk stage)',
         });
     });
 
-    test('patchPostFiles throws naming the locale when no remote cover or uploader exists', async () => {
+    test('patchPostFiles records a cover skip naming the locale when no remote cover or uploader exists', async () => {
         await withTree(async (root, localCover) => {
             for (const locale of ['zh', 'en']) {
                 const md = await readFile(post(root, locale), 'utf-8');
                 await writeFile(post(root, locale), md.replace(/^image:.*$/m, '').replace(/^og_image:.*$/m, ''));
             }
-            await expect(
-                patchPostFiles({
-                    postPath: post(root, 'zh'),
-                    coverUrl: '',
-                    showNotesUrl: '',
-                    localCover: join(root, 'non-existent-cover.png'),
-                    dateIso: '2026-10-11',
-                }),
-            ).rejects.toThrow('zh post has no remote https:// cover');
+            // 0432 R2: a live page with no https cover source is a recorded warning, not a failure.
+            const skipped = await patchPostFiles({
+                postPath: post(root, 'zh'),
+                coverUrl: '',
+                showNotesUrl: '',
+                localCover: join(root, 'non-existent-cover.png'),
+                dateIso: '2026-10-11',
+            });
+            expect(skipped.coverPatch.status).toBe('skipped');
+            expect(skipped.coverPatch.skipped).toEqual(['zh', 'en']);
+            expect(skipped.coverPatch.reason).toContain('zh/en post has no remote https:// cover');
 
+            // An uploader that returns something unservable is still a loud argument error.
             await expect(
                 patchPostFiles({
                     postPath: post(root, 'zh'),

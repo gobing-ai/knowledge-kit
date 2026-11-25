@@ -67,6 +67,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
+import { checkCnLeadPlan, enforceCnLead } from './cn-lead-gate.ts';
 import {
     EPISODE_IDENTITY_KEY,
     type EpisodeIdentity,
@@ -161,7 +162,10 @@ export function dailyQcContent(args: string[]): void {
             ? String(
                   Math.max(
                       0,
-                      Math.ceil(((floorMinutes * 60 - 8) * spokenCharRate(vdriver)) / readKeptRatio(workDir).ratio),
+                      Math.ceil(
+                          ((floorMinutes * 60 - 8) * spokenCharRate(vdriver)) /
+                              readSpokenCalibration(workDir).keptRatio,
+                      ),
                   ),
               )
             : '';
@@ -384,25 +388,64 @@ const SPEAK_CHAR_EXPANSION = 1.4;
  * (0377).
  *
  * This constant is only the fallback: both gates prefer the ratio a previous run recorded, and the
- * two records carry DIFFERENT denominators (see `readKeptRatio` — using one ratio for both was the
- * 2026-11-16 refusal of a 23-min episode).
+ * two records carry DIFFERENT denominators (see `readSpokenCalibration` — using one ratio for both
+ * was the 2026-11-16 refusal of a 23-min episode).
  */
 const SPEAK_CHAR_EXPANSION_FLOOR = 0.28;
 
 /**
- * Where a run records the ratios it actually delivered (0377 R2/R3). Two denominators, because the
- * two pre-spend consumers measure different sets: `ratio` is spoken/pool (the ladder, which judges
- * the raw extracted pool) and `keptRatio` is spoken/kept-candidate chars (the floor gate, which
- * judges what QC actually admitted). The gates read the newest record from the sibling run
- * directories, so they judge today's material by what the writer really produced last time instead
- * of a constant that was calibrated once.
+ * Where a run records the measures it actually delivered (0377 R2/R3, extended by 0434). Three
+ * numbers, because the two pre-spend consumers measure different sets and the ladder has to bridge
+ * them: `ratio` is spoken/pool, `keptRatio` is spoken/kept-candidate chars (the floor gate's
+ * denominator), and `keepRate` is kept/pool — the admission rate that converts one into the other.
+ * The gates read the newest record from the sibling run directories, so they judge today's material
+ * by what the writer really produced last time instead of a constant that was calibrated once.
  */
 const SPOKEN_RATIO_SUFFIX = '_09_spoken-ratio.json';
 
-/** The measured ratio one run delivered, and where it came from. */
-interface SpokenRatio {
-    ratio: number;
+/**
+ * The cold-start QC admission rate — kept-candidate chars over raw pool chars — the widen ladder
+ * projects with when no run has recorded one (0434).
+ *
+ * Measured: 2026-11-16 13,963/38,241 kept = 0.37, 2026-11-24 12,937/42,925 = 0.30. The LOW end, by
+ * the same "worst measured" argument the ratio constants make above: the ladder's cheap error is a
+ * rung too many, and its expensive one is an authoring pass the floor gate then refuses because the
+ * admitted set was never as large as the pool suggested.
+ */
+const KEEP_RATE_FLOOR = 0.3;
+
+/**
+ * How far today's QC admission rate may move from the rate the estimate projected with before the
+ * run reports it (0434 R3). The 2026-11-24 run moved 22 points below its recorded day and nothing
+ * said so: the ladder's 22.8 min estimate was absorbed as if it were still calibrated.
+ */
+const KEEP_RATE_DRIFT_BOUND = 0.05;
+
+/** One measured rate and where it came from — every artifact prints the pair (0434 R2). */
+interface KeepRate {
+    rate: number;
     source: string;
+}
+
+/**
+ * A run's recorded calibration, read in one scan: both denominators the gates multiply by, and the
+ * admission rate that converts a raw pool into the set the floor gate measures (0434 R1).
+ *
+ * `poolRatio` is spoken/raw pool chars, `keptRatio` is spoken/kept-candidate chars, and `keepRate` is
+ * kept-candidate/raw pool chars, so `poolRatio === keepRate × keptRatio` for a self-consistent
+ * record. The ladder projects `poolChars × keepRate` and multiplies by `keptRatio`; the floor gate
+ * multiplies the chars it actually sees by `keptRatio`. One arithmetic, one denominator.
+ */
+interface SpokenCalibration {
+    /** spoken / raw pool chars. */
+    poolRatio: number;
+    /** spoken / kept-candidate chars — what every kept-set estimate multiplies by. */
+    keptRatio: number;
+    /** kept-candidate chars / raw pool chars. */
+    keepRate: number;
+    poolRatioSource: string;
+    keptRatioSource: string;
+    keepRateSource: string;
 }
 
 /** Clamp a recorded ratio into a plausible band: a corrupt file must not freeze or flood the ladder. */
@@ -410,93 +453,55 @@ function clampRatio(value: number): number {
     return Math.min(2, Math.max(0.05, value));
 }
 
-/**
- * The newest recorded spoken/raw ratio across this workflow's run directories, or the calibrated
- * floor constant when no run has recorded one yet. `workDir` is one run directory, so its parent is
- * the workflow directory the sibling runs live in.
- */
-function readSpokenRatio(workDir: string): SpokenRatio {
-    const base = resolve(workDir, '..');
-    let newest: { at: number; ratio: number; from: string } | null = null;
-    let entries: string[] = [];
-    try {
-        entries = readdirSync(base);
-    } catch {
-        return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
-    }
-    // Best-effort calibration only: a test workdir or an operator scratch dir may sit directly in a
-    // shared temp parent with hundreds of thousands of entries. Scanning each one took 20–40s per QC
-    // stage (measured 2026-11-23 on a 556k-entry tempdir), so skip the sibling calibration instead of
-    // blocking the run. Normal works roots have far fewer runs and keep the newest-ratio behavior.
-    if (entries.length > 5_000)
-        return {
-            ratio: SPEAK_CHAR_EXPANSION_FLOOR,
-            source: `default 0.28 (sibling scan skipped: ${entries.length} entries)`,
-        };
-    for (const entry of entries) {
-        const dir = join(base, entry, '21-plan');
-        let files: string[] = [];
-        try {
-            files = readdirSync(dir).filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX));
-        } catch {
-            continue;
-        }
-        for (const file of files) {
-            const path = join(dir, file);
-            try {
-                const parsed = readJson(path) as Record<string, unknown> | null;
-                const ratio = Number(parsed?.ratio);
-                if (!Number.isFinite(ratio) || ratio <= 0) continue;
-                const at = statSync(path).mtimeMs;
-                if (newest === null || at > newest.at) newest = { at, ratio, from: path };
-            } catch {
-                // A malformed record is not evidence; the next run overwrites it.
-            }
-        }
-    }
-    if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded run)' };
-    return { ratio: clampRatio(newest.ratio), source: `${newest.from} (${newest.ratio.toFixed(2)}x)` };
+/** Clamp a recorded admission rate: zero admits nothing, and >1 is not an admission rate. */
+function clampKeepRate(value: number): number {
+    return Math.min(1, Math.max(0.01, value));
+}
+
+/** One recorded ratio file, parsed into the three measures the gates need. Null fields are absent. */
+interface RatioRecord {
+    path: string;
+    at: number;
+    poolRatio: number | null;
+    keptRatio: number | null;
+    keepRate: number | null;
 }
 
 /**
- * The newest recorded spoken/KEPT ratio across sibling runs, or the cold-start constant.
+ * The newest recorded spoken-ratio artifacts across this workflow's sibling run directories.
  *
- * WHY this is separate from `readSpokenRatio` (2026-11-16): one constant was applied to two
- * different denominators. The ladder multiplies the raw pool (38,241 chars that day) while this gate
- * multiplies the kept candidates (13,963 chars — planning admitted 37% of the pool), so the same
- * 0.28 read as a 34.5 min "clears" in the ladder and a 12.7 min "refusing" at the gate, and the run
- * paid for the planning pass to discover it. The writer then delivered 7,194 spoken chars ≈ 23 min:
- * the refusal discounted the planning shrink twice. `keptRatio` for that run is 0.515.
+ * One scan serves all three measures (0434): the two ratio readers it replaces used to walk the
+ * same directories separately with two different size guards, so a large workspace could calibrate
+ * the ladder from one run and the floor gate from another.
  */
-function readKeptRatio(workDir: string): SpokenRatio {
+function ratioRecords(workDir: string): RatioRecord[] {
+    // `workDir` is one run directory, so its parent is the workflow directory the siblings live in.
     const base = resolve(workDir, '..');
-    let newest: { at: number; ratio: number; from: string } | null = null;
     let entries: string[] = [];
     try {
-        // A shared temp parent can hold hundreds of thousands of directories. Read names once and
-        // open only run-shaped candidates past the small-workspace threshold; opening every one took
-        // 20–40s per QC stage (556k entries measured 2026-11-23).
         entries = readdirSync(base);
     } catch {
-        return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no sibling runs)' };
+        return [];
     }
-    const ratioFiles: string[] = [];
+    const paths: string[] = [];
     if (entries.length > 5_000) {
-        // Native globbing skips the non-run directories instead of opening each of them in JS. The
-        // `kk-*` form measured ~2s on that same parent; a bare `*` can hit broken symlinks.
+        // A shared temp parent can hold hundreds of thousands of directories. Read names once and
+        // let native globbing skip the non-run ones instead of opening each in JS; the `kk-*` form
+        // measured ~2s on a 556k-entry parent while opening every entry took 20–40s per stage
+        // (2026-11-23). A bare `*` can hit broken symlinks, so the two run-shaped patterns are it.
         for (const pattern of [`kk-*/21-plan/*${SPOKEN_RATIO_SUFFIX}`, `20??????/21-plan/*${SPOKEN_RATIO_SUFFIX}`]) {
             try {
-                ratioFiles.push(...new Bun.Glob(pattern).scanSync({ cwd: base, onlyFiles: true, absolute: true }));
+                paths.push(...new Bun.Glob(pattern).scanSync({ cwd: base, onlyFiles: true, absolute: true }));
             } catch {
                 // Best-effort calibration: a shared temp parent holds dangling symlinks and dirs that
-                // vanish mid-scan (ENOENT from the glob walk), which must never fail the QC stage.
+                // vanish mid-scan (ENOENT from the glob walk), which must never fail a stage.
             }
         }
     } else {
         for (const entry of entries) {
             const dir = join(base, entry, '21-plan');
             try {
-                ratioFiles.push(
+                paths.push(
                     ...readdirSync(dir)
                         .filter((file) => file.endsWith(SPOKEN_RATIO_SUFFIX))
                         .map((file) => join(dir, file)),
@@ -506,27 +511,157 @@ function readKeptRatio(workDir: string): SpokenRatio {
             }
         }
     }
-    for (const path of ratioFiles) {
+    const records: RatioRecord[] = [];
+    for (const path of paths) {
         try {
             const parsed = readJson(path) as Record<string, unknown> | null;
-            // A pre-2026-11-16 record carries no kept ratio at all: skip it rather than divide by
-            // its pool figure, which is what produced the double discount.
-            const ratio = Number(parsed?.keptRatio);
-            if (!Number.isFinite(ratio) || ratio <= 0) continue;
-            const at = statSync(path).mtimeMs;
-            if (newest === null || at > newest.at) newest = { at, ratio, from: path };
+            if (parsed === null || typeof parsed !== 'object') continue;
+            const positive = (value: unknown): number | null => {
+                const number = Number(value);
+                return Number.isFinite(number) && number > 0 ? number : null;
+            };
+            const poolChars = positive(parsed.poolChars);
+            const keptChars = positive(parsed.keptChars);
+            const poolRatio = positive(parsed.ratio);
+            const keptRatio = positive(parsed.keptRatio);
+            records.push({
+                path,
+                at: statSync(path).mtimeMs,
+                poolRatio,
+                keptRatio,
+                keepRate: recordKeepRate(parsed, poolChars, keptChars, poolRatio, keptRatio),
+            });
         } catch {
             // A malformed record is not evidence; the next run overwrites it.
         }
     }
-    if (newest === null) return { ratio: SPEAK_CHAR_EXPANSION_FLOOR, source: 'default 0.28 (no recorded kept ratio)' };
-    return { ratio: clampRatio(newest.ratio), source: `${newest.from} (${newest.ratio.toFixed(2)}x)` };
+    return records;
 }
 
 /**
- * Record what this run delivered — spoken script chars over raw pool chars, and over the kept
- * candidates — and warn when it drifted from the ratio the widen decision used. A refused script
- * records too: a thin day teaches the ladder even though it produced no episode.
+ * The QC admission rate one record implies: kept/pool when both char counts were recorded, else the
+ * quotient of the two ratios (`spoken/pool ÷ spoken/kept`), else a rate a later writer stamped.
+ * A pre-2026-11-16 record carries only the pool ratio, so it yields no admission rate — which is
+ * exactly right: it never measured one (the double discount of 2026-11-16).
+ */
+function recordKeepRate(
+    parsed: Record<string, unknown>,
+    poolChars: number | null,
+    keptChars: number | null,
+    poolRatio: number | null,
+    keptRatio: number | null,
+): number | null {
+    if (poolChars !== null && keptChars !== null) return clampKeepRate(keptChars / poolChars);
+    if (poolRatio !== null && keptRatio !== null) return clampKeepRate(poolRatio / keptRatio);
+    const stamped = Number(parsed.keepRate);
+    return Number.isFinite(stamped) && stamped > 0 ? clampKeepRate(stamped) : null;
+}
+
+/**
+ * The calibration the pre-spend estimates use, each measure taken from the newest record that
+ * carries it and each falling back to its cold-start constant with a `default …` provenance.
+ *
+ * WHY one record for all three (0434): the ladder and the floor gate must multiply the SAME
+ * denominator. A pool-denominated ratio applied to the admitted set discounted planning's shrink
+ * twice (2026-11-16: gate said 12.7 min, the writer delivered 23); a pool ratio the ladder reads
+ * alone is only the gate's arithmetic when today's admission rate matches the recorded day
+ * (2026-11-24: ladder 22.8 min, gate 13.1, delivered 12.6).
+ */
+function readSpokenCalibration(workDir: string): SpokenCalibration {
+    const records = ratioRecords(workDir);
+    /** The value and path of the newest record that measured `field`, or null when none did. */
+    const newestWith = (field: 'poolRatio' | 'keptRatio' | 'keepRate'): { value: number; path: string } | null => {
+        let newest: RatioRecord | null = null;
+        for (const record of records) {
+            if (record[field] === null) continue;
+            if (newest === null || record.at > newest.at) newest = record;
+        }
+        if (newest === null) return null;
+        const value = newest[field];
+        return value === null ? null : { value, path: newest.path };
+    };
+    const pool = newestWith('poolRatio');
+    const kept = newestWith('keptRatio');
+    const rate = newestWith('keepRate');
+    const fallback = SPEAK_CHAR_EXPANSION_FLOOR.toFixed(2);
+    return {
+        poolRatio: pool === null ? SPEAK_CHAR_EXPANSION_FLOOR : clampRatio(pool.value),
+        poolRatioSource:
+            pool === null ? `default ${fallback} (no recorded pool ratio)` : `${pool.path} (${pool.value.toFixed(2)}x)`,
+        keptRatio: kept === null ? SPEAK_CHAR_EXPANSION_FLOOR : clampRatio(kept.value),
+        keptRatioSource:
+            kept === null ? `default ${fallback} (no recorded kept ratio)` : `${kept.path} (${kept.value.toFixed(2)}x)`,
+        keepRate: rate === null ? KEEP_RATE_FLOOR : rate.value,
+        keepRateSource:
+            rate === null
+                ? `default ${KEEP_RATE_FLOOR.toFixed(2)} (no recorded keep rate)`
+                : `${rate.path} (kept ${rate.value.toFixed(2)} of pool)`,
+    };
+}
+
+/**
+ * The keep rate the widen ladder projected today's admitted set from — the assumption every
+ * downstream estimate inherits. Read from the ladder artifact itself (what actually ran), falling
+ * back to the recorded calibration when the extract stage left no ladder behind.
+ */
+function assumedKeepRate(workDir: string, calibration: SpokenCalibration): KeepRate {
+    const ladder = readJson(join(workDir, '10-collect', 'ladder.json')) as Record<string, unknown> | null;
+    const rate = Number(ladder?.keepRate);
+    if (Number.isFinite(rate) && rate > 0) {
+        const source = typeof ladder?.keepRateSource === 'string' ? ladder.keepRateSource : 'ladder.json';
+        return { rate: clampKeepRate(rate), source };
+    }
+    return { rate: calibration.keepRate, source: calibration.keepRateSource };
+}
+
+/**
+ * The admission rate this run achieved, measured from the pool it extracted and the set QC admitted
+ * — null when either artifact is missing (a workspace that never ran extract has no pool to divide).
+ */
+function observedKeepRate(workDir: string, keptChars: number): KeepRate | null {
+    const poolPath = join(workDir, '10-collect', 'pool.json');
+    if (!isFile(poolPath) || keptChars <= 0) return null;
+    const pool = readJson(poolPath);
+    const poolChars = rawChars(Array.isArray(pool) ? pool : []);
+    if (poolChars <= 0) return null;
+    return { rate: keptChars / poolChars, source: `${poolPath} (${keptChars} kept of ${poolChars})` };
+}
+
+/** A measured admission rate, the rate an estimate assumed, and how far apart they are (0434 R3). */
+interface KeepRateDrift {
+    observed: KeepRate;
+    assumed: KeepRate;
+    /** observed − assumed: negative means QC admitted less than the estimate believed. */
+    delta: number;
+    beyondBound: boolean;
+}
+
+/**
+ * Compare the keep rate an estimate assumed against the one this run measured, and REPORT the
+ * difference beyond `KEEP_RATE_DRIFT_BOUND` instead of letting the estimate absorb it (0434 R3).
+ *
+ * A silently absorbed drift is what made the 2026-11-24 recovery decision impossible: 63 pool items
+ * forecast 22.8 min, the admitted 18 could make 13.1, and the run measured 12.6 — three numbers a
+ * human had to reconcile by hand.
+ */
+function keepRateDrift(assumed: KeepRate, observed: KeepRate | null, label: string): KeepRateDrift | null {
+    if (observed === null) return null;
+    const delta = observed.rate - assumed.rate;
+    const beyondBound = Math.abs(delta) > KEEP_RATE_DRIFT_BOUND;
+    if (beyondBound) {
+        const direction = delta < 0 ? 'over-predicts' : 'under-predicts';
+        console.error(
+            `keep rate drifted: QC admitted ${Math.round(observed.rate * 100)}% of the pool, the ${label} estimate assumed ${Math.round(assumed.rate * 100)}% (${assumed.source}) — the estimate ${direction} the episode by ~${Math.round((Math.abs(delta) / assumed.rate) * 100)}%; re-read it before trusting it`,
+        );
+    }
+    return { observed, assumed, delta, beyondBound };
+}
+
+/**
+ * Record what this run delivered — spoken script chars over raw pool chars, over the kept
+ * candidates, and the admission rate between them — and warn when it drifted from the estimate the
+ * widen decision used. A refused script records too: a thin day teaches the ladder even though it
+ * produced no episode.
  */
 function recordSpokenRatio(workDir: string, runDate: string, spokenChars: number): void {
     const poolPath = join(workDir, '10-collect', 'pool.json');
@@ -545,23 +680,34 @@ function recordSpokenRatio(workDir: string, runDate: string, spokenChars: number
     writeJsonText(out, {
         runDate,
         poolChars,
-        ...(keptChars > 0 ? { keptChars, keptRatio: round3(spokenChars / keptChars) } : {}),
+        // The admission rate is recorded explicitly (0434) so the next day's ladder projects the
+        // admitted set from a measured number instead of re-deriving it from the two ratios.
+        ...(keptChars > 0
+            ? { keptChars, keptRatio: round3(spokenChars / keptChars), keepRate: round3(keptChars / poolChars) }
+            : {}),
         spokenChars,
         ratio,
     });
-    // Drift warning: the ladder judged this pool with some ratio; the writer just delivered a
-    // different one. A wide gap means the next run's ladder is working from a stale measure.
+    // Drift warning: the ladder projected this pool at some spoken-chars-per-pool-char; the writer
+    // just delivered a different one. A wide gap means the next run's ladder is working from a stale
+    // measure. Compare against the projection the ladder actually made (keep rate × kept ratio) and
+    // fall back to the pool ratio a pre-0434 ladder recorded.
     let used: number | null = null;
     try {
         const ladder = readJson(join(workDir, '10-collect', 'ladder.json')) as Record<string, unknown> | null;
-        const candidate = Number(ladder?.ratioUsed);
-        if (Number.isFinite(candidate) && candidate > 0) used = candidate;
+        for (const key of ['spokenPerPoolChar', 'ratioUsed']) {
+            const candidate = Number(ladder?.[key]);
+            if (Number.isFinite(candidate) && candidate > 0) {
+                used = candidate;
+                break;
+            }
+        }
     } catch {
         used = null;
     }
     if (used !== null && Math.abs(ratio / used - 1) > 0.25) {
         console.error(
-            `spoken ratio drifted: this run delivered ${ratio.toFixed(2)}x of the pool, the ladder widened on ${used.toFixed(2)}x (see ${out})`,
+            `spoken ratio drifted: this run delivered ${ratio.toFixed(2)}x of the pool, the ladder projected ${used.toFixed(2)}x (see ${out})`,
         );
     }
 }
@@ -575,24 +721,47 @@ function rawChars(docs: unknown[]): number {
 }
 
 /**
- * The calibrated estimate over a kept pool (title+body characters × the recorded spoken/kept ratio,
- * over the driver's measured char rate, plus the 8 s intro sting) — shared by the pre-spend floor
- * gate (applyFloorGate) and the post-spend duration refusal (dailyEpisodeDuration, 0266), so both
- * artifacts report the same arithmetic. `seconds` is unrounded: the floor gate compares seconds.
+ * THE spoken-length arithmetic (0434): a spoken-char count × the ratio that set is denominated in,
+ * over the driver's measured char rate, plus the 8 s intro sting. Every estimate in this file is
+ * this one function — the floor gate and the post-spend refusal hand it the chars QC admitted, the
+ * ladder hands it the chars it projects QC will admit. `seconds` is unrounded: the floor gate
+ * compares seconds, the artifacts report minutes.
+ */
+function spokenLength(
+    chars: number,
+    expansion: number,
+    vdriver: string,
+): { minutes: number; seconds: number; chars: number } {
+    const seconds = 8 + (chars * expansion) / spokenCharRate(vdriver);
+    return { minutes: Math.round((seconds / 60) * 10) / 10, seconds, chars };
+}
+
+/**
+ * The calibrated estimate over a kept pool (title+body characters × the recorded spoken/kept ratio)
+ * — shared by the pre-spend floor gate (applyFloorGate) and the post-spend duration refusal
+ * (dailyEpisodeDuration, 0266), so both artifacts report the same arithmetic.
  *
- * Both callers must pass `readKeptRatio(...).ratio`. The 1.4 default is the pre-2026-11-16
- * raw-script expansion and is ~4.5x too high for the scripted writer: leaving it on the duration
- * refusal made the 2026-11-24 artifact claim a "pre-spend estimate 58.2 min" beside a measured
- * 12.6 min, which is the number an operator reads when deciding whether to recover the day.
+ * Both callers must pass `readSpokenCalibration(...).keptRatio`: this measures the ADMITTED set,
+ * which is what the kept ratio was measured on. The 1.4 default is the pre-2026-11-16 raw-script
+ * expansion and is ~4.5x too high for the scripted writer: leaving it on the duration refusal made
+ * the 2026-11-24 artifact claim a "pre-spend estimate 58.2 min" beside a measured 12.6 min, which is
+ * the number an operator reads when deciding whether to recover the day.
  */
 function estimateSpokenMinutes(
     docs: unknown[],
     vdriver: string,
     expansion: number = SPEAK_CHAR_EXPANSION,
 ): { minutes: number; seconds: number; chars: number } {
-    const chars = rawChars(docs);
-    const seconds = 8 + (chars * expansion) / spokenCharRate(vdriver);
-    return { minutes: Math.round((seconds / 60) * 10) / 10, seconds, chars };
+    return spokenLength(rawChars(docs), expansion, vdriver);
+}
+
+/**
+ * The admitted set a raw pool should yield (0434 R1): the ladder's denominator bridge. A pool is not
+ * an episode — QC admits a share of it, and multiplying the whole pool by a spoken/pool ratio only
+ * matches the floor gate's arithmetic on the day the admission rate was recorded.
+ */
+function projectKeptChars(poolChars: number, keepRate: number): number {
+    return Math.round(poolChars * keepRate);
 }
 
 /**
@@ -606,9 +775,12 @@ function estimateSpokenMinutes(
  * closes through run-report and the ledger exactly like an empty pool. The estimate and its inputs
  * land in a refusal artifact next to the candidates.
  *
- * The ratio comes from `readKeptRatio`, NOT the pool-denominated one the ladder uses: this gate
- * measures the admitted set, and applying the pool ratio to it discounted the planning shrink twice
- * (2026-11-16: estimated 12.7 min, the writer delivered 23).
+ * The ratio comes from `readSpokenCalibration(...).keptRatio`, NOT the pool-denominated one: this
+ * gate measures the admitted set, and applying the pool ratio to it discounted the planning shrink
+ * twice (2026-11-16: estimated 12.7 min, the writer delivered 23). The extraction ladder projects
+ * that same admitted set with the same ratio (0434), so the two artifacts agree by construction; the
+ * one number the projection cannot know is today's admission rate, which this gate measures and
+ * reports when it drifts past `KEEP_RATE_DRIFT_BOUND`.
  */
 function applyFloorGate(
     candidates: string,
@@ -630,12 +802,20 @@ function applyFloorGate(
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         return;
     }
-    const keptRatio = readKeptRatio(workDir);
+    const calibration = readSpokenCalibration(workDir);
     const {
         minutes: estimatedMinutes,
         seconds: estimatedSeconds,
         chars,
-    } = estimateSpokenMinutes(docs, vdriver, keptRatio.ratio);
+    } = estimateSpokenMinutes(docs, vdriver, calibration.keptRatio);
+    // 0434 R3: today's admitted share of the pool is measurable here for the first time — the ladder
+    // projected it from the recorded day. A drift beyond the bound is reported, never absorbed.
+    const assumed = assumedKeepRate(workDir, calibration);
+    const observed = observedKeepRate(workDir, chars);
+    const drift = keepRateDrift(assumed, observed, 'ladder');
+    // 0434 R2: one line an operator can compare against the ladder artifact without recomputing —
+    // the ratio, the path it came from, and the admission rate the estimate was built on.
+    const basis = `${calibration.keptRatio.toFixed(2)}x kept ratio (${calibration.keptRatioSource}), keep rate ${Math.round((observed?.rate ?? assumed.rate) * 100)}%`;
     if (estimatedSeconds >= floor * 60) {
         if (clearStaleRefusal && isFile(refusal)) unlinkSync(refusal);
         // Task 0392 R2: the floor gate observed this pool and admitted it — a stage that ran and
@@ -643,7 +823,9 @@ function applyFloorGate(
         recordSelectionStage(workDir, runDate, {
             stages: [{ stage: 'floor', input: docs.length, kept: docs.length, dropped: [] }],
         });
-        console.log(`floor gate: estimated ${estimatedMinutes} min from ${chars} chars — above the ${floor} min floor`);
+        console.log(
+            `floor gate: estimated ${estimatedMinutes} min from ${chars} chars at ${basis} — above the ${floor} min floor`,
+        );
         return;
     }
     const ids = docs.map((doc) => String((doc as Record<string, unknown> | null)?.id ?? ''));
@@ -659,18 +841,25 @@ function applyFloorGate(
             candidateChars: chars,
             // The ratio this refusal actually used, and where it came from (0377; 2026-11-16): the
             // gate measures the KEPT set, so a pool-denominated ratio under-predicts it badly.
-            expansion: keptRatio.ratio,
-            expansionSource: keptRatio.source,
+            expansion: calibration.keptRatio,
+            expansionSource: calibration.keptRatioSource,
+            // 0434 R2/R3: the admission rate this run achieved, the rate the ladder projected with,
+            // and the gap — so the refusal and the ladder artifact explain each other.
+            keepRate: observed?.rate ?? null,
+            keepRateSource: observed?.source ?? null,
+            keepRateAssumed: assumed.rate,
+            keepRateAssumedSource: assumed.source,
+            keepRateDrift: drift?.delta ?? null,
             charRate: spokenCharRate(vdriver),
             ids,
-            reason: `a ${docs.length}-item pool estimates ${estimatedMinutes} min of speech, below the ${floor} min floor — refusing before any TTS spend`,
+            reason: `a ${docs.length}-item pool estimates ${estimatedMinutes} min of speech at ${basis}, below the ${floor} min floor — refusing before any TTS spend`,
         }),
     );
     sted('write', candidates, () =>
         writeJsonText(candidates, { ...(content ?? {}), metadata: { ...metadataOf(content), docs: [] } }),
     );
     console.error(
-        `floor gate: ${docs.length} candidates estimate ${estimatedMinutes} min < ${floor} min — candidates emptied, the run closes as no-content (see ${refusal})`,
+        `floor gate: ${docs.length} candidates estimate ${estimatedMinutes} min at ${basis} < ${floor} min — candidates emptied, the run closes as no-content (see ${refusal})`,
     );
 }
 
@@ -756,36 +945,68 @@ export function dailyExtract(args: string[]): void {
             console.error(`extract: plan already authored — keeping the frozen pool (${poolPath})`);
             return;
         }
-        // 0377 R2: judge the pool by what the writer actually delivered last time. The calibrated
-        // 0.28 constant is only the fallback for a workflow that has never recorded a ratio.
-        const ratio = readSpokenRatio(workDir);
+        // 0377 R2 + 0434 R1: judge the pool by what the writer actually delivered last time, in the
+        // denominator the floor gate measures. The calibrated constants are only the fallback for a
+        // workflow that has never recorded either ratio.
+        const calibration = readSpokenCalibration(workDir);
         let chosen: { window: string; docs: unknown[] } | null = null;
-        const rungs: Array<{ window: string; items: number; chars: number; minutes: number; clears: boolean }> = [];
+        const rungs: Array<{
+            window: string;
+            items: number;
+            chars: number;
+            keptChars: number;
+            minutes: number;
+            clears: boolean;
+        }> = [];
         for (const ms of windows) {
             const label = formatWindowMs(ms);
             const attempt = join(workDir, '10-collect', `.pool-${label}.json`);
             kk(['store', 'extract', '--topic', topic, '--window', label, '--out', attempt, ...limit]);
             const parsed = readJson(attempt);
             const docs = Array.isArray(parsed) ? (parsed as unknown[]) : [];
-            const estimate = estimateSpokenMinutes(docs, vdriver, ratio.ratio);
+            // 0434 R1: a pool is not an episode. Estimate the set QC will ADMIT — the pool projected
+            // through the recording run's admission rate — and convert it at the spoken/kept ratio,
+            // which is the same arithmetic the floor gate applies to the set it actually receives.
+            // Multiplying the whole pool by a spoken/pool ratio only agrees with the gate on a day
+            // whose admission rate matches the recorded one: 2026-11-24 forecast 22.8 min off a
+            // 42,925-char pool while the admitted 12,937 chars could make 13.1 and the run measured
+            // 12.6, a "clears" that was already under the floor.
+            const poolChars = rawChars(docs);
+            const keptChars = projectKeptChars(poolChars, calibration.keepRate);
+            const estimate = spokenLength(keptChars, calibration.keptRatio, vdriver);
             const clears = estimate.seconds >= floor * 60;
-            rungs.push({ window: label, items: docs.length, chars: estimate.chars, minutes: estimate.minutes, clears });
+            rungs.push({
+                window: label,
+                items: docs.length,
+                chars: poolChars,
+                keptChars,
+                minutes: estimate.minutes,
+                clears,
+            });
             chosen = { window: label, docs };
             const verdict = gated
-                ? `estimated ${estimate.minutes} min at ${ratio.ratio.toFixed(2)}x — ${clears ? 'clears' : 'below'} the ${floor} min floor`
+                ? `estimated ${estimate.minutes} min from ${keptChars} projected kept chars of ${poolChars} at ${calibration.keptRatio.toFixed(2)}x kept ratio, keep rate ${Math.round(calibration.keepRate * 100)}% (${calibration.keepRateSource}) — ${clears ? 'clears' : 'below'} the ${floor} min floor`
                 : 'floor gate off';
             console.error(`extract: ${label} pool ${docs.length} item(s), ${verdict}`);
             if (!gated || clears) break;
             rmSync(attempt, { force: true });
         }
         const picked = chosen ?? { window: formatWindowMs(base), docs: [] as unknown[] };
-        // 0377 R3: the decision is an artifact, not just a stderr line — the run report and
-        // `kk news status` read which measure drove it, the rung chosen and the estimate at each rung.
+        // 0377 R3 + 0434 R2: the decision is an artifact, not just a stderr line — the run report and
+        // `kk news status` read which measure drove it, the rung chosen and the estimate at each rung,
+        // and every measure prints the path it came from so two artifacts compare without recomputing.
+        // `ratioUsed`/`ratioSource` stay as the recorded spoken/pool ratio (the writer's drift
+        // anchor); `spokenPerPoolChar` is the pool-denominated number the rung minutes actually used.
         sted('write', join(workDir, '10-collect', 'ladder.json'), () =>
             writeJsonText(join(workDir, '10-collect', 'ladder.json'), {
                 floorMinutes: gated ? floor : null,
-                ratioUsed: ratio.ratio,
-                ratioSource: ratio.source,
+                ratioUsed: calibration.poolRatio,
+                ratioSource: calibration.poolRatioSource,
+                keptRatio: calibration.keptRatio,
+                keptRatioSource: calibration.keptRatioSource,
+                keepRate: calibration.keepRate,
+                keepRateSource: calibration.keepRateSource,
+                spokenPerPoolChar: Math.round(calibration.keepRate * calibration.keptRatio * 1000) / 1000,
                 chosen: picked.window,
                 rungs,
             }),
@@ -1180,8 +1401,11 @@ export function dailyEpisodeDuration(args: string[]): void {
             console.error(`episode-duration: duration refusal already recorded (${refusal}) — nothing to do`);
             return;
         }
-        const estimated = estimateSpokenMinutes(docs, vdriver, readKeptRatio(workDir).ratio);
+        const calibration = readSpokenCalibration(workDir);
+        const estimated = estimateSpokenMinutes(docs, vdriver, calibration.keptRatio);
         const measuredMinutes = Math.round(minutes * 10) / 10;
+        const observed = observedKeepRate(workDir, estimated.chars);
+        const assumed = assumedKeepRate(workDir, calibration);
         sted('write', refusal, () =>
             writeJqText(refusal, {
                 measuredMinutes,
@@ -1189,7 +1413,15 @@ export function dailyEpisodeDuration(args: string[]): void {
                 minMinutes,
                 keptCount: docs.length,
                 candidateChars: estimated.chars,
-                reason: `the episode ran ${shown} min of speech, below the ${minMinutes} min floor (pre-spend estimate ${estimated.minutes} min) — refusing after synthesis`,
+                // 0434 R2: same three measures the floor gate and the ladder print, so all three
+                // artifacts for one episode compare without recomputation.
+                expansion: calibration.keptRatio,
+                expansionSource: calibration.keptRatioSource,
+                keepRate: observed?.rate ?? null,
+                keepRateSource: observed?.source ?? null,
+                keepRateAssumed: assumed.rate,
+                keepRateAssumedSource: assumed.source,
+                reason: `the episode ran ${shown} min of speech, below the ${minMinutes} min floor (pre-spend estimate ${estimated.minutes} min at ${calibration.keptRatio.toFixed(2)}x kept ratio) — refusing after synthesis`,
             }),
         );
         emptyCandidates(workDir, runDate);
@@ -5560,8 +5792,13 @@ export function dailyScriptCheck(args: string[]): void {
  * `21-plan/<date>_03_curate_excluded.json`) against the QC candidates
  * (`21-plan/<date>_04_quality-control-content_candidates.json`). Unwraps a `Content` envelope and
  * dedups near-duplicate titles in place before `write` reads the plan. Writes
- * `21-plan/<date>_03_curate_errors.json` (`[{itemId, rule}]`) on failure and removes it on success.
- * With `--final`, falls back to the untranslated candidates and `[]` exclusions on failure.
+ * `21-plan/<date>_03_curate_errors.json` (`[{itemId, rule, detail?}]`) on failure and removes it on
+ * success. With `--final`, falls back to the untranslated candidates and `[]` exclusions on failure.
+ *
+ * 0433 R3/R4 adds one rule to that set: `cn-lead:XY-02` — the lead may not carry a 时政/贸易管制/
+ * 公共安全审查 mainline on a CN-distributed cut (see `./cn-lead-gate.ts`). It is checked here, in the
+ * plan stage, because here is the last place before the TTS spend that reads the order the episode will
+ * be spoken and titled in.
  */
 export function dailyCurateCheck(args: string[]): void {
     const [workDir = '', runDate = '', flag = ''] = args;
@@ -5572,6 +5809,8 @@ export function dailyCurateCheck(args: string[]): void {
     const planFile = join(workDir, '21-plan', `${runDate}_03_plan_plan.json`);
     const excludedFile = join(workDir, '21-plan', `${runDate}_03_curate_excluded.json`);
     const errFile = join(workDir, '21-plan', `${runDate}_03_curate_errors.json`);
+    // 0433 R3/R4: the CN-lead refusal record — written only when no candidate can lead a CN cut.
+    const cnLeadRefusal = join(workDir, '21-plan', `${runDate}_03_cn-lead-refusal.json`);
 
     const candRaw = readJson(candidatesFile);
     const candidateDocs: Record<string, unknown>[] = Array.isArray(candRaw)
@@ -5582,13 +5821,40 @@ export function dailyCurateCheck(args: string[]): void {
     const candidateIds = candidateDocs.map((doc) => (typeof doc?.id === 'string' ? doc.id.trim() : '')).filter(Boolean);
     const candidateIdSet = new Set(candidateIds);
 
-    const handleErrors = (errors: { itemId: string; rule: string }[]): void => {
+    const handleErrors = (errors: { itemId: string; rule: string; detail?: string }[]): void => {
         if (isFinal) {
             const reason = errors.map((e) => `${e.itemId}:${e.rule}`).join(', ');
             console.error(
                 `curate-check: final check failed (${reason}) — falling back to ${candidateDocs.length} untranslated candidate(s)`,
             );
-            sted('write', planFile, () => writeJsonText(planFile, candidateDocs));
+            // 0433 R2/R4: this path has no agent left — the `curate --fix` pass either never ran or did
+            // not deliver, so the plan falls back to the raw candidates and nobody would remove a
+            // CN-blocked lead from it. Apply the same demotion deterministically. A pool where EVERY
+            // candidate trips has no lead this cut may carry: refuse here, before the TTS spend, instead
+            // of paying for an episode the CN rows would drop (2026-11-24: 12.6 min of audio, two rows
+            // excluded afterwards — the exact cost R4 exists to remove).
+            const enforced = enforceCnLead(candidateDocs);
+            const blocked = enforced.blocked;
+            if (blocked !== null) {
+                sted('write', cnLeadRefusal, () =>
+                    writeJqText(cnLeadRefusal, {
+                        rule: 'cn-lead:XY-02',
+                        ruleIds: ['XY-02', 'WX-01'],
+                        leadId: blocked.id,
+                        candidateIds,
+                        message: blocked.message,
+                        reason: `every one of the ${candidateDocs.length} candidate(s) trips the CN-blocked mainline vocabulary on the lead surface — refusing before any TTS spend, because no lead this cut may carry exists`,
+                    }),
+                );
+                if (isFile(errFile)) unlinkSync(errFile);
+                failWith(1, blocked.message);
+            }
+            if (enforced.demoted !== null) {
+                console.error(
+                    `curate-check: ${enforced.demoted.id} demoted from lead to position ${enforced.demoted.to} — the CN-blocked lead this cut may not carry (see cn-lead-gate.ts)`,
+                );
+            }
+            sted('write', planFile, () => writeJsonText(planFile, enforced.docs));
             sted('write', excludedFile, () => writeJsonText(excludedFile, []));
             if (isFile(errFile)) unlinkSync(errFile);
             // Task 0392 R2: the recorded fallback IS the curation evidence for this attempt — the
@@ -5673,7 +5939,7 @@ export function dailyCurateCheck(args: string[]): void {
         }
     }
 
-    const errors: { itemId: string; rule: string }[] = [];
+    const errors: { itemId: string; rule: string; detail?: string }[] = [];
     if (planDocs.length === 0) {
         errors.push({ itemId: 'episode', rule: 'empty-plan' });
     }
@@ -5704,7 +5970,18 @@ export function dailyCurateCheck(args: string[]): void {
         }
     }
 
+    // 0433 R3/R4: the CN-platform lead constraint, enforced deterministically BEFORE the TTS spend.
+    // The curator's biggest story can be the one `XY-02`/`WX-01` block, and the post-spend variants
+    // review is where that used to surface (2026-11-24: 12.6 min of audio, two CN rows excluded).
+    // Only the lead position is gated — the same story stays in scope as a body item (SKILL.md
+    // shared rule 2), which is what the `curate --fix` pass does with this rule.
+    const cnLead = checkCnLeadPlan(planDocs);
+    if (!cnLead.ok) {
+        errors.push({ itemId: cnLead.leadId ?? 'episode', rule: 'cn-lead:XY-02', detail: cnLead.message });
+    }
+
     if (errors.length > 0) {
+        if (!cnLead.ok) console.error(`curate-check: ${cnLead.message}`);
         handleErrors(errors);
         return;
     }

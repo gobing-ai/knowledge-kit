@@ -209,6 +209,56 @@ async function openWithState(
 }
 
 /**
+ * Identity of one cookie inside a browser store: the trio the browser itself keys on. Values are
+ * never compared, printed or returned — only used as the payload of an `addCookies` call.
+ */
+function cookieIdentity(cookie: { name: string; domain?: string; path?: string }): string {
+    return `${cookie.domain ?? ''}\u0000${cookie.path ?? '/'}\u0000${cookie.name}`;
+}
+
+/** `true` while the browser would still send it (Playwright reports a session cookie as `expires: -1`). */
+function isLiveCookie(cookie: { expires?: number }, nowMs: number): boolean {
+    return cookie.expires === undefined || cookie.expires <= 0 || cookie.expires * 1000 > nowMs;
+}
+
+/**
+ * What a restore may actually inject (0436 R2, AC2). The saved `storage-state.json` is a fallback
+ * for what the profile's own store LOST, never an override of what it still holds:
+ *
+ * 1. a saved cookie the profile still holds live is dropped — the 2026-11-24 measurement was
+ *    exactly this shape (state dated 11-23 17:33, profile `wxuin` fresh from a 21:03 sign-in), and
+ *    replaying the older snapshot over the live one is what made every later `check` refuse a
+ *    session the browser actually had;
+ * 2. a saved cookie that has itself expired is dropped — it can only produce a signed-out console;
+ * 3. everything else is injected, which is the reason the file exists: mp.weixin.qq.com grant
+ *    cookies do not survive a Chromium restart although the store keeps the session id.
+ *
+ * Counts come back so the operator gets one bounded line; names and values never do.
+ */
+export function selectRestoreCookies(
+    saved: readonly Cookie[],
+    profile: readonly Cookie[],
+    nowMs: number = Date.now(),
+): { inject: Cookie[]; shadowed: number; expired: number } {
+    const live = new Set(profile.filter((cookie) => isLiveCookie(cookie, nowMs)).map(cookieIdentity));
+    const inject: Cookie[] = [];
+    let shadowed = 0;
+    let expired = 0;
+    for (const cookie of saved) {
+        if (!isLiveCookie(cookie, nowMs)) {
+            expired += 1;
+            continue;
+        }
+        if (live.has(cookieIdentity(cookie))) {
+            shadowed += 1;
+            continue;
+        }
+        inject.push(cookie);
+    }
+    return { inject, shadowed, expired };
+}
+
+/**
  * Re-inject the durable login captured at login time onto a freshly launched context. A missing or
  * corrupt `storage-state.json` refuses with `BrowserProfileMissingError` — nothing is fabricated.
  *
@@ -216,6 +266,10 @@ async function openWithState(
  * mp.weixin.qq.com (its `origins` half), and discarding it lands the console on its login page even
  * though every cookie was accepted — observed live 2026-10-05, where `check` reported OK while the
  * flow sat on a QR page. Replay each origin's storage before the caller navigates.
+ *
+ * 0436 R2: only the cookies {@link selectRestoreCookies} selects are replayed, so a state file older
+ * than the profile's own cookies can no longer mask a fresh console session. An unreadable jar is
+ * treated as empty — the saved state is then the only source, which is the pre-0436 behaviour.
  */
 export async function restoreWechatSessionState(
     context: BrowserContext,
@@ -237,7 +291,16 @@ export async function restoreWechatSessionState(
             `no saved console session state (${stateFile}) — run \`bun src/profile-check.ts login\` once`,
         );
     }
-    await context.addCookies(cookies);
+    const profileCookies = await context.cookies().catch(() => [] as Cookie[]);
+    const selection = selectRestoreCookies(cookies, profileCookies);
+    if (selection.shadowed > 0 || selection.expired > 0) {
+        // Bounded and name-free: the operator sees WHY the snapshot was not replayed in full.
+        echoError(
+            `wechatmp-pub: kept ${selection.shadowed} session cookie(s) from the profile itself and skipped ` +
+                `${selection.expired} expired saved cookie(s) — the saved state is older than this profile`,
+        );
+    }
+    if (selection.inject.length > 0) await context.addCookies(selection.inject);
     for (const entry of state?.origins ?? []) {
         const items = entry.localStorage ?? [];
         if (entry.origin === undefined || entry.origin.length === 0 || items.length === 0) continue;
