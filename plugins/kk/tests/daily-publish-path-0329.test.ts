@@ -136,6 +136,44 @@ describe('daily-episode-duration refusal invalidates the publish path (0329 F06)
             rmSync(root, { recursive: true, force: true });
         }
     });
+
+    it('the refusal estimate uses the recorded spoken/kept ratio, not the 1.4 raw-script default', () => {
+        const root = tempRoot('kk-0329-dur4-');
+        try {
+            // 10,400 candidate chars at 0.30 spoken/kept ≈ 10 min of speech; the 1.4 default would
+            // claim ~47 min beside a 5-minute episode (the 2026-11-24 artifact claimed 58.2).
+            seedAudio(root, 5 * 60);
+            const planDir = join(root, 'work', '21-plan');
+            mkdirSync(planDir, { recursive: true });
+            writeFileSync(
+                join(planDir, `${DATE}_04_quality-control-content_candidates.json`),
+                JSON.stringify({
+                    metadata: {
+                        docs: Array.from({ length: 4 }, (_, i) => ({ id: `d${i}`, title: '', body: 'x'.repeat(2600) })),
+                    },
+                }),
+            );
+            const sibling = join(root, '20261024', '21-plan');
+            mkdirSync(sibling, { recursive: true });
+            writeFileSync(
+                join(sibling, `20261024${'_09_spoken-ratio.json'}`),
+                JSON.stringify({ poolChars: 20000, keptChars: 12000, keptRatio: 0.3, spokenChars: 3600, ratio: 0.18 }),
+            );
+            const result = stage(root, ['daily-episode-duration', 'work', DATE, '15', '25', 'voxcpm', RUN_ID]);
+            expect(result.status).toBe(0);
+            const refusal = JSON.parse(
+                readFileSync(
+                    join(root, 'work', '30-audio', `${DATE}_11_generate_content_duration-refusal.json`),
+                    'utf-8',
+                ),
+            ) as { estimatedMinutes: number; candidateChars: number };
+            expect(refusal.candidateChars).toBe(10400);
+            // 8 s intro + 10,400 × 0.30 / 5.2 chars-per-second = 608 s ≈ 10.1 min (1.4 would say ≈ 46.7).
+            expect(refusal.estimatedMinutes).toBe(10.1);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
 });
 
 describe('daily-quality-verdict gate (0329 F23)', () => {

@@ -623,6 +623,56 @@ describe('publish-matrix-send (0321 R4, R5)', () => {
             }
         }, fixture);
     });
+
+    it('re-attempts an unknown-effect live row only when --retry carries --confirm-none', async () => {
+        // 2026-11-24 daily run: a live social row's session preflight refused, leaving an
+        // `uncertain/unknown` receipt. The operator verified nothing was posted and ran
+        // `--retry --confirm-none` — the pair silently skipped those rows, so the release did
+        // nothing and nothing in the output said why.
+        const fixture = makeFixture([...TIER0, ...DOMESTIC], {
+            article: contentJson('正文'),
+            episode: contentJson('播客'),
+        });
+        await withCleanup(async (fx) => {
+            const out = captureOutput();
+            try {
+                expect(await planPublishMatrix(planArgs(fx), { projectRoot: fx.root })).toBe(0);
+                mkdirSync(join(fx.workDir, '4-publish/receipts'), { recursive: true });
+                writeFileSync(
+                    join(fx.workDir, '4-publish/receipts/wechatmp-pub.文章.json'),
+                    JSON.stringify({
+                        target: 'wechatmp-pub.文章',
+                        plugin: 'wechatmp-pub',
+                        mode: 'live',
+                        status: 'uncertain',
+                        effect: 'unknown',
+                        error: 'session preflight refused',
+                    }),
+                );
+
+                const plainRetry = fakeDispatch();
+                expect(
+                    await sendPublishMatrix([fx.workDir, '--window', 'after-generate', '--tier', '2', '--retry'], {
+                        dispatch: plainRetry.dispatch,
+                    }),
+                ).toBe(0);
+                // Default stays safe: an unknown effect may already be live, so it is not resent.
+                expect(plainRetry.calls).toHaveLength(0);
+
+                const confirmed = fakeDispatch();
+                expect(
+                    await sendPublishMatrix(
+                        [fx.workDir, '--window', 'after-generate', '--tier', '2', '--retry', '--confirm-none'],
+                        { dispatch: confirmed.dispatch },
+                    ),
+                ).toBe(0);
+                expect(confirmed.calls.map((argv) => argv[argv.indexOf('--target') + 1])).toEqual(['wechatmp-pub']);
+                expect(out.readErr()).toContain('unknown-effect attempt published nothing (--confirm-none)');
+            } finally {
+                out.restore();
+            }
+        }, fixture);
+    });
 });
 
 describe('publish3 stage surface (0323 R2, R3, R5)', () => {

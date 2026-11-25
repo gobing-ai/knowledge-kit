@@ -317,3 +317,35 @@ Batch: sequential task-pipeline v9 runs, all three → done, each verdict PASS /
 - surfdash needed en/ja that kk does not produce (no translate step): authored both locales for 2026-11-19 and curated `scripts/seo/daily-topics.json` in the surfdash repo (uncommitted there). The site's retitle then collapsed the title to ONE headline because the hand translation is not sentence-aligned with zh across locales, while kk's digest gate demands two → 0408 (was 0395).
 - Also: `kk news publish --window overseas-rss` without `--run-date` refuses (`bundle dated 20261119, not the requested 20261118`) — pass the flag. Cards: `25-xhs/cards/*.png` rendered but `25-xhs/cards.json`/`content.json` never appeared, so `bundle-variants` skipped the cards variant (xhs rows are `off` in the preset; not fixed).
 - Backlog refine (2026-11-19): renumbered the colliding 0395/0396/0397 to 0408/0409/0410. Linked 0406→E92 and 0407/0408/0409/0410→L3. Cancelled 0260 (old-workflow wechatmp enrichment repair; superseded by 0318's 10-21 live acceptance + the v2 editor; its live residual went to 0406). 0318 saw the 赞赏 account active on 10-21, so 0406's "account lacks 赞赏" branch is unlikely. 0404 (D8) untouched: ready.
+
+## 2026-11-24 · daily news dogfood → partial publish (safety-held CN rows)
+
+- **Generation**: the 04:30 tick closed `no-content` (`18 items / 12.9 min < 13 floor`). Re-ran by hand
+  with `plan_max_items: 64` (pool 63 / 42,925 chars, ladder 22.8 min): QC admitted the SAME 18 docs
+  (12,937 chars → gate 13.1 min) — the extra 23 items bought 225 chars. Config reverted to 40 with the
+  measurement inline. Pipeline then ran clean to freeze (curate 4m07, safety 10m37, voice 27m13,
+  safety-variants 13m32) but the post-spend duration gate measured **12.6 min < 13** and closed the run
+  `no-content` after the full TTS spend (`30-audio/…_duration-refusal.json`).
+- **Two independent blockers, both after the spend**: (a) the duration floor, 24 s short; (b) the
+  variants safety verdict excluded `xiaoyuzhou` + `wechatmp` because the LEAD story (黄仁勋复职 + 美国
+  国家安全审查 + 出口管制委员会) is a state-security/trade-control mainline under the skill's own
+  conservative XY-02/WX-01 stance. Operator decision: hold the CN rows, publish the rest.
+- **Shipped**: surfdash article live zh/en/ja (`/zh/posts/20261124-261124`, og:image ok); shipinhao 音频
+  confirmed after Robin's login; jike + x (`x.com/tangmian`) + threads (`…/post/DgJBm8lD50Z`) promos
+  confirmed. linkedin + weibo still session-expired at close.
+- **Fixes landed**: `ecf5cb1e` duration refusal now uses `readKeptRatio` (it printed "pre-spend estimate
+  58.2 min" beside a measured 12.6 — the 1.4 raw-script default); `e8743d50` Apple AP-02 closed with the
+  verified §1.2–§1.12/§2 text (no section restricts news/politics/trade controls) — the re-run of the
+  variants gate then dropped `apple-podcasts` from `excludedPlatforms`; `13e7c23d` `--retry
+  --confirm-none` now actually releases an unknown-effect live row (it silently skipped them, so the
+  operator's assertion did nothing while the send printed "4 target(s) dispatched"). Install dist
+  re-synced (`cp apps/cli/dist/index.js $KK_PKG/dist/index.js`), stage bodies + skill refs rsynced.
+- **Promo repoint**: the four social variants were rewritten from `🎧 {{podcast_url}}` to
+  `📄 {{article_url}}` (operator instruction) — which needed the frozen bundle **deleted and re-frozen**
+  after a fresh variants safety pass (the pre-repoint bundle is at
+  `.spur/run/dogfood/2026-11-24-news/bundle.json.pre-promo-repoint`), because `generate-bundle --stage
+  freeze` refuses a frozen bundle and the matrix compares per-variant digests against `bundle.safety`.
+- **Tasks filed**: 0422 (promo link coupling / freeze immutability), 0423 (surfdash cover patch when the
+  podcast row never uploaded a remote cover), 0424 (CN-blocked lead must be caught before TTS), 0425
+  (ladder vs floor-gate denominators; keep-rate drift), 0426 (`kk news status` reports `bundle: null`
+  for a news run).
