@@ -152,11 +152,14 @@ export async function main(
         return 1;
     }
     const heavyConfig = mode === 'heavy' ? ensureHeavyBunfig(root) : HEAVY_BUNFIG_PATH;
+    const env: Record<string, string | undefined> = { ...process.env, NODE_ENV: 'test', NO_COLOR: '1' };
+    delete env.FORCE_COLOR;
+    delete env.CLICOLOR_FORCE;
     const result = spawn(buildTestArgv(mode, selected, extraArgs, heavyConfig), {
         cwd: root,
         stdout: 'inherit',
         stderr: 'inherit',
-        env: { ...process.env, NODE_ENV: 'test' },
+        env,
     });
     return result.exitCode ?? 1;
 }
