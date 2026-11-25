@@ -239,6 +239,12 @@ export const LINKEDIN_CONFIG: ChannelBrowserConfig = {
     homeUrl: LINKEDIN_HOME_URL,
     isAuthenticated: isLinkedinAuthenticated,
     loginTimeoutMs: LOGIN_TIMEOUT_MS,
+    // Headless with a SIGNED-IN profile lands on the login wall (measured 2026-11-24: `check`
+    // refused in 68 s while `check --headed` verified on the same profile, and the same pair of
+    // launches repeated after two operator sign-ins). A headless preflight pass is therefore a
+    // guaranteed burn, and the post flow is headed anyway — so the preflight probes headed, the
+    // same shape medium-pub carries for its Cloudflare interstitial.
+    checkHeadedOnly: true,
 };
 
 /**
@@ -347,7 +353,8 @@ export class LinkedinBrowserTransport implements PublishTransport {
         const session = await checkChannelSession(LINKEDIN_CONFIG, {
             profileDir,
             launcher: this.launcher,
-            headedFallback: false,
+            // Headed, not headless: see LINKEDIN_CONFIG.checkHeadedOnly (measured 2026-11-24).
+            headedOnly: LINKEDIN_CONFIG.checkHeadedOnly === true,
             timeoutMs: this.stepTimeoutMs,
         });
         if (session.status !== 'verified') {

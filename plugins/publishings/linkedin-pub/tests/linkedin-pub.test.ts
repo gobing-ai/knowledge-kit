@@ -458,14 +458,15 @@ describe('linkedin-pub refusals before any browser', () => {
 });
 
 describe('linkedin-pub session preflight', () => {
-    test('an unauthenticated session refuses with the login command and one headless pass', async () => {
+    test('an unauthenticated session refuses with the login command and one headed pass', async () => {
         const fake = makeFakeLauncher({ landedUrl: LOGIN_URL });
         const result = await transport(fake).publish({ content: liveContent });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('linkedin session preflight refused');
         expect(result.error).toContain(`run: ${LINKEDIN_LOGIN_INSTRUCTION}`);
-        // One read-only headless pass: no headed window ever opens on a refused preflight.
-        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: true }]);
+        // Headed-only since 2026-11-24: a signed-in profile still lands on the login wall when the
+        // page loads headlessly, so a single headed pass is the only one that can verify.
+        expect(fake.requests).toEqual([{ profileDir: DEFAULT_DIR, headless: false }]);
         expect(fake.closeCount()).toBe(1);
     });
 
@@ -506,7 +507,9 @@ describe('linkedin-pub session preflight', () => {
         expect(result.ok).toBe(false);
         expect(result.error).toContain('linkedin session failed');
         expect(result.error).toContain(LINKEDIN_LOGIN_INSTRUCTION);
-        expect(requests.map((request) => request.headless)).toEqual([true, false]);
+        // Both passes are headed since 2026-11-24 (LINKEDIN_CONFIG.checkHeadedOnly): with a signed-in
+        // profile the headless load still lands on the login wall, so the preflight probes headed.
+        expect(requests.map((request) => request.headless)).toEqual([false, false]);
     });
 });
 
@@ -526,8 +529,8 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         });
         expect(fake.calls).toContain(`fill:${SELECTORS.composer[0]}|Hello LinkedIn feed post`);
         expect(fake.calls.some((call) => call === `click:${SEND_SELECTOR}`)).toBe(true);
-        // Two contexts: the read-only headless preflight, then the headed flow.
-        expect(fake.requests.map((request) => request.headless)).toEqual([true, false]);
+        // Two contexts, both headed: the read-only preflight (checkHeadedOnly) then the flow.
+        expect(fake.requests.map((request) => request.headless)).toEqual([false, false]);
         expect(fake.closeCount()).toBe(2);
     });
 
