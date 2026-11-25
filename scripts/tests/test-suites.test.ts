@@ -20,6 +20,7 @@ describe('scripts/test-suites (0429)', () => {
         const { fast, heavy } = classifyTestFiles(all);
         expect(fast.length).toBeGreaterThan(0);
         expect(heavy.length).toBeGreaterThan(0);
+        expect(heavy).toContain('apps/cli/tests/content-generate.e2e.test.ts');
 
         const fastSet = new Set(fast);
         const heavySet = new Set(heavy);

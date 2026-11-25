@@ -36,6 +36,7 @@ export const HEAVY_TEST_PATTERNS: readonly string[] = [
     '**/*-installed.test.ts',
     '**/installed-*.test.ts',
     'plugins/generations/image-gen/tests/compose-e2e.test.ts',
+    'apps/cli/tests/content-generate.e2e.test.ts',
     'apps/cli/tests/kk-publish.e2e.test.ts',
     'apps/cli/tests/kk-news-generate.e2e.test.ts',
     'apps/cli/tests/kk-article.e2e.test.ts',
