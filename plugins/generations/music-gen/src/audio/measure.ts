@@ -19,7 +19,7 @@
  * "measurement clean".
  */
 
-import { NodeProcessExecutor } from '@gobing-ai/ts-runtime';
+import { NodeProcessExecutor, type ProcessExecutor } from '@gobing-ai/ts-runtime';
 
 /** One tool invocation's captured result. */
 export interface ToolOutput {
@@ -93,7 +93,7 @@ export const DEFAULT_SILENCE_MIN_SECONDS = 0.5;
 const processExecutor = new NodeProcessExecutor();
 
 /**
- * The default runner: the ts-runtime {@link ProcessExecutor} seam, buffered.
+ * Build an {@link AudioToolRunner} over any ts-runtime {@link ProcessExecutor}.
  *
  * `ProcessResult` reports `exitCode: number | null` and does not throw for a tool
  * it could not start, so this adapter keeps the {@link ToolOutput} shape the
@@ -101,24 +101,29 @@ const processExecutor = new NodeProcessExecutor();
  * a signal kill, both surfaced as {@link AudioToolError} kind `spawn` with the
  * install hint) and every real exit code passes through untouched.
  */
-export const spawnRunner: AudioToolRunner = async (argv) => {
-    const [bin, ...args] = argv;
-    if (bin === undefined) {
-        throw new AudioToolError('ffmpeg', 'spawn', 'no binary was given to the audio runner', '');
-    }
-    const result = await processExecutor.run({ command: bin, args, label: `audio ${bin}` });
-    if (result.exitCode === null) {
-        const detail = result.stderr.trim();
-        const killed = result.signal === undefined ? '' : ` (killed by ${result.signal})`;
-        throw new AudioToolError(
-            bin,
-            'spawn',
-            `could not be executed${detail === '' ? '' : ` (${detail})`}${killed} — install ffmpeg or point ffmpegBin/ffprobeBin at it`,
-            '',
-        );
-    }
-    return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
-};
+export function createSpawnRunner(executor: ProcessExecutor = processExecutor): AudioToolRunner {
+    return async (argv) => {
+        const [bin, ...args] = argv;
+        if (bin === undefined) {
+            throw new AudioToolError('ffmpeg', 'spawn', 'no binary was given to the audio runner', '');
+        }
+        const result = await executor.run({ command: bin, args, label: `audio ${bin}` });
+        if (result.exitCode === null) {
+            const detail = result.stderr.trim();
+            const killed = result.signal === undefined ? '' : ` (killed by ${result.signal})`;
+            throw new AudioToolError(
+                bin,
+                'spawn',
+                `could not be executed${detail === '' ? '' : ` (${detail})`}${killed} — install ffmpeg or point ffmpegBin/ffprobeBin at it`,
+                '',
+            );
+        }
+        return { exitCode: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+    };
+}
+
+/** The default runner: the ts-runtime {@link ProcessExecutor} seam, buffered. */
+export const spawnRunner: AudioToolRunner = createSpawnRunner();
 
 /** Where the measurement comes from: binary names plus the injected runner. */
 export interface MeasureOptions {
