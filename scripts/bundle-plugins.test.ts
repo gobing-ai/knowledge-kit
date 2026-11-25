@@ -710,6 +710,10 @@ describe('bundle-plugins staleness detection and --if-stale (0430 R2)', () => {
 
             writeFileSync(join(sourcePlugins, 'kk', 'workflows', 'extra.yaml'), 'name: extra\n');
             expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
+
+            await bundlePlugins(stagedPlugins, stagedMarketplace, sourcePlugins, sourceMarketplace);
+            rmSync(join(sourcePlugins, 'publishings', 'demo-pub', 'plugin.json'));
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
         } finally {
             rmSync(root, { recursive: true, force: true });
         }

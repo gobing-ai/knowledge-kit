@@ -12,9 +12,10 @@
  * `apps/cli/{plugins,.claude-plugin}`.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { treeDiffs } from './check-tool-freshness';
 
 const REPO_ROOT = new URL('../', import.meta.url).pathname;
 const PLUGIN_SOURCE = join(REPO_ROOT, 'plugins');
@@ -220,26 +221,9 @@ export async function bundlePlugins(
 /** Subtrees the launch preflight compares between checkout and staged `apps/cli/plugins` (0430 R2). */
 const STALE_CHECK_TREES = ['kk/workflows', 'kk/scripts'] as const;
 
-function collectFileBytes(root: string): Map<string, Buffer> {
-    const files = new Map<string, Buffer>();
-    if (!existsSync(root)) return files;
-    const walk = (dir: string, rel: string): void => {
-        for (const entry of readdirSync(dir, { withFileTypes: true })) {
-            if (entry.name.startsWith('.') || entry.name.endsWith('.log')) continue;
-            const relPath = rel === '' ? entry.name : `${rel}/${entry.name}`;
-            if (entry.isDirectory()) walk(join(dir, entry.name), relPath);
-            else if (entry.isFile()) files.set(relPath, readFileSync(join(dir, entry.name)));
-        }
-    };
-    walk(root, '');
-    return files;
-}
-
 /**
  * True when `pluginTarget` (default `apps/cli/plugins`) is absent, its `kk/{workflows,scripts}`
- * trees diverge in bytes from `pluginSource`, or any source product `plugin.json` is newer than
- * its staged copy (0430 R2). Fast (<50 ms) on a fresh tree so git hooks and `prepare` skip
- * unnecessary `Bun.build` passes.
+ * trees diverge in bytes from `pluginSource`, or a product manifest was added, removed or updated.
  */
 export function isStagedPluginsStale(
     pluginTarget: string = PLUGIN_TARGET,
@@ -247,24 +231,21 @@ export function isStagedPluginsStale(
 ): boolean {
     if (!existsSync(pluginTarget)) return true;
     for (const subtree of STALE_CHECK_TREES) {
-        const srcFiles = collectFileBytes(join(pluginSource, subtree));
-        const dstFiles = collectFileBytes(join(pluginTarget, subtree));
-        if (srcFiles.size !== dstFiles.size) return true;
-        for (const [rel, bytes] of srcFiles) {
-            const staged = dstFiles.get(rel);
-            if (staged === undefined || !bytes.equals(staged)) return true;
-        }
+        if (treeDiffs(join(pluginSource, subtree), join(pluginTarget, subtree)).length > 0) return true;
     }
     for (const collection of KIND_COLLECTIONS) {
         const srcCol = join(pluginSource, collection);
-        if (!existsSync(srcCol)) continue;
-        for (const entry of readdirSync(srcCol, { withFileTypes: true })) {
-            if (!entry.isDirectory()) continue;
-            const srcManifest = join(srcCol, entry.name, 'plugin.json');
-            if (!existsSync(srcManifest)) continue;
-            const dstManifest = join(pluginTarget, collection, entry.name, 'plugin.json');
-            if (!existsSync(dstManifest)) return true;
-            if (statSync(srcManifest).mtimeMs > statSync(dstManifest).mtimeMs) return true;
+        const dstCol = join(pluginTarget, collection);
+        const names = new Set([
+            ...(existsSync(srcCol) ? readdirSync(srcCol) : []),
+            ...(existsSync(dstCol) ? readdirSync(dstCol) : []),
+        ]);
+        for (const name of names) {
+            const srcManifest = join(srcCol, name, 'plugin.json');
+            const dstManifest = join(dstCol, name, 'plugin.json');
+            const sourceExists = existsSync(srcManifest);
+            if (sourceExists !== existsSync(dstManifest)) return true;
+            if (sourceExists && statSync(srcManifest).mtimeMs > statSync(dstManifest).mtimeMs) return true;
         }
     }
     return false;
