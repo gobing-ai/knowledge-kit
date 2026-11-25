@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: LinkedIn post rail cannot open the composer from a signed-in profile
-status: todo
+status: wip
 template: issue
 created_at: 2026-11-25T06:53:01.883Z
-updated_at: "2026-11-25T21:39:19.975Z"
+updated_at: "2026-11-25T22:29:07.265Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -137,7 +137,13 @@ Test layers: AC1 is a live operator-run check (needs the operator's signed-in pr
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+**Partial (2026-11-25): R2 and R4 landed offline; R1/R3 are blocked on the operator recon session.**
+
+- R4: `preSubmitFail` (`plugins/publishings/linkedin-pub/src/index.ts:171`) adds `itcDelivery: { schemaVersion: 1, effect: 'none' }`, the weibo-pub `refuse` shape. It is applied at `share-trigger`, `composer`, `text-readback` and `image-upload`. `send-enabled`, `confirmation` and `failure-toast` keep `effect: unknown`.
+- R2: `probeComposer` (`:180`) runs on composer refusal (`:552`). It reports the trigger selector with total/visible match counts, every composer candidate's count, the url and the frame count, and writes a screenshot to `/tmp/kk-linkedin-composer-latest.png`. The message keeps the frozen prefix, with counts before the login hint; the full selector→count map is in `metadata.composerProbe`. Counts only: no DOM text leaves the page.
+- Tests (fail-first: 5 fail before the change, 52/52 pass after): AC2 `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:595`; AC4 `:774` (4 pre-submit stages carry `effect: none`; `send-enabled`/`confirmation` carry none).
+- Recon attempt 2026-11-25: `.spur/run/dogfood/2026-11-25-linkedin/recon.ts` (read-only, types nothing). `withProfilePage` refused with `LoginTimeoutError` after 90 s, and `li_at` went from 1 row to 0. The profile needs an operator sign-in before the recon can measure the trigger/composer.
+- Remaining: operator sign-in → re-run the recon (`cp` it next to `src/`, since workspace packages resolve only from the plugin dir) → R1 selector/click fix from the measured shape → R3 DOM fixture runner → AC1 live post (explicit go-ahead).
 
 ### Testing
 
@@ -159,3 +165,6 @@ Test layers: AC1 is a live operator-run check (needs the operator's signed-in pr
 - Same class of defect fixed for the other rails with a recorded headed recon (`docs/design/weibo-ui-discovery.md` pattern)
 
 ### History
+
+- 2026-11-25T22:29:06.588Z todo → wip (system)
+

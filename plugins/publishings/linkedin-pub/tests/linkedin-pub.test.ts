@@ -592,6 +592,21 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         expect(fake.calls.some((call) => call.startsWith('fill:'))).toBe(false);
     });
 
+    test('AC2 — a composer that never opens names the trigger, the composer candidates, their counts and the url', async () => {
+        const fake = makeFakeLauncher({ composerNeverOpens: true });
+        const result = await transport(fake).publish({ content: liveContent });
+
+        expect(result.error).toStartWith('linkedin composer did not open after the share box');
+        expect(result.error).toContain(`trigger ${SELECTORS.shareTrigger[0]} (matches 1`);
+        expect(result.error).toContain('composer candidates all 0');
+        expect(result.error).toContain(`url ${LINKEDIN_HOME_URL}`);
+        expect(result.error).toContain(LINKEDIN_LOGIN_INSTRUCTION);
+        const probe = (result.metadata as { composerProbe: Record<string, unknown> }).composerProbe;
+        expect(probe.trigger).toBe(SELECTORS.shareTrigger[0]);
+        expect(probe.candidates).toEqual(Object.fromEntries(SELECTORS.composer.map((selector) => [selector, 0])));
+        expect(probe.url).toBe(LINKEDIN_HOME_URL);
+    });
+
     test('a page crash during the fill is reported without the login hint', async () => {
         const fake = makeFakeLauncher({ fillThrows: true });
         const result = await transport(fake).publish({ content: liveContent });
@@ -754,6 +769,40 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         expect(result.ok).toBe(true);
         expect(fake.calls.some((call) => call.includes('kk-linkedin-link-preview'))).toBe(false);
     });
+});
+
+describe('linkedin-pub pre-submit refusals are retryable (0437 R4)', () => {
+    const NONE = { schemaVersion: 1, effect: 'none' };
+
+    test.each([
+        ['composer', { composerNeverOpens: true }],
+        ['share-trigger', { triggerVanishes: true }],
+        ['text-readback', { emptyReadback: true }],
+        ['image-upload', { previewNeverLands: true }],
+    ] as const)(
+        'AC4 — a refusal at %s carries itcDelivery effect none',
+        async (stage, options) => {
+            const fake = makeFakeLauncher(options);
+            const result = await transport(fake).publish({ content: liveContent, options: { images: [IMAGE_PATH] } });
+            expect(result.ok).toBe(false);
+            expect(result.metadata).toMatchObject({ stage, itcDelivery: NONE });
+        },
+        20_000,
+    );
+
+    test.each([
+        ['send-enabled', { sendNeverEnabled: true }],
+        ['confirmation', { onSend: 'none' }],
+    ] as const)(
+        'AC4 — a refusal at %s (at or after the Post click) never claims effect none',
+        async (stage, options) => {
+            const fake = makeFakeLauncher(options);
+            const result = await transport(fake).publish({ content: liveContent });
+            expect(result.ok).toBe(false);
+            expect(result.metadata).toMatchObject({ stage });
+            expect((result.metadata as Record<string, unknown>).itcDelivery).toBeUndefined();
+        },
+    );
 });
 
 describe('linkedin-pub fake transport and --in/--out IO', () => {

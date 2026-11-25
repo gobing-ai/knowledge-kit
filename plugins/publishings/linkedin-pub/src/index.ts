@@ -163,6 +163,47 @@ function stageFail(error: string, stage: string, metadata: Record<string, unknow
     });
 }
 
+/**
+ * A stage failure raised before the Post click: nothing reached LinkedIn, so the receipt is
+ * `failed/none` and `--retry` resends without `--confirm-none` (0437 R4; same marker as
+ * `weibo-pub`'s `refuse`). Never used at or after the Post click — those stay `effect: unknown`.
+ */
+function preSubmitFail(error: string, stage: string, metadata: Record<string, unknown>): Result {
+    return stageFail(error, stage, { ...metadata, itcDelivery: { schemaVersion: 1, effect: 'none' } });
+}
+
+/**
+ * What the page held when the composer never opened (0437 R2): match counts of the trigger that was
+ * clicked, every composer candidate's count, the url and the frame count — so the next drift is
+ * diagnosable from the receipt alone. Counts only: no DOM text ever leaves the page.
+ */
+async function probeComposer(
+    page: Page,
+    trigger: string,
+): Promise<{
+    trigger: string;
+    triggerMatches: number;
+    triggerVisible: number;
+    candidates: Record<string, number>;
+    url: string;
+    frames: number;
+}> {
+    const count = (locator: { count(): Promise<number> }) => locator.count().catch(() => -1);
+    const triggerLocator = page.locator(trigger);
+    const candidates: Record<string, number> = {};
+    for (const selector of LINKEDIN_POST_SELECTORS.composer) candidates[selector] = await count(page.locator(selector));
+    return {
+        trigger,
+        triggerMatches: await count(triggerLocator),
+        // -1 = the page stub has no visibility filter (the fake page); a real Playwright page always has one.
+        triggerVisible:
+            typeof triggerLocator.filter === 'function' ? await count(triggerLocator.filter({ visible: true })) : -1,
+        candidates,
+        url: page.url(),
+        frames: typeof page.frames === 'function' ? page.frames().length : 0,
+    };
+}
+
 /** One short line, bounded: no DOM dump, cookie, token or stack ever reaches the Result. */
 function boundedDetail(detail: string): string {
     return detail.replace(/\s+/g, ' ').trim().slice(0, 300);
@@ -473,7 +514,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
                 label: 'linkedin share box',
             });
         } catch {
-            return stageFail(
+            return preSubmitFail(
                 `linkedin share box not found on ${LINKEDIN_HOME_URL} (session may be logged out, or the selector drifted) — run: ${LINKEDIN_LOGIN_INSTRUCTION}`,
                 'share-trigger',
                 metadata,
@@ -508,10 +549,18 @@ export class LinkedinBrowserTransport implements PublishTransport {
             }).catch(() => '');
         }
         if (composerSelector === '') {
+            const probe = await probeComposer(page, triggerSelector);
+            const counts = Object.values(probe.candidates);
+            const found = counts.every((n) => n === 0) ? 'all 0' : counts.map((n, i) => `#${i}=${n}`).join(',');
+            // Counts lead and the login hint trails inside the 300-char bound; the full selector→count
+            // map rides in `metadata.composerProbe`. The screenshot is the visual twin of the send stage's.
+            await Promise.resolve()
+                .then(() => page.screenshot({ path: '/tmp/kk-linkedin-composer-latest.png' }))
+                .catch(() => null);
             return stageFail(
-                `linkedin composer did not open after the share box, twice (selector drift) — run: ${LINKEDIN_LOGIN_INSTRUCTION}`,
+                `linkedin composer did not open after the share box, twice — trigger ${probe.trigger} (matches ${probe.triggerMatches}, visible ${probe.triggerVisible}); composer candidates ${found}; url ${probe.url}; frames ${probe.frames} — run: ${LINKEDIN_LOGIN_INSTRUCTION}`,
                 'composer',
-                metadata,
+                { ...metadata, composerProbe: probe, itcDelivery: { schemaVersion: 1, effect: 'none' } },
             );
         }
         const composer = page.locator(composerSelector).first();
@@ -527,7 +576,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
 
         // Readback before anything else: a field the editor dropped must never be submitted.
         const readback = await this.requireReadback(page, composerSelector, text);
-        if (!readback.ok) return stageFail(readback.error, 'text-readback', metadata);
+        if (!readback.ok) return preSubmitFail(readback.error, 'text-readback', metadata);
 
         // Image upload: confirmed landed; an unconfirmed upload refuses before submit — never a
         // silent text-only post while an image was requested. When posting a URL with no image,
@@ -535,7 +584,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
         const [image] = images;
         if (image !== undefined) {
             const uploaded = await this.uploadImage(page, image);
-            if (!uploaded.ok) return stageFail(uploaded.error, 'image-upload', metadata);
+            if (!uploaded.ok) return preSubmitFail(uploaded.error, 'image-upload', metadata);
         } else {
             await this.waitForLinkPreview(page, composerSelector, text);
         }
