@@ -3956,7 +3956,7 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
                 page: {
                     ...page,
                     evaluate: async (expression) => {
-                        if (probes.delete(expression.split(' */', 1)[0] + ' */')) {
+                        if (probes.delete(`${expression.split(' */', 1)[0]} */`)) {
                             throw new Error('reopened editor detached');
                         }
                         return page.evaluate(expression);
