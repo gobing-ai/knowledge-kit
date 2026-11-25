@@ -85,6 +85,10 @@ export const LINKEDIN_POST_SELECTORS = {
         // clicking THAT does not open the composer (the run then timed out in the composer stage and
         // reported "composer did not open … selector drift"). The has-text forms hit the clickable
         // ancestor; the text form stays last for the previous UI.
+        // Measured 2026-11-25 (0437 recon, `.spur/run/dogfood/2026-11-25-linkedin/`): no `<button>` carries
+        // the text any more — the one visible trigger is `div[role=button][aria-label="Start a post"]`
+        // with obfuscated classes. The exact aria form leads so no descendant-text match can win.
+        'div[role="button"][aria-label="Start a post"]',
         'button:has-text("Start a post")',
         'div[role="button"]:has-text("Start a post")',
         'text="Start a post"',
@@ -101,7 +105,6 @@ export const LINKEDIN_POST_SELECTORS = {
         '.tiptap.ProseMirror',
         '[role="dialog"] div[role="textbox"]',
         'div.editor-content[contenteditable="true"]',
-        'div[role="textbox"][contenteditable="true"]',
     ],
     mediaButton: [
         'button[aria-label="Media"]',
@@ -195,9 +198,7 @@ async function probeComposer(
     return {
         trigger,
         triggerMatches: await count(triggerLocator),
-        // -1 = the page stub has no visibility filter (the fake page); a real Playwright page always has one.
-        triggerVisible:
-            typeof triggerLocator.filter === 'function' ? await count(triggerLocator.filter({ visible: true })) : -1,
+        triggerVisible: await count(triggerLocator.filter({ visible: true })),
         candidates,
         url: page.url(),
         frames: typeof page.frames === 'function' ? page.frames().length : 0,
@@ -520,7 +521,9 @@ export class LinkedinBrowserTransport implements PublishTransport {
                 metadata,
             );
         }
-        await page.locator(triggerSelector).first().click();
+        // Visible match only (0437 R1): `resolveSelector` resolves attached nodes, so a hidden duplicate
+        // can resolve first and swallow the click while the composer never opens.
+        await page.locator(triggerSelector).filter({ visible: true }).first().click();
 
         // Modal editor. A missing editor after the click is the same loud typed refusal family.
         // The share box is a React target that can be clicked before the feed finishes hydrating
@@ -540,6 +543,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
             if (retryTrigger !== null)
                 await page
                     .locator(retryTrigger)
+                    .filter({ visible: true })
                     .first()
                     .click()
                     .catch(() => {});

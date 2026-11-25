@@ -4,7 +4,7 @@ name: LinkedIn post rail cannot open the composer from a signed-in profile
 status: wip
 template: issue
 created_at: 2026-11-25T06:53:01.883Z
-updated_at: "2026-11-25T22:29:07.265Z"
+updated_at: "2026-11-25T22:43:01.131Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -137,13 +137,30 @@ Test layers: AC1 is a live operator-run check (needs the operator's signed-in pr
 
 ### Solution
 
-**Partial (2026-11-25): R2 and R4 landed offline; R1/R3 are blocked on the operator recon session.**
+**R1–R4 landed offline (2026-11-25); AC1 (live public post) waits on the operator's go-ahead.**
 
-- R4: `preSubmitFail` (`plugins/publishings/linkedin-pub/src/index.ts:171`) adds `itcDelivery: { schemaVersion: 1, effect: 'none' }`, the weibo-pub `refuse` shape. It is applied at `share-trigger`, `composer`, `text-readback` and `image-upload`. `send-enabled`, `confirmation` and `failure-toast` keep `effect: unknown`.
-- R2: `probeComposer` (`:180`) runs on composer refusal (`:552`). It reports the trigger selector with total/visible match counts, every composer candidate's count, the url and the frame count, and writes a screenshot to `/tmp/kk-linkedin-composer-latest.png`. The message keeps the frozen prefix, with counts before the login hint; the full selector→count map is in `metadata.composerProbe`. Counts only: no DOM text leaves the page.
-- Tests (fail-first: 5 fail before the change, 52/52 pass after): AC2 `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:595`; AC4 `:774` (4 pre-submit stages carry `effect: none`; `send-enabled`/`confirmation` carry none).
-- Recon attempt 2026-11-25: `.spur/run/dogfood/2026-11-25-linkedin/recon.ts` (read-only, types nothing). `withProfilePage` refused with `LoginTimeoutError` after 90 s, and `li_at` went from 1 row to 0. The profile needs an operator sign-in before the recon can measure the trigger/composer.
-- Remaining: operator sign-in → re-run the recon (`cp` it next to `src/`, since workspace packages resolve only from the plugin dir) → R1 selector/click fix from the measured shape → R3 DOM fixture runner → AC1 live post (explicit go-ahead).
+**Root cause.** A headed recon in the freshly signed-in profile (`.spur/run/dogfood/2026-11-25-linkedin/`; sanitized structure only, no text, cookie or token) did not reproduce the 2026-11-25T06:35Z refusal:
+- `button:has-text("Start a post")` (list `[0]`) now matches **0** nodes.
+- `div[role="button"]:has-text(...)` matches the one visible trigger, `div[role=button][aria-label="Start a post"]`.
+- Its click mounts a tiptap `div[role=textbox][contenteditable=true].tiptap.ProseMirror`, outside any `[role=dialog]`; four composer candidates each found 1 visible node.
+
+So the 06:35Z run's selectors were valid. Its failure is consistent with the degraded session the same day (anti-bot frames present; each failed attempt cleared `li_at`), which cannot be measured after the fact. The defect R1 removes is H1, demonstrated in the fixture: `resolveSelector` resolves **attached** nodes, so a hidden duplicate trigger resolves first and the click hangs 30 s, then fails with no stage and `effect: unknown`.
+
+**Changes (`plugins/publishings/linkedin-pub/src/index.ts`):**
+- R1: the measured `div[role="button"][aria-label="Start a post"]` leads the trigger list (`:91`, dated comment). Both trigger clicks use `.filter({ visible: true }).first()` (`:526`, retry `:546`). The duplicate composer selector is removed. `resolveSelector` in publish-harness is unchanged.
+- R2: `probeComposer` adds the trigger match/visible counts, per-candidate counts, the url and the frame count to the composer refusal. It writes `/tmp/kk-linkedin-composer-latest.png` and fills `metadata.composerProbe`.
+- R4: `preSubmitFail` covers share-trigger, composer, text-readback and image-upload (`effect: none`). Stages at or after the Post click keep `unknown`.
+
+**Tests:**
+- `tests/linkedin-pub.test.ts`: AC2 and AC4 (fake page, which gains an identity `filter`).
+- `tests/linkedin-pub-dom.test.ts` + `tests/fixtures/linkedin-pub-dom-runner.ts` (AC3): real Chromium, route-intercepted https://www.linkedin.com, catch-all abort.
+  - `recorded` → ok, fresh activity URL.
+  - `hidden-duplicate` → ok.
+  - `pre-recon` → `stage: composer`, `effect: none`, probe counts.
+  - Missing Chromium fails loud.
+- Fail-first against HEAD `29a2fc21`: `hidden-duplicate` failed (`click: Timeout 30000ms exceeded … button:has-text("Start a post")`, no stage); `recorded` passed on both, since the live DOM works with a valid session.
+
+**Gates:** `bun test plugins/publishings/linkedin-pub` 56/56; `bun run lint` 0; `bun run test` 0 (5928 pass, 0 fail; `index.ts` 90.24 % lines / 95.15 % funcs); `bun run build` 0; rule pre-check 60/60, post-check 3/3. Install sync is not needed: `plugins/publishings/*` resolve from the checkout.
 
 ### Testing
 

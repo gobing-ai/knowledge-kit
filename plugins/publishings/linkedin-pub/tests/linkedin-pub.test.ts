@@ -166,7 +166,13 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
         },
         url: () => url,
         locator(selector: string) {
-            return { first: () => leaf(selector), count: async () => attached(selector) };
+            // The fake has no hidden nodes: the visible filter is the identity.
+            const locator = {
+                first: () => leaf(selector),
+                count: async () => attached(selector),
+                filter: () => locator,
+            };
+            return locator;
         },
         ...(options.withMediaNextButton !== true
             ? {}
@@ -597,7 +603,7 @@ describe('linkedin-pub post flow (offline fake page)', () => {
         const result = await transport(fake).publish({ content: liveContent });
 
         expect(result.error).toStartWith('linkedin composer did not open after the share box');
-        expect(result.error).toContain(`trigger ${SELECTORS.shareTrigger[0]} (matches 1`);
+        expect(result.error).toContain(`trigger ${SELECTORS.shareTrigger[0]} (matches 1, visible 1)`);
         expect(result.error).toContain('composer candidates all 0');
         expect(result.error).toContain(`url ${LINKEDIN_HOME_URL}`);
         expect(result.error).toContain(LINKEDIN_LOGIN_INSTRUCTION);
