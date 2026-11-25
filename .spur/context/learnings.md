@@ -681,3 +681,23 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   `browser-leases/<hash>/owner.json` naming a dead pid and the next `login` refuses with "held by pid N".
   Diagnose with `ps -p <pid>`; three dead leases were cleared tonight, two of which had eaten an operator
   sign-in attempt. Task 0431.
+
+## 2026-11-25 — the L3 batch: what a review loop actually costs, and how to keep it honest
+- **Every task in this batch needed its review findings acted on, and none of them arrived as a
+  `Verdict:` line.** The pattern that worked: dispatch `sp-super-coder` for implement, `sp-super-reviewer`
+  for review, then fix the P2/P3 findings myself with a fail-first probe (revert the fix, watch the new
+  test fail, restore) before re-certifying. Six review visits on task 0433 were the exception, not the
+  rule: a keyword gate is calibration work, not a one-shot patch, and it was filed as its own task (0438)
+  rather than closed as done.
+- **A gate whose all-candidates-tripped branch refuses the whole day needs its own precision budget.**
+  0433's widening raised recall and cost 12 % product-lead false positives; two of those on one pool
+  would refuse a clean day before synthesis. Coverage and precision must be measured together, with
+  held-out families on both sides, or the "fix" trades one silent failure for another.
+- **The batch's own evidence plane is per-tree.** `.spur/run/` and `.spur/memory/` in a worktree are
+  disposable (ADR-131): a task's `## Testing` must cite `.spur/memory/evidence/<wbs>-verdict.json` or a
+  repo path, never a run-scoped file that the teardown takes with it — the pre-existing red gate this
+  batch inherited (task 0427) was exactly that.
+- **`--worktree` batches land by FF after merging `main` in.** Landing needed `git merge main` into the
+  batch branch (a concurrent session had released 0.1.25, fixed 0435 inline and touched linkedin-pub),
+  two resolved conflicts, a full `bun run spur-check` on the merged tree, then `--ff-only` on main. The
+  durable rule: never FF a batch branch that has not been merged with the current base first.
