@@ -3,15 +3,15 @@ schema_version: 1
 name: Session checks refuse a fresh sign-in and orphaned browser leases block the login itself
 status: todo
 template: issue
-created_at: 2026-11-25T05:17:43.501Z
-updated_at: "2026-11-25T05:17:46.283Z"
+created_at: 2026-11-25T06:28:00.101Z
+updated_at: "2026-11-25T06:28:10.128Z"
 feature_id: L3
 
 ac_altitude: task-local
 ac_numbering: task-local
 ---
 
-## 0431. Session checks refuse a fresh sign-in and orphaned browser leases block the login itself
+## 0436. Session checks refuse a fresh sign-in and orphaned browser leases block the login itself
 
 ### Background
 

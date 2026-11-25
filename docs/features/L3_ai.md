@@ -159,6 +159,7 @@ Feature: Daily AI News editorial and delivery uplift
 | 0432 | surfdash cover patch fails when the podcast row never uploaded a remote cover | todo |
 | 0408 | Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one | done |
 | 0431 | Daily promos cannot ship when the podcast row is held by the safety verdict | todo |
+| 0436 | Session checks refuse a fresh sign-in and orphaned browser leases block the login itself | todo |
 | 0393 | Verify and repair series-scoped selection continuity | done |
 | 0391 | Bind Daily AI Voice Board to current news run and publish evidence | done |
 | 0387 | Compose news covers for the two centered crops | done |
