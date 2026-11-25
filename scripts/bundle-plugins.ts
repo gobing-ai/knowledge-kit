@@ -12,9 +12,10 @@
  * `apps/cli/{plugins,.claude-plugin}`.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { treeDiffs } from './check-tool-freshness';
 
 const REPO_ROOT = new URL('../', import.meta.url).pathname;
 const PLUGIN_SOURCE = join(REPO_ROOT, 'plugins');
@@ -217,13 +218,53 @@ export async function bundlePlugins(
     return { pluginTarget, marketplaceTarget };
 }
 
+/** Subtrees the launch preflight compares between checkout and staged `apps/cli/plugins` (0430 R2). */
+const STALE_CHECK_TREES = ['kk/workflows', 'kk/scripts'] as const;
+
+/**
+ * True when `pluginTarget` (default `apps/cli/plugins`) is absent, its `kk/{workflows,scripts}`
+ * trees diverge in bytes from `pluginSource`, or a product manifest was added, removed or updated.
+ */
+export function isStagedPluginsStale(
+    pluginTarget: string = PLUGIN_TARGET,
+    pluginSource: string = PLUGIN_SOURCE,
+): boolean {
+    if (!existsSync(pluginTarget)) return true;
+    for (const subtree of STALE_CHECK_TREES) {
+        if (treeDiffs(join(pluginSource, subtree), join(pluginTarget, subtree)).length > 0) return true;
+    }
+    for (const collection of KIND_COLLECTIONS) {
+        const srcCol = join(pluginSource, collection);
+        const dstCol = join(pluginTarget, collection);
+        const names = new Set([
+            ...(existsSync(srcCol) ? readdirSync(srcCol) : []),
+            ...(existsSync(dstCol) ? readdirSync(dstCol) : []),
+        ]);
+        for (const name of names) {
+            const srcManifest = join(srcCol, name, 'plugin.json');
+            const dstManifest = join(dstCol, name, 'plugin.json');
+            const sourceExists = existsSync(srcManifest);
+            if (sourceExists !== existsSync(dstManifest)) return true;
+            if (sourceExists && statSync(srcManifest).mtimeMs > statSync(dstManifest).mtimeMs) return true;
+        }
+    }
+    return false;
+}
+
 if (import.meta.main) {
-    // `bun scripts/bundle-plugins.ts [<plugin-target> <marketplace-target>]`:
-    // with no args it restages `apps/cli/` (prepack). Overrides let tests stage
-    // a scratch tree in a subprocess — bun test cannot run Bun.build in-process
-    // for the plugins' workspace symlinks (0111).
-    const [pluginTarget, marketplaceTarget] = process.argv.slice(2);
+    // `bun scripts/bundle-plugins.ts [--if-stale] [<plugin-target> <marketplace-target>]`:
+    // with no args it restages `apps/cli/` (prepack). `--if-stale` skips rebuilding when
+    // `apps/cli/plugins/` is already in sync with `plugins/kk/{scripts,workflows}` and product
+    // manifests (0430 R2). Overrides let tests stage a scratch tree in a subprocess — bun test
+    // cannot run Bun.build in-process for the plugins' workspace symlinks (0111).
+    const args = process.argv.slice(2);
+    const ifStale = args.includes('--if-stale');
+    const positional = args.filter((arg) => arg !== '--if-stale');
+    const [pluginTarget, marketplaceTarget] = positional;
     try {
+        if (ifStale && !isStagedPluginsStale(pluginTarget)) {
+            process.exit(0);
+        }
         await bundlePlugins(pluginTarget, marketplaceTarget);
     } catch (error) {
         console.error(`error: ${error instanceof Error ? error.message : String(error)}`);

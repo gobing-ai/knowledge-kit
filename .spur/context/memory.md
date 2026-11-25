@@ -345,7 +345,7 @@ Batch: sequential task-pipeline v9 runs, all three → done, each verdict PASS /
   after a fresh variants safety pass (the pre-repoint bundle is at
   `.spur/run/dogfood/2026-11-24-news/bundle.json.pre-promo-repoint`), because `generate-bundle --stage
   freeze` refuses a frozen bundle and the matrix compares per-variant digests against `bundle.safety`.
-- **Tasks filed**: 0422 (promo link coupling / freeze immutability), 0423 (surfdash cover patch when the
-  podcast row never uploaded a remote cover), 0424 (CN-blocked lead must be caught before TTS), 0425
-  (ladder vs floor-gate denominators; keep-rate drift), 0426 (`kk news status` reports `bundle: null`
+- **Tasks filed**: 0431 (promo link coupling / freeze immutability), 0432 (surfdash cover patch when the
+  podcast row never uploaded a remote cover), 0433 (CN-blocked lead must be caught before TTS), 0434
+  (ladder vs floor-gate denominators; keep-rate drift), 0435 (`kk news status` reports `bundle: null`
   for a news run).

@@ -14,7 +14,7 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUNDLEABLE, bundlePlugins, bundleStagedEntries, EXCLUDE } from './bundle-plugins';
+import { BUNDLEABLE, bundlePlugins, bundleStagedEntries, EXCLUDE, isStagedPluginsStale } from './bundle-plugins';
 
 /**
  * Fixture entries must be dependency-free: Bun.build succeeds in-process for
@@ -678,5 +678,54 @@ describe('bundle-plugins declared-path classification (0249 review P3-2)', () =>
         for (const declared of ['./scripts/probe.sh', './scripts/probe.py', './bin/omni-voice-gen']) {
             expect(BUNDLEABLE.test(declared), declared).toBe(false);
         }
+    });
+});
+
+describe('bundle-plugins staleness detection and --if-stale (0430 R2)', () => {
+    it('reports stale when staged target is missing, fresh after bundle, and stale after kk script/workflow drift', async () => {
+        const root = makeScratch('if-stale');
+        try {
+            const sourcePlugins = join(root, 'plugins');
+            const sourceMarketplace = join(root, '.claude-plugin');
+            const stagedPlugins = join(root, 'staged-plugins');
+            const stagedMarketplace = join(root, 'staged-marketplace');
+            mkdirSync(join(sourcePlugins, 'kk', 'scripts'), { recursive: true });
+            mkdirSync(join(sourcePlugins, 'kk', 'workflows'), { recursive: true });
+            mkdirSync(sourceMarketplace, { recursive: true });
+            writeFileSync(join(sourcePlugins, 'kk', 'scripts', 'daily-stages.ts'), 'export const v = 1;\n');
+            writeFileSync(join(sourcePlugins, 'kk', 'workflows', 'kk-daily.yaml'), 'name: kk-daily\n');
+            writeFileSync(join(sourceMarketplace, 'marketplace.json'), '{"name":"kk"}\n');
+            writePluginSource(sourcePlugins, 'publishings', 'demo-pub');
+
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
+
+            await bundlePlugins(stagedPlugins, stagedMarketplace, sourcePlugins, sourceMarketplace);
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(false);
+
+            writeFileSync(join(sourcePlugins, 'kk', 'scripts', 'daily-stages.ts'), 'export const v = 2;\n');
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
+
+            await bundlePlugins(stagedPlugins, stagedMarketplace, sourcePlugins, sourceMarketplace);
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(false);
+
+            writeFileSync(join(sourcePlugins, 'kk', 'workflows', 'extra.yaml'), 'name: extra\n');
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
+
+            await bundlePlugins(stagedPlugins, stagedMarketplace, sourcePlugins, sourceMarketplace);
+            rmSync(join(sourcePlugins, 'publishings', 'demo-pub', 'plugin.json'));
+            expect(isStagedPluginsStale(stagedPlugins, sourcePlugins)).toBe(true);
+        } finally {
+            rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('exits 0 without rewriting staged files when invoked with --if-stale against a fresh staged tree', () => {
+        const stagedRoot = join(REPO_ROOT, 'apps', 'cli', 'plugins');
+        expect(existsSync(stagedRoot)).toBe(true);
+        const beforeMtime = statSync(join(stagedRoot, 'kk', 'scripts', 'daily-stages.ts')).mtimeMs;
+        const result = spawnSync('bun', [STAGING_SCRIPT, '--if-stale'], { cwd: REPO_ROOT, encoding: 'utf8' });
+        expect(result.status).toBe(0);
+        const afterMtime = statSync(join(stagedRoot, 'kk', 'scripts', 'daily-stages.ts')).mtimeMs;
+        expect(afterMtime).toBe(beforeMtime);
     });
 });

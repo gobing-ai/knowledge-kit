@@ -3,9 +3,9 @@ name: Architecture Decision Record
 doc: 00_ADR
 owns: WHY — which cross-cutting decision was made, and the one-line reason
 authority: authoritative
-version: 1.46.0
+version: 1.48.0
 created_at: 2026-05-28
-updated_at: 2026-11-14
+updated_at: 2026-11-24
 edit_rules: 99 §6.1
 sync: [T1, T2]
 ---
@@ -2079,10 +2079,33 @@ cut-over readiness; the latter still requires real Mac mini evidence.
 
 ## ADR-057: Daily news cover and illustration art direction lives in dedicated skills
 
-**Status:** Accepted (design) · **Date:** 2026-11-22 · **Feature:** L4 · **Complements:** ADR-045, ADR-046, ADR-053
+**Status:** Accepted (implemented — L4 0424–0427) · **Date:** 2026-11-22 · **Feature:** L4 · **Complements:** ADR-045, ADR-046, ADR-053
 
 **Decision.** Put daily cover and illustration direction in two skills under `plugins/kk/skills`. News editorial retains the approved story, headline, and claims. Daily stages retain dispatch, validation, and packaging, and `image-gen` remains the renderer. Inline figures require opt-in and a verified path into the reviewed and frozen target payload.
 
 **Why.** Scheduled runs and direct requests need the same visual guidance while preserving the existing render and publishing contracts.
 
 **Detail:** [Daily AI news visual skills](design/daily-news-visual-skills.md).
+
+**Amendment (2026-11-24).** Status flipped from `Accepted (design)` to implemented: the two skills, the shared composition reference, opt-in inline figures (0424–0426) and the packaged replay that verifies installed skill discovery (0427) have shipped.
+
+---
+
+## ADR-058: The repo gate splits into a fast per-task tier and a heavy per-feature tier
+
+**Status:** Accepted (implemented — tasks 0429/0430) · **Date:** 2026-11-24
+
+**Decision.** `bun run test` runs only the fast tier; browser/DOM, e2e, installed-bundle and
+subprocess-workflow suites move to `bun run test:heavy`. One classification source
+(`HEAVY_TEST_PATTERNS` in `scripts/test-suites.ts`) drives both tiers, so they stay disjoint and
+their union is every workspace `*.test.ts` — a file that changes tier never leaves the gate.
+`spur-check` remains the per-task gate (fast tier + 90%/90% per-file coverage + rules) and
+`spur-check-feature` runs `spur-check` then `test:heavy`, which is what `.spur/config.yaml`
+`builder.actions.check-feature` resolves to; `test:heavy` runs with coverage disabled so it never
+rewrites `.coverage/lcov.info`.
+
+**Why.** Real-Chromium and multi-spawn suites dominated a 1904 s gate while contributing no
+in-process coverage, so every small task paid the full e2e cost; the split cut the per-task gate to
+281 s without lowering the 90% floor or dropping a test.
+
+**Detail:** `docs/03_ARCHITECTURE.md` § Quality boundary; `scripts/test-suites.ts`.

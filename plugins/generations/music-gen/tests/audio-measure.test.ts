@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import type { ProcessExecutor, ProcessOptions, ProcessResult } from '@gobing-ai/ts-runtime';
 import {
     AudioToolError,
+    createSpawnRunner,
     ffprobeArgs,
     loudnormArgs,
     measureAudio,
@@ -276,10 +278,45 @@ describe('AC1/AC6 — measureAudio runs the whole measurement through one inject
         expect((caught as AudioToolError).message).toContain('exited 1');
     });
 
-    test('the default runner is Bun.spawnSync, injected only in tests', async () => {
+    test('the default runner wraps ProcessExecutor and surfaces spawn failures', async () => {
         await expect(spawnRunner([])).rejects.toBeInstanceOf(AudioToolError);
-        // `true` writes nothing and exits 0: the default runner's capture path.
-        const output = await spawnRunner(['true']);
-        expect(output).toEqual({ exitCode: 0, stdout: '', stderr: '' });
+
+        const seen: ProcessOptions[] = [];
+        const stubExecutor = (result: Partial<ProcessResult>): ProcessExecutor => ({
+            async run(options: ProcessOptions): Promise<ProcessResult> {
+                seen.push(options);
+                return {
+                    command: options.command,
+                    args: options.args ?? [],
+                    exitCode: 0,
+                    stdout: '',
+                    stderr: '',
+                    durationMs: 1,
+                    ...result,
+                };
+            },
+            runStreaming() {
+                throw new Error('runStreaming is unused by audio measurement');
+            },
+        });
+
+        const okRunner = createSpawnRunner(stubExecutor({ exitCode: 0, stdout: 'ok', stderr: '' }));
+        expect(await okRunner(['ffprobe', '-version'])).toEqual({ exitCode: 0, stdout: 'ok', stderr: '' });
+        expect(seen[0]).toEqual({ command: 'ffprobe', args: ['-version'], label: 'audio ffprobe' });
+
+        const missingRunner = createSpawnRunner(stubExecutor({ exitCode: null, stderr: 'ENOENT', signal: 'SIGKILL' }));
+        let caught: unknown;
+        try {
+            await missingRunner(['ffmpeg', '-version']);
+        } catch (error: unknown) {
+            caught = error;
+        }
+        expect(caught).toBeInstanceOf(AudioToolError);
+        const error = caught as AudioToolError;
+        expect(error.tool).toBe('ffmpeg');
+        expect(error.kind).toBe('spawn');
+        expect(error.message).toContain('ENOENT');
+        expect(error.message).toContain('killed by SIGKILL');
+        expect(error.message).toContain('install ffmpeg');
     });
 });

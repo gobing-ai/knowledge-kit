@@ -2750,3 +2750,124 @@ Verification of this wrap
   `plugins/publishings/*/.works/tmp/**`; stage explicit paths, and prefer `git rm --cached` + amend
   when it happens.
 
+Doc-evolve wrapup done. Drift audit (detection via `git show a72334f7`, `grep` of the doc surface, `spur task show 0429/0430`):
+
+**Repaired — `docs/00_ADR.md`**
+- Added **ADR-058** (repo gate splits into a fast per-task tier and a heavy per-feature tier), the T1 decision both implementing commits owed and neither recorded. Frontmatter `1.46.0 → 1.47.0`, `updated_at → 2026-11-24`.
+
+**Repaired — `docs/03_ARCHITECTURE.md`**
+- `§ Quality boundary` rewritten from `Tests | bun run test` (now only the fast tier — a false gate statement) into fast tier / heavy tier / per-task gate / feature gate rows, plus the enforceable invariants (`fast ∩ heavy = ∅`, `fast ∪ heavy = all`, fast tier alone ≥ 90%/90%, heavy never rewrites `.coverage/lcov.info`).
+- `§ Execution boundary integrity` → Distribution row now records `--if-stale` staging refresh at `prepare` + globbed `pre-commit`/`post-checkout`/`post-merge`, and that `runPreflight` stays read-only (exit 5). Frontmatter `2.45.0 → 2.46.0`, `updated_at → 2026-11-24`.
+
+**Zero delta — `docs/04_DESIGN.md`**: the one T3-owned sentence (`04:2585-2586`, `check-feature` → `spur-check-feature` = fast + heavy) was already updated in `a72334f7`. No row re-added.
+**Zero delta — `docs/design/*`**: no spec describes the repo gate or the staging refresh; the `bundle-plugins` mentions in `multi-root-plugin-discovery.md` / `vibe-voice-driver.md` are about inlining assets, unchanged by these tasks.
+
+Scope and verification: `git status --porcelain` = exactly `M docs/00_ADR.md`, `M docs/03_ARCHITECTURE.md` (plus the run-scoped learnings artifact). No `docs/tasks*` / `docs/features*` writes. `bun run lint` not run — the diff is markdown-only and Biome cannot process markdown (it exits 1 with "No files were processed" on a docs-only change set), so it would produce a false failure rather than signal.
+
+Skipped: `AGENTS.md` sync (its Build & verification block still calls `bun run test` the full suite and its worktree prose predates `--if-stale`) — outside this wrap's `docs/`-only write scope; flagged in the learnings. Risk: that block is now the single stale surface for this batch, so an agent reading only AGENTS.md will believe `bun run test` runs every test.
+
+# Working learnings — batch 0429, 0430 (2026-11-24)
+
+Source: `.spur/run/75c9c199-b24a-44ad-be14-1972b5f419e5-wrapup-tasks.json` → `["0429","0430"]`; landed in one commit `a72334f7`.
+
+## 2026-11-24 — 0429 (test-suite split into `test:heavy`)
+
+- **A gate that runs everything is a per-task tax.** Baseline `bun run test` = 1904 s across 369 files; after routing 32 files to `test:heavy`, `spur-check` = 281 s (test step 257.55 s), 5797 tests green. The tail that remains is in-process unit tests that carry coverage — you cannot buy more speed without breaking the 90% floor.
+- **One classification source, both directions.** `scripts/test-suites.ts` `HEAVY_TEST_PATTERNS` feeds `fast` and `heavy`; `scripts/tests/test-suites.test.ts` proves `fast ∩ heavy = ∅` and `fast ∪ heavy = all 369` workspace `*.test.ts`. Two hand-edited glob lists in `package.json` would have drifted silently: a file removed from `fast` and forgotten in `heavy` drops out of the gate with no error.
+- **Do not rely on `--no-coverage` to beat `bunfig.toml`.** `coverage = true` in bunfig wins often enough that the safe route is a generated `--config=.works/tmp/heavy-bunfig.toml` with `coverage = false` (keeping the preload). Prove it empirically: `stat -f "%m %z" .coverage/lcov.info` before and after `test:heavy` must print the same pair (`LCOV_UNCHANGED=OK`).
+- **Subsetting the suite makes test-helper coverage subset-dependent.** `scripts/test-silence-output.ts` (the `[test] preload` noop sink) had to be added to `bunfig.toml` `coveragePathIgnorePatterns`: its functions are only invoked when some test echoes without capturing output, so per-file function coverage changed with which tier ran. Any test-only preload/helper belongs in `coveragePathIgnorePatterns`, never production `src/`.
+- **`bun test <file>` exits 1 on coverage, not on failures**, and `coverageThreshold` is enforced per file, not on the aggregate (98% overall still exits 1 when two files sit at 88%). Read the exit code plus the per-file block; `0 fail` alone proves nothing.
+- **The two config seams move together.** `package.json` `spur-check-feature` and `.spur/config.yaml` `builder.actions.check-feature` (L296) must change in one edit — the config comment now names the fast+heavy contract. `.github/workflows/ci.yml` was left untouched on purpose: workflow policy needs separate operator approval, and bare `bun test` there still runs everything.
+- **Refine before implementing paid off twice.** The refine pass caught a stale test-file count (task said 370, tree had 369) and literal `\n` escapes plus `- R2:` bullets in `Requirements`/`Plan` — formatting defects inherited from a previous write, fixed before the pipeline read them as acceptance text.
+
+## 2026-11-24 — 0430 (DOM-script coverage isolation + worktree plugin bundling)
+
+- **Verify a task's root-cause premise before building on it.** R1 claimed uninstrumentable `page.evaluate((…)=>{})` callbacks needed extracting; `rg -n "page\.evaluate\(\s*(async\s*)?\("` returned 0 matches — all 48 calls already pass string expressions. The real gap was 116 uncovered Node/Bun lines (`flow.ts:3329-3444`, the audio cover-chooser branch reachable only through the subprocess DOM runner) plus scattered catch paths. Re-pointing the requirement at the measured gap turned a risky extraction into a 54-line unit test.
+- **Wildcards beat enumeration for fixture runners.** Seven hand-listed `**/tests/fixtures/<name>-runner.ts` ignores became one `**/tests/fixtures/*-runner.ts`, covering all 11 subprocess-only Playwright runners and ending the recurring "new runner shows up as uncovered" cycle. Verify with `grep -c "tests/fixtures/.*-runner\.ts" .coverage/lcov.info` = 0.
+- **Coverage razor margins are a design smell, not a test problem.** `flow.ts` sat at 90.5% fn because the branch lived behind a subprocess; `page.ts` at 91.3% because a browser-executed callback counted as an uncovered Node function. Replacing the serialized `button.evaluate((el, key) => …)` with a `raw.evaluate` string expression (with a `document` fallback for Playwright-only pseudo-selectors) took `page.ts` to 92.41% fn / 100% ln without touching the 90% threshold.
+- **Fix staleness at the write/checkout boundary, never in the preflight.** `apps/cli/src/launch.ts` `runPreflight` must stay a read-only refusal (exit 5 pinned by `apps/cli/tests/launch.test.ts`); outside a checkout the target is a global install `bundle-plugins.ts` cannot rebuild. `--if-stale` (byte-compare `plugins/kk/{scripts,workflows}` + `plugin.json` mtime vs `apps/cli/plugins`, 15 ms skip vs 2–4 s `Bun.build`) was wired into `prepare` and lefthook `pre-commit` (globbed on those paths), `post-checkout`, `post-merge`.
+- **In a worktree, the symptom of a stale staging copy looks like a product bug.** A gitignored `apps/cli/plugins/` copy older than `plugins/kk/{scripts,workflows}` makes every `kk … generate` refuse with `checkout diverges from installed kk` (exit 5). Before chasing logic, run `bun scripts/bundle-plugins.ts` (or `--if-stale`) and re-check.
+- **Sibling tasks can share a coverage budget.** 0429 and 0430 both move publish-plugin tests; near-90% adapters (`xhs-pub/src/flow.ts` 90.73% fn, `flow.ts` 90.49%) needed headroom before their heavy tests could leave `fast`, or the fast tier would have fallen under 90% with no failing test to explain it. Soft ordering (0430 → 0429) was enough; no dependency edge was required.
+
+## 2026-11-24 — cross-task / process
+
+- **A gate-tier change is a cross-cutting decision, so it owes `00` + `03` in the same commit.** Both implementers updated `04` (the `check-feature` sentence) but left `03` § Quality boundary saying `Tests | bun run test`, which after the split names only the fast tier — a reader would believe the gate still runs every test. Repaired at wrap with ADR-058 and a rewritten quality-boundary table plus the invariant (`fast ∩ heavy = ∅`, `fast ∪ heavy = all`, fast tier alone ≥ 90%/90%, heavy never rewrites lcov). Config-key prose is not a substitute for the mechanism doc.
+- **`AGENTS.md` is now the lagging surface here.** Its Build & verification block still presents `bun run test` as the full suite and its worktree-bundling prose predates `--if-stale` hooks. Left unedited because this wrap's authorized write scope was `docs/` only — the next task that touches `AGENTS.md` must sync both blocks.
+- **`docs/04_DESIGN.md` and `docs/design/*` needed no repair** for these two tasks: the one T3-owned sentence (`04:2585-2586`) was updated in the implementing commit, and no design spec under `docs/design/` describes the repo gate or the staging refresh.
+- **Batch drivers: one commit for two sibling tasks is fine when the seams are disjoint.** 0429 owned `package.json`/`.spur/config.yaml`/`scripts/test-suites.ts`; 0430 owned `bunfig.toml`/`bundle-plugins.ts`/`.lefthook.yml`/publish tests; only `bunfig.toml` was touched twice, and both edits were additive lines in different sections.
+Wrap complete. Task list from the run capture: `0427` only.
+
+**Drift repaired (4 files, all under `docs/`)**
+
+| File | Drift | Repair |
+| --- | --- | --- |
+| `docs/00_ADR.md:2081` | ADR-057 still `Accepted (design)` after L4 0424–0427 shipped (§6.1 rule 5; repeat of the 2026-08-16 lesson) | Status → `Accepted (implemented — L4 0424–0427)` + dated `**Amendment (2026-11-24).**` line; version 1.48.0 |
+| `docs/03_ARCHITECTURE.md:740` | heading `(accepted design, ADR-057)` — §6.4 rule 1 forbids accepted-design framing for built architecture | heading → `(ADR-057 — shipped, L4 0424–0427)`; added the installed-package resolution invariant the 0427 replay asserts; version 2.47.0 |
+| `docs/04_DESIGN.md:65` | §0 index said `planned (L4)` | `shipped (L4; 0424–0427, packaged replay verifies installed skill discovery)` |
+| `docs/04_DESIGN.md:1462` | §1 transcribed `kk article generate` without `--inline-illustrations` (§6.5 rule 4) | added the registered flag, news-only, from `apps/cli/src/commands/content-launch.ts:743` |
+| `docs/04_DESIGN.md` frontmatter | `updated_at: 2026-11-18` stale across two 11-24 edits (§4.3) | `2026-11-24`, version 2.67.0 |
+| `docs/design/daily-news-visual-skills.md:3` | `**Accepted design · 2026-11-22**` | `**Shipped · 2026-11-24 · L4 · ADR-057**`; §4 records what the 0427 packaged replay actually covers |
+
+Verified before editing: skills and shared reference exist at the claimed paths (`plugins/kk/skills/daily-news-cover|daily-news-illustrations/SKILL.md`, `plugins/kk/skills/news-editorial/references/daily-visual-composition.md`), the flag is registered, and the receipt `.works/tmp/test-news-generate/0427-packaged-replay-receipt.json` (keys `resolvedSkills`, `scenarios`, `replayCommand`) exists. `git status` shows only the four `docs/` files; no `docs/tasks*` or `docs/features*` writes; the absent 04 row was left absent.
+
+Left unfixed and flagged: `docs/05_FEATURES.md:128` still marks L4 `⏳ planned` while all four tasks are done — outside this run's allowed write scope; run `/sp:dev-refresh L4` (or `spur feature refresh`).
+
+Skipped: the full `bun run gate` — markdown-only change, nothing compilable moved; the reviewable artifact is this diff. Risk: none to code; the only unexecuted claim is that nothing references the old `planned (L4)` string in derived docs outside my scope.
+
+Artifact written: `/Users/robin/xprojects/knowledge-kit-run-0427-427a/.spur/run/1b877f12-ee3a-4461-9aff-29139b5e26b6-wrapup-learnings.md`
+
+---
+
+## 2026-11-24 — 0427 (Replay daily visual workflow and verify installed skill discovery, feature L4)
+
+### Packaged evidence: a directory shape is not a proof
+- A `package-shaped` fixture directory cannot establish shipped skill resolution. The only proof is
+  `bun pm pack` → `tar -xzf` into a temp dir **outside the repo**, then resolving through
+  `resolveContentType('news', {}, { packageRoot: extractedPkg })` and asserting the resolved path
+  starts with the extracted root plus a 64-hex `skillSha256`. Keep the fake at the provider/transport
+  boundary only.
+- Assert discovery by reading each resolved file, not by listing a directory: `daily-news-cover/SKILL.md`,
+  `daily-news-illustrations/SKILL.md`, `news-editorial/references/daily-visual-composition.md`, and that
+  none of them embeds a `vendors/` path — vendor-free packaging is a content contract, not a manifest one.
+
+### Replay fixtures
+- Cache behavior needs a *pre-seeded artifact* in the fixture (`card-1.png`), and the assertion is on
+  the delta (`renderedCards === ["card-2"]`), not on "no error".
+- Legacy input compatibility is proven by keeping the old shape (`{"subject": …}` cover brief) in the
+  default fixture, not by a mock returning success.
+- Opt-in paths must assert scope: inline figures materialize **only** in `article@wechatmp-pub`, with
+  per-figure SHA-256 matching the pinned `metadata.wechatmp.inlineFigures`, and `inlineCallCount === 0`
+  in the default run.
+- Store the replay command inside the receipt (`replayCommand`). It is a moving target: after 0429/0430
+  split the gate by tier it became `bun run test:heavy … -t "0427"`, so re-read it instead of trusting an
+  old note.
+
+### Flake classification
+- `apps/cli/tests/commands/daily.test.ts:80` fails only under `--parallel=8` (`.works/` snapshot race) and
+  passes 26/26 in isolation. Classify it as a pre-existing parallel snapshot race and say so; do not
+  widen the change or weaken the assertion to make the aggregate green.
+
+### Doc drift repaired at wrap (all inside `docs/`)
+- ADR-057 was still `Accepted (design)` after L4 shipped — the exact repeat of the 2026-08-16 lesson.
+  Status flipped to `Accepted (implemented — L4 0424–0427)` plus a dated `**Amendment (2026-11-24).**`
+  line so the append-only history still shows the transition.
+- Same-change satellite sweep: `docs/03_ARCHITECTURE.md` heading said `(accepted design, ADR-057)`,
+  `docs/04_DESIGN.md` §0 index said `planned (L4)`, and the design doc header said
+  `**Accepted design · 2026-11-22 …**`. All four had to flip together; flipping only the ADR leaves the
+  same claim standing three files away.
+- `docs/04_DESIGN.md` §1 transcribed `kk article generate` without `--inline-illustrations` even though the
+  §6 row documented it — signature lines must come from `configureGenerate` in
+  `apps/cli/src/commands/content-launch.ts:736-756`, not from an older revision of the doc.
+- Frontmatter: a doc edit bumps `version` minor and `updated_at`. `04_DESIGN.md` carried
+  `updated_at: 2026-11-18` through two 11-24 doc edits; contract-verify catches it, nothing else does.
+- Out-of-scope drift left flagged, not fixed: `docs/05_FEATURES.md` still lists L4 as `⏳ planned` while
+  all four tasks are done. Writing outside `docs/` (or into `docs/features/`, `docs/tasks/`) fails the wrap
+  scope check — flag it for the next `/sp:dev-refresh L4`.
+- Pre-existing 0424 naming drift survived into 04 for a while: the shared composition reference lives at
+  `plugins/kk/skills/news-editorial/references/daily-visual-composition.md` and both skills link it as
+  `../news-editorial/references/…`. Verify the real path before "fixing" a path that only looked wrong in a
+  combined `ls` output.
+
+### Scope discipline for a docs-only wrap
+- A markdown-only repair does not need the 281 s+ gate; the reviewable artifact is the diff plus a
+  `git status` that shows only `docs/`. State the skipped checks instead of implying the full gate ran.

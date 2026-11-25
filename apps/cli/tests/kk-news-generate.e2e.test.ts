@@ -22,13 +22,17 @@
  * call — over the same fixture, then comparing variant keys and safety status.
  */
 import { afterAll, describe, expect, it } from 'bun:test';
+import { createHash } from 'node:crypto';
 import {
     chmodSync,
     cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
+    readdirSync,
     readFileSync,
+    realpathSync,
+    renameSync,
     rmSync,
     symlinkSync,
     writeFileSync,
@@ -65,7 +69,8 @@ afterAll(() => {
 
 /** The stage runner double: the deterministic node bodies, offline (same double as AC2). */
 const STAGE_STUB = String.raw`#!/usr/bin/env bun
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 const [stage, ...args] = process.argv.slice(2);
@@ -73,11 +78,17 @@ const workDir = args[0] ?? '';
 const runDate = args[1] ?? '';
 const write = (path, body) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, body); };
 const writeJson = (path, value) => write(path, JSON.stringify(value, null, 2) + '\n');
+const logProvider = (entry) => {
+    if (!process.env.KK_PROVIDER_LOG) return;
+    mkdirSync(dirname(process.env.KK_PROVIDER_LOG), { recursive: true });
+    appendFileSync(process.env.KK_PROVIDER_LOG, JSON.stringify(entry) + '\n');
+};
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
 const docs = JSON.parse(await Bun.file(process.env.KK_STUB_DOCS).text());
 // 0392 R2: the counts artifact is written by the REAL module, so the stub only fakes the stage
 // boundary — the arithmetic the workflow depends on is never re-implemented in a double.
 const attempts = process.env.KK_STUB_ATTEMPTS ? await import(process.env.KK_STUB_ATTEMPTS) : null;
-const content = (body) => ({ title: '每日AI乱炖', format: 'markdown', body, metadata: {} });
+const content = (body, metadata = {}) => ({ title: '每日AI乱炖', format: 'markdown', body, metadata });
 
 if (process.env.KK_STUB_FAIL_STAGE === stage) process.exit(3);
 switch (stage) {
@@ -132,10 +143,53 @@ switch (stage) {
     case 'daily-article':
         writeJson(join(workDir, '22-article', runDate + '_06_article_content.json'), content('article'));
         break;
-    case 'daily-cover':
-        write(join(workDir, '23-cover', runDate + '_07_cover_cover.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    case 'daily-cover': {
+        const provider = args[3] ?? 'minimax';
+        const model = args[4] ?? 'image-01';
+        const briefPath = join(workDir, '23-cover', runDate + '_07_cover-brief.json');
+        let subject = 'default-fallback-subject';
+        let fallbackUsed = true;
+        if (existsSync(briefPath)) {
+            try {
+                const parsed = JSON.parse(readFileSync(briefPath, 'utf-8'));
+                if (typeof parsed.subject === 'string' && parsed.subject.trim()) {
+                    subject = parsed.subject.trim();
+                    fallbackUsed = false;
+                }
+            } catch { /* fallback */ }
+        }
+        const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        write(join(workDir, '23-cover', runDate + '_07_cover_cover.png'), png);
+        write(join(workDir, '23-cover', runDate + '_07_cover_social.jpg'), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+        writeJson(join(workDir, '23-cover', 'cover-receipt.json'), {
+            provider, model, subject, fallbackUsed,
+            podcastSize: '1344x576', socialSize: '1200x630',
+            headline: '模型新版本发布与开源协议',
+        });
+        logProvider({ kind: 'cover', provider, model, subject, fallbackUsed });
         break;
+    }
     case 'daily-cover-normalize': break;
+    case 'news-inline-illustrations': {
+        const provider = args[3] ?? 'minimax';
+        const model = args[4] ?? 'image-01';
+        const dir = join(workDir, '22-article', 'illustrations');
+        const plan = JSON.parse(readFileSync(join(dir, 'plan.json'), 'utf-8'));
+        for (let i = 0; i < plan.figures.length; i++) {
+            const fig = plan.figures[i];
+            const id = 'figure-' + (i + 1);
+            const imgPath = join(dir, id + '-illustration-01.png');
+            const bytes = Buffer.from('kk-inline-png-' + id + '-' + fig.concept);
+            write(imgPath, bytes);
+            writeJson(join(dir, id + '-receipt.json'), {
+                id, path: imgPath, sha256: sha256(bytes),
+                altText: fig.altText, caption: fig.caption, anchor: fig.anchor,
+                provider, model,
+            });
+            logProvider({ kind: 'inline', id, provider, model, concept: fig.concept });
+        }
+        break;
+    }
     case 'daily-wrap-docs':
         writeJson(join(workDir, '30-audio', runDate + '_10_wrap-docs_docs.json'), { metadata: { docs: [] } });
         break;
@@ -155,10 +209,28 @@ switch (stage) {
     case 'daily-show-notes':
         write(join(workDir, '31-publish', runDate + '_15_show-notes_show-notes.md'), '- 00:00 intro\n');
         break;
-    case 'daily-xhs-render':
-        writeJson(join(workDir, '25-xhs', runDate + '_18_xhs_plan.json'), { cards: [] });
-        write(join(workDir, '25-xhs', 'card-1.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    case 'daily-xhs-render': {
+        const provider = args[5] ?? 'minimax';
+        const model = args[6] ?? 'image-01';
+        const card1 = join(workDir, '25-xhs', 'card-1.png');
+        const card2 = join(workDir, '25-xhs', 'card-2.png');
+        const cover = join(workDir, '23-cover', runDate + '_07_cover_cover.png');
+        const rendered = [];
+        for (const [idx, cardPath] of [[1, card1], [2, card2]]) {
+            if (existsSync(cardPath)) continue;
+            write(cardPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, idx]));
+            rendered.push('card-' + idx);
+            logProvider({ kind: 'xhs-card', card: 'card-' + idx, provider, model });
+        }
+        writeJson(join(workDir, '25-xhs', runDate + '_18_xhs_plan.json'), {
+            cards: [
+                { index: 1, path: card1, cached: !rendered.includes('card-1') },
+                { index: 2, path: card2, cached: !rendered.includes('card-2') },
+            ],
+            attachedCover: existsSync(cover) ? cover : null,
+        });
         break;
+    }
     case 'daily-publish-prep':
         writeJson(join(workDir, '31-publish', runDate + '_13_publish-prep_content.json'), {
             title: '每日AI乱炖', format: 'markdown', body: 'episode',
@@ -166,11 +238,30 @@ switch (stage) {
         });
         break;
     case 'news-localize-validate': break;
-    case 'daily-bundle-variants':
-        for (const key of ['article', 'episode', 'xhs-article']) {
+    case 'daily-bundle-variants': {
+        const inlineDir = join(workDir, '22-article', 'illustrations');
+        const inlinePlanPath = join(inlineDir, 'plan.json');
+        let articleBody = 'article';
+        let articleMeta = {};
+        if (existsSync(inlinePlanPath)) {
+            const plan = JSON.parse(readFileSync(inlinePlanPath, 'utf-8'));
+            const figures = [];
+            const parts = ['# 每日AI乱炖'];
+            for (let i = 0; i < plan.figures.length; i++) {
+                const id = 'figure-' + (i + 1);
+                const rec = JSON.parse(readFileSync(join(inlineDir, id + '-receipt.json'), 'utf-8'));
+                figures.push({ id: rec.id, path: rec.path, sha256: rec.sha256, altText: rec.altText, caption: rec.caption });
+                parts.push(rec.anchor + '\n\n![' + rec.altText + '](kk-inline:' + rec.id + ')\n\n' + rec.caption);
+            }
+            articleBody = parts.join('\n\n');
+            articleMeta = { wechatmp: { inlineFigures: figures } };
+        }
+        writeJson(join(workDir, '30-variants', 'article.content.json'), content(articleBody, articleMeta));
+        for (const key of ['episode', 'xhs-article']) {
             writeJson(join(workDir, '30-variants', key + '.content.json'), content(key));
         }
         break;
+    }
     default: break;
 }
 process.exit(0);
@@ -222,10 +313,16 @@ if [ -n "$locale_en" ]; then
   printf '# Daily AI Stew\n\nEnglish body.\n' > "$locale_en"
   printf '# デイリーAIシチュー\n\n日本語の本文です。\n' > "\${locale_en%en.md}ja.md"
 fi
+# 0426/0427: the illustrations-plan node writes 22-article/illustrations/plan.json when opted in.
+inline_plan=$(printf '%s' "$prompt" | grep -oE '[^ "]+/22-article/illustrations/plan.json' | head -1)
+if [ -n "$inline_plan" ]; then
+  mkdir -p "$(dirname "$inline_plan")"
+  printf '{"version":1,"figures":[{"anchor":"新版本跑分提升明显。","sourceId":"story-a","concept":"Clean hardware benchmark diagram comparing two throughput bars","caption":"推理吞吐对比示意图","altText":"新版本推理吞吐提升示意图"},{"anchor":"维护者承诺协议不变。","sourceId":"story-b","concept":"Open-source license shield bridging two repositories","caption":"开源协议承诺示意图","altText":"开源项目协议保持不变示意图"}]}\n' > "$inline_plan"
+fi
 exit 0
 `;
 
-function makeFixture(): Fixture {
+function makeFixture(packageRoot?: string): Fixture {
     const root = mkdtempSync(join(tmpdir(), 'kk-0367-ac3-'));
     roots.push(root);
     const bin = join(root, 'bin');
@@ -240,14 +337,19 @@ function makeFixture(): Fixture {
     mkdirSync(join(root, '.spur'), { recursive: true });
     // The shipped kk assets resolve through the fixture root (skills, workflow YAMLs); the report
     // generator resolves through the fixture's own `generations/` so the real plugin never runs.
-    symlinkSync(join(REPO, 'plugins/kk'), join(plugins, 'kk'));
+    if (!packageRoot) symlinkSync(join(REPO, 'plugins/kk'), join(plugins, 'kk'));
 
-    const wrapper = join(pkg, 'apps/cli/src/index.ts');
-    writeFileSync(
-        wrapper,
-        `import { main } from ${JSON.stringify(join(REPO, 'apps/cli/src/main.ts'))};\nprocess.exit(await main(['bun', import.meta.path, ...Bun.argv.slice(2)]));\n`,
-    );
-    writeFileSync(join(pkg, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts'), STAGE_STUB);
+    const wrapper = packageRoot ? join(packageRoot, 'dist/index.js') : join(pkg, 'apps/cli/src/index.ts');
+    if (!packageRoot) {
+        writeFileSync(
+            wrapper,
+            `import { main } from ${JSON.stringify(join(REPO, 'apps/cli/src/main.ts'))};\nprocess.exit(await main(['bun', import.meta.path, ...Bun.argv.slice(2)]));\n`,
+        );
+    }
+    const stagePath = packageRoot
+        ? join(packageRoot, 'plugins/kk/scripts/kk-workflow-stages.ts')
+        : join(pkg, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts');
+    writeFileSync(stagePath, STAGE_STUB);
     writeFileSync(
         join(plugins, 'generations/news-report-gen/plugin.json'),
         JSON.stringify({ name: 'news-report-gen', kind: 'generator', entry: 'entry.ts', version: '0.0.1' }),
@@ -317,7 +419,7 @@ exec "` +
             '      agent: claude',
             '      model: stub/model-1',
             '      tier: capable-1',
-            `decisions:\n  paths:\n    - ${join(REPO, 'plugins/kk/decisions')}\n`,
+            `decisions:\n  paths:\n    - ${join(packageRoot ?? REPO, 'plugins/kk/decisions')}\n`,
             '',
         ].join('\n'),
     );
@@ -362,7 +464,7 @@ function runEnv(fixture: Fixture, extraEnv: Record<string, string> = {}): Record
         HOME: join(fixture.root, 'home'),
         KK_CONFIG: fixture.config,
         KK_STUB_DOCS: fixture.docsFile,
-        KK_STUB_ATTEMPTS: join(REPO, 'plugins/kk/scripts/topic-selection-attempts.ts'),
+        KK_STUB_ATTEMPTS: join(fixture.plugins, 'kk/scripts/topic-selection-attempts.ts'),
         KK_AGENT_LOG: fixture.agentLog,
         KK_PLUGIN_PATH: join(REPO, 'plugins/kk'),
         ...extraEnv,
@@ -570,4 +672,325 @@ describe('kk-news-generate fixture', () => {
         expect(existsSync(join(fx.pkg, 'apps/cli/plugins/kk/scripts/kk-workflow-stages.ts'))).toBe(true);
         expect(dirname(fx.config)).toBe(fx.root);
     });
+});
+
+describe('0427 — packaged daily visual workflow replay and installed skill discovery (AC1 / R1 / R2)', () => {
+    function sha256File(path: string): string {
+        return createHash('sha256').update(readFileSync(path)).digest('hex');
+    }
+
+    function readProviderLog(path: string): Record<string, unknown>[] {
+        if (!existsSync(path)) return [];
+        return readFileSync(path, 'utf-8')
+            .trim()
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => JSON.parse(line) as Record<string, unknown>);
+    }
+
+    function packAndExtractCli(): { tarball: string; extractedPkg: string } {
+        const cliDir = join(REPO, 'apps/cli');
+        const prepack = Bun.spawnSync(['bun', 'run', 'prepack'], { cwd: cliDir, stdout: 'pipe', stderr: 'pipe' });
+        expect(prepack.exitCode, prepack.stderr.toString()).toBe(0);
+        const packDir = mkdtempSync(join(tmpdir(), 'kk-0427-pack-'));
+        roots.push(packDir);
+        const pack = Bun.spawnSync(['bun', 'pm', 'pack', '--destination', packDir], {
+            cwd: cliDir,
+            stdout: 'pipe',
+            stderr: 'pipe',
+        });
+        expect(pack.exitCode, pack.stderr.toString()).toBe(0);
+        const tgzName = readdirSync(packDir).find((name) => name.endsWith('.tgz'));
+        expect(tgzName).toBeDefined();
+        const tarball = join(packDir, tgzName as string);
+        const extractDir = join(packDir, 'extracted');
+        mkdirSync(extractDir, { recursive: true });
+        const untar = Bun.spawnSync(['tar', '-xzf', tarball, '-C', extractDir], { stdout: 'pipe', stderr: 'pipe' });
+        expect(untar.exitCode, untar.stderr.toString()).toBe(0);
+        const extractedPkg = join(extractDir, 'package');
+        // Reuse installed external dependencies; product code and resources come from the tarball.
+        symlinkSync(join(REPO, 'node_modules'), join(extractedPkg, 'node_modules'));
+        return { tarball, extractedPkg };
+    }
+
+    it('discovers shipped visual skills from an extracted tarball and replays default, cache, and inline opt-in paths', async () => {
+        const { tarball, extractedPkg } = packAndExtractCli();
+        const extractedSkills = join(extractedPkg, 'plugins', 'kk', 'skills');
+        const coverSkill = join(extractedSkills, 'daily-news-cover', 'SKILL.md');
+        const illusSkill = join(extractedSkills, 'daily-news-illustrations', 'SKILL.md');
+        const sharedRef = join(extractedSkills, 'news-editorial', 'references', 'daily-visual-composition.md');
+
+        for (const p of [coverSkill, illusSkill, sharedRef]) {
+            expect(existsSync(p), p).toBe(true);
+            expect(p.startsWith(extractedPkg)).toBe(true);
+            expect(readFileSync(p, 'utf-8')).not.toContain('vendors/');
+        }
+        const newsSkill = join(extractedSkills, 'news-editorial', 'SKILL.md');
+        expect(existsSync(join(extractedPkg, 'src'))).toBe(false);
+
+        const packagedWorkflow = join(extractedPkg, 'plugins', 'kk', 'workflows', 'kk-news-generate.yaml');
+        expect(existsSync(packagedWorkflow)).toBe(true);
+
+        const runPackagedWorkflow = (
+            fx: Fixture,
+            vars: Record<string, string>,
+            providerLog: string,
+        ): WorkflowOutcome => {
+            const proc = Bun.spawnSync(
+                [
+                    SPUR,
+                    'workflow',
+                    'run',
+                    packagedWorkflow,
+                    '--run-id',
+                    `0427-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+                    '--json',
+                    '--vars',
+                    JSON.stringify(vars),
+                ],
+                {
+                    cwd: fx.root,
+                    env: runEnv(fx, {
+                        KK_PROVIDER_LOG: providerLog,
+                        KK_PLUGIN_PATH: join(extractedPkg, 'plugins', 'kk'),
+                        KK_STUB_ATTEMPTS: join(extractedPkg, 'plugins/kk/scripts/topic-selection-attempts.ts'),
+                    }),
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                },
+            );
+            const out = proc.stdout?.toString() ?? '';
+            const states = [...out.matchAll(/"finalState"\s*:\s*"([^"]+)"/g)].map((match) => match[1]);
+            let state = states.at(-1) ?? 'unknown';
+            if (state === 'dag') {
+                const status = [...out.matchAll(/"status"\s*:\s*"([^"]+)"/g)].at(-1)?.[1];
+                if (status !== undefined) state = status;
+            }
+            return { code: proc.exitCode ?? 1, state, out, err: proc.stderr?.toString() ?? '' };
+        };
+
+        // ── 1. Default run (inline_illustrations=false, legacy cover brief fallback) ──
+        const fxDefault = makeFixture(extractedPkg);
+        expect(readFileSync(join(fxDefault.bin, 'kk'), 'utf-8')).toContain(join(extractedPkg, 'dist', 'index.js'));
+        expect(existsSync(join(fxDefault.plugins, 'kk'))).toBe(false);
+        await seedStore(fxDefault);
+        const defaultWork = join(fxDefault.works, 'kk-news-generate', DIGITS);
+        const defaultProviderLog = join(fxDefault.root, 'provider-default.jsonl');
+        const defaultOut = runPackagedWorkflow(
+            fxDefault,
+            {
+                ...workflowVars(fxDefault, defaultWork),
+                skill_dir: join(extractedSkills, 'news-editorial'),
+                visual_skill_root: extractedSkills,
+                inline_illustrations: 'false',
+            },
+            defaultProviderLog,
+        );
+        expect(defaultOut.code, defaultOut.err).toBe(0);
+        expect(defaultOut.state).toBe('done');
+        const status = () =>
+            Bun.spawnSync([join(fxDefault.bin, 'kk'), 'news', 'status', '--work-dir', defaultWork], {
+                cwd: fxDefault.root,
+                env: runEnv(fxDefault),
+                stdout: 'pipe',
+                stderr: 'pipe',
+            });
+        const presentSkill = status();
+        expect(presentSkill.exitCode, presentSkill.stderr.toString()).toBe(0);
+        expect(JSON.parse(presentSkill.stdout.toString()).workDir).toBe(defaultWork);
+        const canonicalNewsSkill = realpathSync(newsSkill);
+        renameSync(newsSkill, `${newsSkill}.fixture-backup`);
+        let missingSkillCode: number | null;
+        try {
+            const missingSkill = status();
+            missingSkillCode = missingSkill.exitCode;
+            expect(missingSkillCode, missingSkill.stderr.toString()).toBe(5);
+            expect(missingSkill.stderr.toString()).toContain(canonicalNewsSkill);
+        } finally {
+            renameSync(`${newsSkill}.fixture-backup`, newsSkill);
+        }
+        const defaultProviders = readProviderLog(defaultProviderLog);
+        expect(defaultProviders.filter((p) => p.kind === 'inline')).toHaveLength(0);
+        expect(existsSync(join(defaultWork, '22-article', 'illustrations', 'plan.json'))).toBe(false);
+        const defaultArticle = JSON.parse(
+            readFileSync(join(defaultWork, '30-variants', 'article.content.json'), 'utf-8'),
+        ) as { body: string; metadata?: { wechatmp?: { inlineFigures?: unknown } } };
+        expect(defaultArticle.body).not.toContain('kk-inline:');
+        expect(defaultArticle.metadata?.wechatmp?.inlineFigures).toBeUndefined();
+        const defaultCoverReceipt = JSON.parse(
+            readFileSync(join(defaultWork, '23-cover', 'cover-receipt.json'), 'utf-8'),
+        ) as { fallbackUsed: boolean; podcastSize: string; socialSize: string };
+        expect(defaultCoverReceipt.fallbackUsed).toBe(true);
+        expect(defaultCoverReceipt.podcastSize).toBe('1344x576');
+        expect(defaultCoverReceipt.socialSize).toBe('1200x630');
+        // Verify agent dispatches referenced the extracted package skills, not the repo checkout.
+        const defaultAgents = readFileSync(fxDefault.agentLog, 'utf-8');
+        expect(defaultAgents).toContain(coverSkill);
+        expect(defaultAgents).toContain(illusSkill);
+        expect(defaultAgents).toContain(sharedRef);
+
+        // ── 2. Cache replay (pre-populated card-1.png + legacy cover brief) ──
+        const fxCache = makeFixture(extractedPkg);
+        await seedStore(fxCache);
+        const cacheWork = join(fxCache.works, 'kk-news-generate', DIGITS);
+        mkdirSync(join(cacheWork, '25-xhs'), { recursive: true });
+        mkdirSync(join(cacheWork, '23-cover'), { recursive: true });
+        writeFileSync(join(cacheWork, '25-xhs', 'card-1.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x01]));
+        writeFileSync(
+            join(cacheWork, '23-cover', `${DIGITS}_07_cover-brief.json`),
+            JSON.stringify({ subject: 'Legacy brief glowing chip on dark slate' }),
+        );
+        const cacheProviderLog = join(fxCache.root, 'provider-cache.jsonl');
+        const cacheOut = runPackagedWorkflow(
+            fxCache,
+            {
+                ...workflowVars(fxCache, cacheWork),
+                skill_dir: join(extractedSkills, 'news-editorial'),
+                visual_skill_root: extractedSkills,
+                inline_illustrations: 'false',
+            },
+            cacheProviderLog,
+        );
+        expect(cacheOut.code, cacheOut.err).toBe(0);
+        expect(cacheOut.state).toBe('done');
+        const cacheProviders = readProviderLog(cacheProviderLog);
+        expect(cacheProviders.filter((p) => p.kind === 'inline')).toHaveLength(0);
+        expect(cacheProviders.filter((p) => p.kind === 'xhs-card').map((p) => p.card)).toEqual(['card-2']);
+        const cacheCoverReceipt = JSON.parse(
+            readFileSync(join(cacheWork, '23-cover', 'cover-receipt.json'), 'utf-8'),
+        ) as { fallbackUsed: boolean; subject: string };
+        expect(cacheCoverReceipt.fallbackUsed).toBe(false);
+        expect(cacheCoverReceipt.subject).toBe('Legacy brief glowing chip on dark slate');
+
+        // ── 3. Explicit inline opt-in run (inline_illustrations=true) ──
+        const fxInline = makeFixture(extractedPkg);
+        await seedStore(fxInline);
+        const inlineWork = join(fxInline.works, 'kk-news-generate', DIGITS);
+        const inlineProviderLog = join(fxInline.root, 'provider-inline.jsonl');
+        const inlineOut = runPackagedWorkflow(
+            fxInline,
+            {
+                ...workflowVars(fxInline, inlineWork),
+                skill_dir: join(extractedSkills, 'news-editorial'),
+                visual_skill_root: extractedSkills,
+                inline_illustrations: 'true',
+                preset: 'daily-ai-voice',
+            },
+            inlineProviderLog,
+        );
+        expect(inlineOut.code, inlineOut.err).toBe(0);
+        expect(inlineOut.state).toBe('done');
+        const inlineProviders = readProviderLog(inlineProviderLog);
+        expect(inlineProviders.filter((p) => p.kind === 'inline')).toHaveLength(2);
+        const inlineArticlePath = join(inlineWork, '30-variants', 'article.content.json');
+        const inlineArticle = JSON.parse(readFileSync(inlineArticlePath, 'utf-8')) as {
+            body: string;
+            metadata: { wechatmp: { inlineFigures: { id: string; path: string; sha256: string }[] } };
+        };
+        expect(inlineArticle.body).toContain('kk-inline:figure-1');
+        expect(inlineArticle.body).toContain('kk-inline:figure-2');
+        expect(inlineArticle.metadata.wechatmp.inlineFigures).toHaveLength(2);
+        for (const fig of inlineArticle.metadata.wechatmp.inlineFigures) {
+            expect(existsSync(fig.path)).toBe(true);
+            expect(sha256File(fig.path)).toBe(fig.sha256);
+        }
+        const inlineEpisode = JSON.parse(
+            readFileSync(join(inlineWork, '30-variants', 'episode.content.json'), 'utf-8'),
+        ) as { body: string; metadata?: { wechatmp?: { inlineFigures?: unknown } } };
+        expect(inlineEpisode.body).not.toContain('kk-inline:');
+        expect(inlineEpisode.metadata?.wechatmp?.inlineFigures).toBeUndefined();
+        const inlineBundle = readBundle(inlineWork);
+        expect(inlineBundle.safety?.status).toBe('pass');
+        for (const requests of [defaultProviders, cacheProviders, inlineProviders]) {
+            expect(requests.length).toBeGreaterThan(0);
+            for (const request of requests) {
+                expect(request).toMatchObject({ provider: 'minimax', model: 'image-01' });
+            }
+        }
+
+        // ── Machine-readable replay receipt (R2) ──
+        mkdirSync(EVIDENCE, { recursive: true });
+        const artifactRoot = mkdtempSync(join(EVIDENCE, '0427-replay-'));
+        cpSync(tarball, join(artifactRoot, 'package.tgz'));
+        for (const [name, workDir] of [
+            ['defaultRun', defaultWork],
+            ['cacheReplay', cacheWork],
+            ['inlineOptIn', inlineWork],
+        ] as const) {
+            cpSync(workDir, join(artifactRoot, name), { recursive: true });
+        }
+        writeFileSync(join(artifactRoot, 'fixture-stage.ts'), STAGE_STUB);
+        writeFileSync(join(artifactRoot, 'fixture-agent.sh'), AGENT_STUB);
+        const receipt = {
+            task: '0427',
+            feature: 'L4',
+            tarball: join(artifactRoot, 'package.tgz'),
+            tarballSha256: sha256File(tarball),
+            cliEntry: join(extractedPkg, 'dist/index.js'),
+            cliEntrySha256: sha256File(join(extractedPkg, 'dist/index.js')),
+            artifactRoot,
+            scenarioOutputs: {
+                defaultRun: { sourceRoot: defaultWork, retainedRoot: join(artifactRoot, 'defaultRun') },
+                cacheReplay: { sourceRoot: cacheWork, retainedRoot: join(artifactRoot, 'cacheReplay') },
+                inlineOptIn: { sourceRoot: inlineWork, retainedRoot: join(artifactRoot, 'inlineOptIn') },
+            },
+            skillDiscoveryProbe: { presentExitCode: presentSkill.exitCode, missingExitCode: missingSkillCode },
+            stageBoundary: 'Offline stage fixtures; real stage semantics are checked in kk-workflow-stages.test.ts',
+            extractedPackageRoot: extractedPkg,
+            resolvedSkills: {
+                dailyNewsCover: { path: coverSkill, sha256: sha256File(coverSkill) },
+                dailyNewsIllustrations: { path: illusSkill, sha256: sha256File(illusSkill) },
+                sharedCompositionRef: { path: sharedRef, sha256: sha256File(sharedRef) },
+                newsWriterSkillDir: dirname(newsSkill),
+                insideExtractedPackage: true,
+                vendorDependencyFree: true,
+            },
+            fixtureInputs: {
+                runDate: DIGITS,
+                stories: STORIES,
+                legacyCoverBrief: { subject: 'Legacy brief glowing chip on dark slate' },
+            },
+            scenarios: {
+                defaultRun: {
+                    finalState: defaultOut.state,
+                    providerCalls: defaultProviders,
+                    inlineCallCount: defaultProviders.filter((p) => p.kind === 'inline').length,
+                    coverReceipt: defaultCoverReceipt,
+                    variantHashes: {
+                        article: sha256File(join(defaultWork, '30-variants', 'article.content.json')),
+                        episode: sha256File(join(defaultWork, '30-variants', 'episode.content.json')),
+                    },
+                    safetyStatus: readBundle(defaultWork).safety?.status ?? null,
+                },
+                cacheReplay: {
+                    finalState: cacheOut.state,
+                    providerCalls: cacheProviders,
+                    inlineCallCount: cacheProviders.filter((p) => p.kind === 'inline').length,
+                    renderedCards: cacheProviders.filter((p) => p.kind === 'xhs-card').map((p) => p.card),
+                    coverReceipt: cacheCoverReceipt,
+                },
+                inlineOptIn: {
+                    finalState: inlineOut.state,
+                    providerCalls: inlineProviders,
+                    inlineCallCount: inlineProviders.filter((p) => p.kind === 'inline').length,
+                    figureHashes: Object.fromEntries(
+                        inlineArticle.metadata.wechatmp.inlineFigures.map((f) => [f.id, f.sha256]),
+                    ),
+                    variantHashes: {
+                        article: sha256File(inlineArticlePath),
+                        episode: sha256File(join(inlineWork, '30-variants', 'episode.content.json')),
+                    },
+                    safetyStatus: inlineBundle.safety?.status ?? null,
+                },
+            },
+            replayCommand: 'bun run test:heavy -- --test-name-pattern 0427',
+        };
+        const receiptPath = join(EVIDENCE, '0427-packaged-replay-receipt.json');
+        writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+        expect(existsSync(receiptPath)).toBe(true);
+        expect(sha256File(join(artifactRoot, 'package.tgz'))).toBe(receipt.tarballSha256);
+        expect(sha256File(join(artifactRoot, 'inlineOptIn', '30-variants', 'article.content.json'))).toBe(
+            receipt.scenarios.inlineOptIn.variantHashes.article,
+        );
+    }, 240_000);
 });

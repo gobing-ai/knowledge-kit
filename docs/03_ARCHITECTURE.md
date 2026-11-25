@@ -3,9 +3,9 @@ name: Architecture
 doc: 03_ARCHITECTURE
 owns: HOW — module boundaries, data flow, runtime model, invariants, rationale-in-depth
 authority: derived
-version: 2.45.0
+version: 2.47.0
 created_at: 2026-07-22
-updated_at: 2026-11-13
+updated_at: 2026-11-24
 derived_from: [00_ADR, 01_PRD]
 edit_rules: 99 §6.4
 sync: [T1]
@@ -340,7 +340,7 @@ implemented them with regression coverage. The executor now enforces:
 
 | Boundary / owner | Required behavior | Shipped mechanism (task issue) |
 | --- | --- | --- |
-| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; `node_modules` is pruned so workspace symlinks do not ship; missing entry / failed build / zero plugins fail loud (I1, 0111) |
+| Distribution / `scripts/bundle-plugins.ts` | Every discovered shipped entry resolves dependencies from the installed distribution | Product entries are Bun-bundled to `dist/index.js` at staging; manifests rewritten to `./dist/index.js`; `node_modules` is pruned so workspace symlinks do not ship; missing entry / failed build / zero plugins fail loud (I1, 0111). `--if-stale` re-stages only when `plugins/kk/{scripts,workflows}` or a product `plugin.json` drifts from `apps/cli/plugins`, wired into `prepare` and the globbed `pre-commit` / `post-checkout` / `post-merge` hooks (0430); `apps/cli/src/launch.ts` `runPreflight` stays read-only and still refuses a diverged copy (exit 5) |
 | Cancellation / `apps/cli/src/invoke.ts` | Source timeout terminates and reaps owned descendants without affecting siblings | `killProcessTree` (descendants first, then entry) on a self-managed `timeoutMs` timer so the walk runs while the entry is alive (I2) |
 | Kind contract / `kk-core` + executor | Plugin-specific render operations preserve generic kind validation | Publish input is `Content` again; non-`Content` inputs require a manifest-declared `operations` entry, validated and dispatched by declaration (I3) |
 | Retry persistence / `apps/cli/src/fanout.ts` | Preserve validated per-target metadata through read and carry-forward | Prior ledgers validate through kk-core `AggregateResultSchema`/`TargetOutcomeSchema` (0157 R11); `TargetOutcome.metadata` round-trips; a wrong-typed or primitive field is a named input error, exit 2 (I4) |
@@ -662,10 +662,19 @@ Full signatures: `docs/design/multi-root-plugin-discovery.md`.
 | Gate | Command |
 | ------ | --------- |
 | Lint + typecheck | `bun run lint` (Biome 2.5.15 + tsc) |
-| Tests | `bun run test` |
+| Tests — fast tier | `bun run test` → `scripts/test-suites.ts fast` (unit files only; writes `.coverage/lcov.info`) |
+| Tests — heavy tier | `bun run test:heavy` → `scripts/test-suites.ts heavy` (real-Chromium/DOM, e2e, installed-bundle and subprocess-workflow suites; coverage off via the generated `.works/tmp/heavy-bunfig.toml`) |
 | Build | `bun run build` |
-| Spur architecture/workflow | `bun run spur-check` |
+| Per-task gate | `bun run spur-check` (lint → pre-check → fast tier → post-check) |
+| Feature gate | `bun run spur-check-feature` (`spur-check`, then `test:heavy`) — the `.spur/config.yaml` `builder.actions.check-feature` resolution |
 | Python plugin (omni-voice-gen) | `make -C plugins/generations/omni-voice-gen coverage` (per-file line+function ≥ 90%) |
+
+Invariants (ADR-058): `scripts/test-suites.ts` is the single classification source, so the tiers are
+still `fast ∩ heavy = ∅` and `fast ∪ heavy =` every workspace `*.test.ts` (proved by
+`scripts/tests/test-suites.test.ts`) — a file changing tiers never leaves the gate. The fast tier
+alone must clear `>= 90%` per-file line and function coverage (`bunfig.toml` `coverageThreshold`,
+`.spur/rules/quality/coverage-gate.yaml`), and `test:heavy` must leave `.coverage/lcov.info`
+byte-identical.
 
 ## Security boundary
 
@@ -728,6 +737,6 @@ News generation reconciles evidence-backed editorial judgments between final sel
 
 The frozen news bundle carries one episode title and the final editorial references. Podcast and image plugins own their output formats, and the shared publish workflow remains the single dispatch path. The [L3 design](design/daily-ai-news-editorial-delivery.md) specifies replay, notes, crop and channel-readiness behavior.
 
-## Daily AI news visual authoring (accepted design, ADR-057)
+## Daily AI news visual authoring (ADR-057 — shipped, L4 0424–0427)
 
-The master script plan delegates art direction to the daily cover and illustration skills. Daily stages continue to validate and render through `image-gen`. An opt-in inline plan uses the reviewed article and joins a supported target payload before variants review and freeze. See the [L4 design](design/daily-news-visual-skills.md).
+The master script plan delegates art direction to the daily cover and illustration skills. Daily stages continue to validate and render through `image-gen`. An opt-in inline plan uses the reviewed article and joins a supported target payload before variants review and freeze. Both skills and the shared `news-editorial/references/daily-visual-composition.md` resolve from the installed package root in checkout and installed modes alike, with no `vendors/` dependency — the packaged replay in `apps/cli/tests/kk-news-generate.e2e.test.ts` (0427) asserts it. See the [L4 design](design/daily-news-visual-skills.md).

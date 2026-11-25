@@ -147,13 +147,18 @@ Feature: Daily AI News editorial and delivery uplift
 | 0390 | Redesign Daily AI Voice Board around generation and publishing evidence | done |
 | 0396 | Deliver traceable public corrections in the next eligible episode | done |
 | 0394 | Preserve RSS ingestion metadata and render traceable source citations | done |
+| 0433 | News curation may lead a CN episode with a trade-control mainline the CN platforms block | todo |
+| 0435 | kk news status reports bundle null for a news run whose bundle sits at the run root | todo |
 | 0385 | Refine daily audience, spoken script and canonical episode title | done |
 | 0384 | Reconcile and protect daily editorial judgments | done |
 | 0410 | Weibo article, X, Threads and LinkedIn publish rails still cannot confirm a daily post | done |
 | 0389 | Replay the editorial-to-publish flow and synchronize documentation | done |
+| 0434 | Extract ladder projects the pool while the floor gate projects the admitted set | todo |
 | 0386 | Restore concise podcast notes and reuse episode cards | done |
 | 0409 | surfdash-pub cannot see the en/ja locale files when it invokes postsurfing from kk | done |
+| 0432 | surfdash cover patch fails when the podcast row never uploaded a remote cover | todo |
 | 0408 | Surf of the digest headline contract: kk demands two title headlines while the site's aligned plan can collapse to one | done |
+| 0431 | Daily promos cannot ship when the podcast row is held by the safety verdict | todo |
 | 0393 | Verify and repair series-scoped selection continuity | done |
 | 0391 | Bind Daily AI Voice Board to current news run and publish evidence | done |
 | 0387 | Compose news covers for the two centered crops | done |

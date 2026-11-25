@@ -288,12 +288,12 @@ redaction:
 # Values match the built-in defaults; adjust here instead of patching release code when
 # conventions change.
 builder:
-  # The bun preset resolves `check-feature` to `bun run spur-check-feature`, which now exists as an
-  # alias of the repo-wide gate (spur's feature-lifecycle FSM runs it when a feature enters
-  # `verifying`, ADR-142). The pin stays explicit so a future preset change cannot silently repoint
-  # feature completion at a narrower command.
+  # The bun preset resolves `check-feature` to `bun run spur-check-feature`, which runs the fast
+  # `spur-check` gate (unit + 90%/90% coverage + rules) followed by `test:heavy` (browser/e2e/
+  # subprocess-workflow suites, mirroring Spur ADR-119; task 0429). The pin stays explicit so a
+  # future preset change cannot silently repoint feature completion at a narrower command.
   actions:
-    check-feature: bun run spur-check
+    check-feature: bun run spur-check-feature
     # The light gate's changed-file check. Biome cannot process Markdown and skips gitignored
     # paths, so a docs-only change set left it with nothing to check and it exited 1 with "No files
     # were processed" — every docs-only task was ungateable (task 0383). The wrapper filters to the

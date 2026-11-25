@@ -569,7 +569,7 @@ console.log('garbage');
         await mkdir(FIXTURES_DIR, { recursive: true });
         await writeFile(
             MOCK_SPUR,
-            "#!/usr/bin/env bun\nconsole.error('spur: command not found');\nprocess.exit(3);\n",
+            "#!/usr/bin/env bun\nprocess.stderr.write('spur: command not found\\n');\nprocess.exit(3);\n",
             'utf-8',
         );
         await chmod(MOCK_SPUR, 0o755);

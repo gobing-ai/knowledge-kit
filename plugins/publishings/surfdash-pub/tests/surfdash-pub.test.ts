@@ -120,7 +120,11 @@ describe('surfdash-pub plugin', () => {
         const tmpDir = join(process.cwd(), '.tmp-mock-postsurfing');
         await mkdir(tmpDir, { recursive: true });
         const mockBin = join(tmpDir, 'postsurfing');
-        await writeFile(mockBin, '#!/usr/bin/env bun\nconsole.error("CLI error"); process.exit(1);\n', 'utf-8');
+        await writeFile(
+            mockBin,
+            '#!/usr/bin/env bun\nprocess.stderr.write("CLI error\\n"); process.exit(1);\n',
+            'utf-8',
+        );
         await Bun.spawn(['chmod', '+x', mockBin]).exited;
 
         process.env.POSTSURFING_BIN = mockBin;

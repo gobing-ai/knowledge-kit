@@ -636,7 +636,7 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   the CN platforms accept the episode — and the cost is already paid by then. When the verdict's
   `disposition: escalate` names a platform, `bundle.safety.excludedPlatforms` drops that row and
   `publish-plan` prints `excluded by bundle safety`; nothing re-runs the editor. The lever is the
-  selection contract (task 0424), not the pool cap: raising `plan_max_items` 40 → 64 changed the
+  selection contract (task 0433), not the pool cap: raising `plan_max_items` 40 → 64 changed the
   admitted set by 225 chars because QC kept the same 18 docs.
 - **A conservative platform stance is not a platform rule, and the difference decides the day.** Apple's
   AP-02 graded BLOCK only because §1.2–§1.10 had never been read; reading them (no section restricts

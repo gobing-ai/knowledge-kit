@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, jest, setSystemTime, spyOn, test } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
@@ -19,6 +19,7 @@ import {
     collectionProbeExpr,
     derivePodcastBody,
     RISK_LEAVES_EXPR,
+    readDraftBaseline,
     VERIFY_BODY_EXPR,
 } from '../src/flow';
 import {
@@ -48,8 +49,26 @@ import { checkProfileSession, main as profileCheckMain } from '../src/profile-ch
 const AUTOMATION_STATE = join(mkdtempSync(join(tmpdir(), 'kk-xhs-guard-')), 'state.json');
 process.env.KK_XHS_AUTOMATION_STATE = AUTOMATION_STATE;
 
+const clockSignal = new Int32Array(new SharedArrayBuffer(4));
+let clockDriver: Promise<void>;
+
+async function driveClock(): Promise<void> {
+    while (jest.isFakeTimers()) {
+        await Atomics.waitAsync(clockSignal, 0, 0, 4).value;
+        if (jest.isFakeTimers()) jest.advanceTimersByTime(20);
+    }
+}
+
 beforeEach(() => {
+    // Atomics supplies a real-time tick while browser-console waits run on Bun's fake clock.
+    jest.useFakeTimers();
+    clockDriver = driveClock();
     rmSync(AUTOMATION_STATE, { force: true });
+});
+
+afterEach(async () => {
+    jest.useRealTimers();
+    await clockDriver;
 });
 
 /** The allow-all guard for tests that are not exercising the cap itself. */
@@ -1854,6 +1873,32 @@ describe('xhs-pub resilient probes (task 0174)', () => {
 });
 
 describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (0174 review P2)', () => {
+    test('a detached draft counter and timestamps are not recorded as save evidence', async () => {
+        const { page } = makeFakePage({ ...happy });
+        const baseline = await readDraftBaseline({
+            ...page,
+            locator: (selector) => {
+                const locator = page.locator(selector);
+                return {
+                    ...locator,
+                    count: async () => {
+                        if (selector.startsWith('text=/草稿箱') || selector.startsWith('text=保存于')) {
+                            throw new Error('draft locator detached');
+                        }
+                        return 1;
+                    },
+                    first: () => ({
+                        ...locator.first(),
+                        textContent: async () => {
+                            throw new Error('draft counter detached');
+                        },
+                    }),
+                };
+            },
+        });
+        expect(baseline).toEqual({ count: null, stamps: [] });
+    });
+
     const publishDraft = async (state: FakeState, open: OpenPage = makeOpenPage(state).open) => {
         await seedImages();
         const t = makeTransport('script', {
@@ -1902,6 +1947,7 @@ describe('xhs-pub draft confirmation needs a delta from the pre-entry baseline (
     });
 
     test('a pre-existing save timestamp cannot confirm a save across a minute boundary', async () => {
+        jest.useRealTimers();
         setSystemTime(new Date(2026, 8, 27, 12, 34, 50));
         // Calendar time is scripted; polling deadlines must still advance with real timers.
         const clock = spyOn(Date, 'now').mockImplementation(() => performance.now());
@@ -3898,6 +3944,32 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
         const { result } = await draftRun({ verifyEditorBlank: true });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('never rendered content');
+    });
+
+    test('R3: a reopened editor recovers when its first DOM probes detach', async () => {
+        await seedImages();
+        const { page } = makeFakePage({ ...happy });
+        const probes = new Set(['/* kk-verify-slots */', '/* kk-verify-title */', '/* kk-verify-body */']);
+        const t = makeTransport('script', {
+            openPage: async () => ({
+                close: async () => {},
+                page: {
+                    ...page,
+                    evaluate: async (expression) => {
+                        if (probes.delete(`${expression.split(' */', 1)[0]} */`)) {
+                            throw new Error('reopened editor detached');
+                        }
+                        return page.evaluate(expression);
+                    },
+                },
+            }),
+            stepTimeoutMs: 1_000,
+            loginTimeoutMs: 500,
+            submitSettleMs: 10,
+        });
+        const result = await t.publish({ content: cardContent(), options: { operation: '上传图文' } });
+        expect(probes.size).toBe(0);
+        expect(result.ok).toBe(true);
     });
 
     test('R3: verify reopen navigation falls back to locator clicks when box reads fail', async () => {

@@ -11,7 +11,7 @@ ac_altitude: task-local
 ac_numbering: task-local
 ---
 
-## 0422. Daily promos cannot ship when the podcast row is held by the safety verdict
+## 0431. Daily promos cannot ship when the podcast row is held by the safety verdict
 
 ### Background
 

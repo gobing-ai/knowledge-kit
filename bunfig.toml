@@ -13,6 +13,10 @@ coverageReporter = ["text", "lcov"]
 coverageThreshold = { lines = 0.9, functions = 0.9 }
 coverageSkipTestFiles = true
 coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules/**",
+	# Test preload registered above (`[test] preload`): its noop sink is only invoked when a test
+	# calls ts-utils echo/echoError without capturing output, so per-file function coverage on this
+	# test helper depends on which subset of tests ran.
+	"scripts/test-silence-output.ts",
 	# decision-hub.test.ts writes a broken-hub.ts hub fixture into a mkdtemp dir and
 	# dynamically imports it; bun's coverage instruments the temp module, which then
 	# shows up in the summary as an absolute /private/var/... path.
@@ -21,34 +25,11 @@ coveragePathIgnorePatterns = ["vendors/**", "build/**", "dist/**", "node_modules
 	# tests/compose-e2e.test.ts, which skips where Playwright's Chromium is not
 	# installed, so per-file coverage would depend on the machine.
 	"**/compose/chromium.ts",
-	# jike-composer-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/jike-composer-runner.ts",
-	# csdn-composer-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/csdn-composer-runner.ts",
-	# cnblogs-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/cnblogs-pub-dom-runner.ts",
-	# sspai-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/sspai-pub-dom-runner.ts",
-	# xiaoyuzhou-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/xiaoyuzhou-pub-dom-runner.ts",
-	# shipinhao-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/shipinhao-pub-dom-runner.ts",
-	# bilibili-pub-dom-runner.ts is a subprocess-only real-Chromium fixture (module entry
-	# behind import.meta.main, launch via Playwright); bun test exercises it via
-	# spawnSync, whose coverage bun cannot attribute to this file.
-	"**/tests/fixtures/bilibili-pub-dom-runner.ts",
+	# Subprocess-only real-Chromium test fixture runners (module entry behind import.meta.main,
+	# launched via Playwright through Bun.spawnSync); bun test cannot attribute subprocess coverage
+	# to these fixture runners (task 0430 unifies all 11 runners under one pattern without ignoring
+	# any production `src/` file).
+	"**/tests/fixtures/*-runner.ts",
 	# kk stage bodies run as spawned `bun <script>` processes (dag/e2e fixtures pass the
 	# script path to a child bun), so bun's coverage cannot attribute them to these files;
 	# the narrow direct-import tests (daily-*-freeze, kk-workflow-stages.test) pin the
