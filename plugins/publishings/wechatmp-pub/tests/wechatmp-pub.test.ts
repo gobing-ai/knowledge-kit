@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, mock, spyOn, test } from 'bun:test';
+import { afterAll, afterEach, beforeEach, describe, expect, jest, mock, spyOn, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -48,11 +48,32 @@ import {
     wrapPlaywrightPage,
 } from '../src/index';
 import { CREATE_TYPES, readCreateType } from '../src/modes';
-import { wrapPlaywrightContext } from '../src/page';
+import { findAttachedSelector, waitForVisible, wrapPlaywrightContext } from '../src/page';
 
 const tmpRoot = join(process.cwd(), '.works/tmp/test-wechat');
 // The scratch tree must not survive the run: an untracked directory created DURING a
 // feature-verification pass changes the tree mid-pass and fails its evidence binding.
+const clockSignal = new Int32Array(new SharedArrayBuffer(4));
+let clockDriver: Promise<void>;
+
+async function driveClock(): Promise<void> {
+    while (jest.isFakeTimers()) {
+        await Atomics.waitAsync(clockSignal, 0, 0, 4).value;
+        if (jest.isFakeTimers()) jest.advanceTimersByTime(20);
+    }
+}
+
+beforeEach(() => {
+    // Atomics supplies a real-time tick while browser-console waits run on Bun's fake clock.
+    jest.useFakeTimers();
+    clockDriver = driveClock();
+});
+
+afterEach(async () => {
+    jest.useRealTimers();
+    await clockDriver;
+});
+
 afterAll(async () => {
     await rm(tmpRoot, { recursive: true, force: true });
 });
@@ -2968,72 +2989,113 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
         expect(warning).toContain('no-label');
     });
 
-    test('a failure after the cover picker verified the unique row reports coverSeeded (library rescue)', async () => {
-        // 2026-11-09: the daily run lost BOTH audio and cover because the chooser-close wait was
-        // tight and the post-failure guard skipped the library cover even though the cover had
-        // committed. The contract: failures AFTER the picker's unique-row check carry
-        // coverSeeded=true so enrichArticleDraft still binds the cover.
-        const cover = join(tmpdir(), `kk-audio-seeded-${randomUUID()}.png`);
-        await Bun.write(cover, 'png');
-        let chooserClosed = false;
-        const evals: string[] = ['missing', 'missing', 'missing'];
-        const page = {
-            goto: async () => undefined,
-            url: () => editorUrlFor(0),
-            press: async () => undefined,
-            waitForTimeout: async () => undefined,
-            setInputFiles: async () => undefined,
-            evaluate: async (script: string) => {
-                if (script.includes('audio_item')) return evals.shift() ?? 'missing';
-                if (script.includes('weui-desktop-loading')) return true;
-                if (script.includes('img-picker__item')) return script.includes('classList') ? true : '0';
-                if (script.includes('我已阅读并同意')) return 'no-label';
-                if (script.includes('插入') && script.includes('button')) return true;
-                return undefined;
-            },
-            locator: (selector: string) => ({
-                count: async () => (selector.includes('选择图片') && chooserClosed ? 0 : 1),
-                first: () => ({
-                    count: async () => 1,
-                    isVisible: async () => (selector.includes('选择图片') ? !chooserClosed : true),
-                    waitFor: async () => undefined,
-                    click: async () => {
-                        if (selector.includes('完成')) chooserClosed = true;
-                    },
-                    fill: async () => undefined,
-                }),
-            }),
-        } as unknown as WechatPage;
-        try {
-            const stuck = await insertAudioMaterial(page, { title: 'Episode 1', audioPath: 'a.mp3', coverPath: cover });
-            expect(stuck.warning).toContain('服务规则勾选失败');
-            expect(stuck.coverSeeded).toBe(true);
-
-            // Nothing committed before the upload control: a dialog that opens but offers no
-            // 上传音频 control — the walk returns before any cover upload.
-            const noUpload = {
-                ...page,
+    test.each(['完成', '确定', 'close-btn', 'stuck'])(
+        'reports coverSeeded after selecting a unique cover when the chooser closes via %s',
+        async (closeWith) => {
+            // 2026-11-09: the daily run lost BOTH audio and cover because the chooser-close wait was
+            // tight and the post-failure guard skipped the library cover even though the cover had
+            // committed. The contract: failures AFTER the picker's unique-row check carry
+            // coverSeeded=true so enrichArticleDraft still binds the cover.
+            const cover = join(tmpdir(), `kk-audio-seeded-${randomUUID()}.png`);
+            await Bun.write(cover, 'png');
+            let chooserClosed = false;
+            const chooserClicks: string[] = [];
+            const evals: string[] = ['missing', 'missing', 'missing'];
+            const page = {
+                goto: async () => undefined,
+                url: () => editorUrlFor(0),
+                press: async () => undefined,
+                waitForTimeout: async () => undefined,
+                setInputFiles: async () => undefined,
+                evaluate: async (script: string) => {
+                    if (script.includes('audio_item')) return evals.shift() ?? 'missing';
+                    if (script.includes('weui-desktop-loading')) return true;
+                    if (script.includes('img-picker__item')) return script.includes('classList') ? true : '0';
+                    if (script.includes('我已阅读并同意')) return 'no-label';
+                    if (script.includes('插入') && script.includes('button')) return true;
+                    return undefined;
+                },
                 locator: (selector: string) => ({
-                    count: async () => (selector.includes('audio_dialog') ? 1 : 0),
+                    count: async () => (selector.includes('选择图片') && chooserClosed ? 0 : 1),
                     first: () => ({
-                        count: async () => (selector.includes('audio_dialog') ? 1 : 0),
-                        isVisible: async () => selector.includes('audio_dialog'),
+                        count: async () => 1,
+                        isVisible: async () => (selector.includes('选择图片') ? !chooserClosed : true),
                         waitFor: async () => undefined,
-                        click: async () => undefined,
+                        click: async () => {
+                            if (selector.includes('选择图片')) chooserClicks.push(selector);
+                            if (selector.includes(closeWith)) chooserClosed = true;
+                        },
                         fill: async () => undefined,
                     }),
                 }),
             } as unknown as WechatPage;
-            const early = await insertAudioMaterial(noUpload, {
-                title: 'Episode 1',
-                audioPath: 'a.mp3',
-                coverPath: cover,
-            });
-            expect(early.warning).toContain('上传音频 control not found');
-            expect(early.coverSeeded).toBe(false);
-        } finally {
-            await rm(cover, { force: true });
-        }
+            try {
+                const stuck = await insertAudioMaterial(page, {
+                    title: 'Episode 1',
+                    audioPath: 'a.mp3',
+                    coverPath: cover,
+                });
+                expect(stuck.warning).toContain(closeWith === 'stuck' ? '封面选择器完成后未关闭' : '服务规则勾选失败');
+                expect(stuck.coverSeeded).toBe(true);
+                expect(chooserClicks[0]).toContain('下一步');
+                expect(chooserClicks[1]).toContain('完成');
+                if (closeWith === 'stuck' || closeWith === 'close-btn') {
+                    expect(chooserClicks.at(-1)).toContain('close-btn');
+                } else {
+                    expect(chooserClicks.at(-1)).toContain(closeWith);
+                }
+                if (closeWith !== '完成') return;
+
+                // Nothing committed before the upload control: a dialog that opens but offers no
+                // 上传音频 control — the walk returns before any cover upload.
+                const noUpload = {
+                    ...page,
+                    locator: (selector: string) => ({
+                        count: async () => (selector.includes('audio_dialog') ? 1 : 0),
+                        first: () => ({
+                            count: async () => (selector.includes('audio_dialog') ? 1 : 0),
+                            isVisible: async () => selector.includes('audio_dialog'),
+                            waitFor: async () => undefined,
+                            click: async () => undefined,
+                            fill: async () => undefined,
+                        }),
+                    }),
+                } as unknown as WechatPage;
+                const early = await insertAudioMaterial(noUpload, {
+                    title: 'Episode 1',
+                    audioPath: 'a.mp3',
+                    coverPath: cover,
+                });
+                expect(early.warning).toContain('上传音频 control not found');
+                expect(early.coverSeeded).toBe(false);
+            } finally {
+                await rm(cover, { force: true });
+            }
+        },
+        20_000,
+    );
+
+    test('a stalled live audio upload keeps its dialog open and returns its diagnostics', async () => {
+        const ops: string[] = [];
+        const page = recordingPage(ops);
+        const originalLocator = page.locator;
+        page.locator = (selector) => {
+            const locator = originalLocator(selector);
+            if (!selector.includes('h3.weui-desktop-dialog__title')) return locator;
+            return { ...locator, first: () => ({ ...locator.first(), textContent: async () => '上传音频' }) };
+        };
+        page.evaluate = async (script) => {
+            if (script.includes('audio_item')) return 'missing';
+            if (script.includes('/分钟/')) return 'false';
+            if (script.includes('buttons=')) return 'audio_id="" buttons=["重新上传"]';
+            if (script.includes('audio_id')) return '70%';
+            return undefined;
+        };
+        const result = await insertAudioMaterial(page, AUDIO_INPUT, { uploadWaitMs: 50 });
+        expect(result.warning).toContain('未达到 100%');
+        expect(result.warning).toContain('buttons=["重新上传"]');
+        expect(result.coverSeeded).toBe(false);
+        expect(ops.filter((op) => op.startsWith('files '))).toHaveLength(1);
     });
 
     test('a step whose row keeps detaching is retried once, then warned and swept', async () => {
@@ -3158,6 +3220,22 @@ describe('wechatmp-pub 文章 draft enrichment (metadata.wechatmp)', () => {
 // ---------------------------------------------------------------------------
 
 describe('wrapPlaywrightPage / wrapPlaywrightContext (real adapters, offline via stubs)', () => {
+    test('attachment and visibility waits handle locators disappearing during a probe', async () => {
+        const page = {
+            locator: (selector: string) => {
+                if (selector === 'visible') throw new Error('page detached');
+                return {
+                    count: async () => {
+                        if (selector === 'stale') throw new Error('input detached');
+                        return 1;
+                    },
+                };
+            },
+        } as WechatPage;
+        expect(await findAttachedSelector(page, ['stale', 'replacement'], 'cover input', 0)).toBe('replacement');
+        expect(await waitForVisible(page, 'visible', 0, { required: false })).toBeUndefined();
+    });
+
     interface AdapterLog {
         calls: string[];
     }
