@@ -21,8 +21,6 @@ import {
     RISK_LEAVES_EXPR,
     readDraftBaseline,
     VERIFY_BODY_EXPR,
-    VERIFY_SLOTS_EXPR,
-    VERIFY_TITLE_EXPR,
 } from '../src/flow';
 import {
     CREATOR_TAB_COUNT,
@@ -3951,14 +3949,16 @@ describe('task 0350 — layered capture, counter gate, reopen verify, podcast fi
     test('R3: a reopened editor recovers when its first DOM probes detach', async () => {
         await seedImages();
         const { page } = makeFakePage({ ...happy });
-        const probes = new Set([VERIFY_SLOTS_EXPR, VERIFY_TITLE_EXPR, VERIFY_BODY_EXPR]);
+        const probes = new Set(['/* kk-verify-slots */', '/* kk-verify-title */', '/* kk-verify-body */']);
         const t = makeTransport('script', {
             openPage: async () => ({
                 close: async () => {},
                 page: {
                     ...page,
                     evaluate: async (expression) => {
-                        if (probes.delete(expression)) throw new Error('reopened editor detached');
+                        if (probes.delete(expression.split(' */', 1)[0] + ' */')) {
+                            throw new Error('reopened editor detached');
+                        }
                         return page.evaluate(expression);
                     },
                 },
