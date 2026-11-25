@@ -65,6 +65,7 @@ interface FakeOptions {
     submitRefusal?: string;
     /** Reads of the crop dialog's cropper image that come back empty: the dialog mounts first. */
     cropperMountReads?: number;
+    cropProbesDetach?: boolean;
     /** Crop 确认 clicks the dialog swallows before one commits (Infinity: it never closes). */
     cropClicksSwallowed?: number;
 }
@@ -87,6 +88,7 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
     let cropConfirmed = false;
     let cropperReads = 0;
     let cropClicks = 0;
+    const detachedProbes = new Set<string>();
     let confirmClicked = false;
     let picked = '';
 
@@ -169,7 +171,14 @@ function fakePage(options: FakeOptions = {}): { page: Page; calls: string[] } {
                 calls.push(`isDisabled ${selector}`);
                 return options.submit === 'disabled';
             },
-            isVisible: async () => true,
+            isVisible: async () => {
+                if (options.cropProbesDetach && selector.includes('cropper-wrap') && !detachedProbes.has(selector)) {
+                    detachedProbes.add(selector);
+                    calls.push(`detach ${selector}`);
+                    throw new Error('crop locator detached');
+                }
+                return true;
+            },
             scrollIntoViewIfNeeded: async () => {
                 calls.push(`scroll ${selector}`);
             },
@@ -411,6 +420,15 @@ describe('pendingAudioFlow (recon-grounded steps)', () => {
         const { page, calls } = fakePage({ cropClicksSwallowed: 1 });
         expect(await attachAudioCover(page, COVER, 3_000)).toBeNull();
         expect(calls.filter((call) => call.startsWith('click') && call.includes('确认')).length).toBe(2);
+    });
+
+    it('retries detached dialog and cropper probes before confirming the cover', async () => {
+        const { page, calls } = fakePage({ cropProbesDetach: true });
+        expect(await attachAudioCover(page, COVER, 3_000)).toBeNull();
+        const confirm = calls.findIndex((call) => call.startsWith('click') && call.includes('确认'));
+        const detached = calls.filter((call) => call.startsWith('detach '));
+        expect(detached).toHaveLength(2);
+        for (const probe of detached) expect(calls.indexOf(probe)).toBeLessThan(confirm);
     });
 
     it('refuses when the crop dialog never closes, however often 确认 is clicked', async () => {

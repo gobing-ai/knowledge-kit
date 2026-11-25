@@ -142,9 +142,11 @@ interface FakePageOptions {
     uploadThrows?: boolean;
     missingTitleInput?: boolean;
     titleReadbackDrops?: boolean;
+    titleReadbackRejects?: boolean;
     missingDescriptionEditor?: boolean;
     pasteReportsMissing?: boolean;
     descriptionReadbackDrops?: boolean;
+    descriptionReadbackRejects?: boolean;
     partitionMissing?: boolean;
     partitionReadbackDrops?: boolean;
     missingTagInput?: boolean;
@@ -255,8 +257,12 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
                         tagsList.push(text);
                     }
                 },
-                inputValue: async () => (options.titleReadbackDrops ? '' : titleValue),
+                inputValue: async () => {
+                    if (options.titleReadbackRejects) throw new Error('title locator detached');
+                    return options.titleReadbackDrops ? '' : titleValue;
+                },
                 innerText: async () => {
+                    if (options.descriptionReadbackRejects) throw new Error('editor locator detached');
                     if (options.descriptionReadbackDrops || options.dynamicTextReadbackDrops) {
                         return '';
                     }
@@ -1131,6 +1137,23 @@ describe('6. flow stages (fake page running real evaluate scripts)', () => {
         expect(result.metadata?.stage).toBe('description-fill');
         expect(result.error).toContain('bilibili description readback failed');
     });
+
+    test.each([
+        { options: { titleReadbackRejects: true }, stage: 'title-fill', field: 'title' },
+        { options: { descriptionReadbackRejects: true }, stage: 'description-fill', field: 'description' },
+    ])(
+        'shortVideo refuses submit when the $field locator detaches during readback',
+        async ({ options, stage, field }) => {
+            const fake = makeFakeLauncher(options);
+            const result = await makeTransport(fake, 'shortVideo', 50).publish({
+                content: makeVideoContent({ publishStatus: 'public' }, { body: '有实际描述' }),
+            });
+            expect(result.ok).toBe(false);
+            expect(result.metadata?.stage).toBe(stage);
+            expect(result.error).toContain(`${field} readback failed`);
+            expect(fake.calls).not.toContain(`click:${BILI_VIDEO_SELECTORS.submitAdd[0]}`);
+        },
+    );
 
     test('shortVideo partition selection failure -> typed partition-select stageFail', async () => {
         const fake = makeFakeLauncher({ partitionMissing: true, partitionReadbackDrops: true });
