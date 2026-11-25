@@ -1,16 +1,18 @@
 ---
 schema_version: 1
 name: LinkedIn post rail cannot open the composer from a signed-in profile
-status: wip
+status: done
 template: issue
 created_at: 2026-11-25T06:53:01.883Z
-updated_at: "2026-11-25T22:43:01.131Z"
+updated_at: "2026-11-25T22:52:15.683Z"
 feature_id: L3
 
 ac_altitude: task-local
 ac_numbering: task-local
 priority: P1
 estimate_hours: 5
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0437. LinkedIn post rail cannot open the composer from a signed-in profile
@@ -48,10 +50,10 @@ each failed attempt clears `li_at`, so the recon must run inside one session.
 
 ### Requirements
 
-- [ ] R1. With an authenticated profile, clicking the feed's share trigger must open the composer and the post must complete: `linkedin-pub.post` reaches `succeeded/confirmed`.
-- [ ] R2. The composer wait must name the surface it looked for and what it actually found (element counts/URL) instead of a generic "did not open", so the next drift is diagnosable without a live session.
-- [ ] R3. A test pins the composer-open step against the measured DOM shape (recorded fixture), so a selector change fails the suite rather than the daily run.
-- [ ] R4. Every linkedin-pub refusal raised before the Post click (`share-trigger`, `composer`, `text-readback`, media/upload stages before submit) carries `metadata.itcDelivery: { schemaVersion: 1, effect: 'none' }`, so its receipt is `failed/none` and `--retry` resends it without `--confirm-none`. Refusals at or after the Post click keep `effect: unknown`.
+- [x] R1. With an authenticated profile, clicking the feed's share trigger must open the composer and the post must complete: `linkedin-pub.post` reaches `succeeded/confirmed`.
+- [x] R2. The composer wait must name the surface it looked for and what it actually found (element counts/URL) instead of a generic "did not open", so the next drift is diagnosable without a live session.
+- [x] R3. A test pins the composer-open step against the measured DOM shape (recorded fixture), so a selector change fails the suite rather than the daily run.
+- [x] R4. Every linkedin-pub refusal raised before the Post click (`share-trigger`, `composer`, `text-readback`, media/upload stages before submit) carries `metadata.itcDelivery: { schemaVersion: 1, effect: 'none' }`, so its receipt is `failed/none` and `--retry` resends it without `--confirm-none`. Refusals at or after the Post click keep `effect: unknown`.
 
 Out of scope: the session/login preflight (0431, `77b3f56b`), the X/Threads rails, the link-preview and cover-upload stages unless the recon shows they changed with the same redesign, and any change to `resolveSelector` in `publish-harness` (shared by every rail).
 
@@ -91,6 +93,21 @@ Test layers: AC1 is a live operator-run check (needs the operator's signed-in pr
 - **Q: Fix the selectors from code reading alone, or recon first?** Closed: recon first. The 2026-11-21 selectors posted live, so the failing shape is new and cannot be read from the tree. Hypotheses to settle, cheapest first: (H1) the first attached `:has-text("Start a post")` match is a hidden or duplicate node, because `resolveSelector` does not require visibility (the same trap Threads hit: `memory.md` 2026-11-16, hidden duplicate "New thread"); (H2) the composer now mounts in a container the composer list cannot reach (iframe or shadow root) or with a new editor shape; (H3) both clicks still land before hydration.
 - **Q: Fold the `effect: none` classification (R4) into this task?** Closed: yes. It is the same rail and the same failure, it reuses the existing `itcDelivery` mechanism, and no other task owns it (searched `docs/tasks` for linkedin + itcDelivery: none).
 - **Q: Who runs AC1?** Closed: the operator. The check makes a public post (an external publish) and needs the operator's sign-in; each failed attempt clears `li_at`, so recon and AC1 share one headed session. The implementer prepares everything else offline and asks before the live post.
+
+#### Q&A entry — 2026-11-25T22:51:37.625Z
+
+<!-- Clarifications and triage decisions. Keep empty if none. -->
+
+#### Q&A entry — 2026-11-25T21:37:26.733Z
+
+- **Q: Fix the selectors from code reading alone, or recon first?** Closed: recon first. The 2026-11-21 selectors posted live, so the failing shape is new and cannot be read from the tree. Hypotheses to settle, cheapest first: (H1) the first attached `:has-text("Start a post")` match is a hidden or duplicate node, because `resolveSelector` does not require visibility (the same trap Threads hit: `memory.md` 2026-11-16, hidden duplicate "New thread"); (H2) the composer now mounts in a container the composer list cannot reach (iframe or shadow root) or with a new editor shape; (H3) both clicks still land before hydration.
+- **Q: Fold the `effect: none` classification (R4) into this task?** Closed: yes. It is the same rail and the same failure, it reuses the existing `itcDelivery` mechanism, and no other task owns it (searched `docs/tasks` for linkedin + itcDelivery: none).
+- **Q: Who runs AC1?** Closed: the operator. The check makes a public post (an external publish) and needs the operator's sign-in; each failed attempt clears `li_at`, so recon and AC1 share one headed session. The implementer prepares everything else offline and asks before the live post.
+
+
+#### Q&A entry — 2026-11-25 (close-out)
+
+- **Q: Close 0437 without the AC1 live public post?** Closed by the operator: yes ("At least we should update task 0437 as done"). AC1 is recorded N/A (operator-deferred) and is not claimed MET. The live proof falls to the next real `kk news publish-send` of a `linkedin-pub.post` row. If it refuses at `composer`, the refusal now carries `composerProbe` counts, a screenshot at `/tmp/kk-linkedin-composer-latest.png` and `effect: none`, so `--retry` resends it without `--confirm-none`.
 
 ### Design
 
@@ -133,7 +150,16 @@ Test layers: AC1 is a live operator-run check (needs the operator's signed-in pr
 
 ### Root Cause
 
-**Unconfirmed until the step-3 recon.** Established from code and the 2026-11-25T06:35Z run: the trigger resolved, the first click returned without throwing, and no composer candidate was attached through both waits (`plugins/publishings/linkedin-pub/src/index.ts:469-515`). The trigger is resolved by attachment, not visibility (`packages/publish-harness/src/browser.ts:1060`), and clicked with `.first()` (`index.ts:483`), so H1 (hidden or duplicate first match) is the leading hypothesis; H2/H3 remain open (see Q&A). Replace this paragraph with the measured cause.
+**Measured 2026-11-25 (headed recon, freshly signed-in profile; sanitized artifacts in `.spur/run/dogfood/2026-11-25-linkedin/`).**
+
+The 06:35Z refusal does not reproduce with a valid session:
+- `button:has-text("Start a post")` now matches 0 nodes.
+- The one visible trigger is `div[role=button][aria-label="Start a post"]`, which the list's `div[role="button"]:has-text(...)` entry already reached.
+- Its click mounts a tiptap `div[role=textbox][contenteditable=true].tiptap.ProseMirror` outside any `[role=dialog]`. Four composer candidates each matched 1 visible node. No iframe or shadow-root editor (H2 rejected). Hydration was not a factor in the recon (H3 not observed).
+
+The 06:35Z failure is therefore attributed to the degraded session that day: anti-bot frames were present, and each failed attempt cleared `li_at`. This cannot be re-measured after the fact.
+
+H1 is real but latent: `resolveSelector` resolves attached nodes, so a hidden duplicate trigger wins and the click hangs 30 s with no stage. The real-DOM fixture reproduces it against HEAD `29a2fc21`; the fix (visible-only clicks, measured aria trigger first) removes it.
 
 ### Solution
 
@@ -164,11 +190,34 @@ So the 06:35Z run's selectors were valid. Its failure is consistent with the deg
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | The trigger list leads with the measured `div[role="button"][aria-label="Start a post"]` (`plugins/publishings/linkedin-pub/src/index.ts:91`), and both clicks are visible-only (`plugins/publishings/linkedin-pub/src/index.ts:526`, `plugins/publishings/linkedin-pub/src/index.ts:546`). The production transport posts end to end on the measured DOM (`plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:40`), including with a hidden duplicate trigger (`plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:45`). The 2026-11-25 headed recon opened the composer from the signed-in profile (`.spur/run/dogfood/2026-11-25-linkedin/02-after-click.png`). The live receipt is operator-deferred (see AC1). |
+| R2 | MET | `probeComposer` (`plugins/publishings/linkedin-pub/src/index.ts:183`) feeds the composer refusal with the trigger, match/visible counts, per-candidate counts, url and frame count (`plugins/publishings/linkedin-pub/src/index.ts:565`). Asserted by `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:607`. |
+| R3 | MET | Real-Chromium fixture `plugins/publishings/linkedin-pub/tests/fixtures/linkedin-pub-dom-runner.ts:1` and guard test `plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:49`. The hidden-duplicate scenario failed against HEAD 29a2fc21 (`click: Timeout 30000ms exceeded`) and passes now. |
+| R4 | MET | `preSubmitFail` sets `itcDelivery: { schemaVersion: 1, effect: 'none' }` (`plugins/publishings/linkedin-pub/src/index.ts:174`) on share-trigger, composer, text-readback and image-upload refusals. Post-click stages stay plain. Asserted by `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:780`. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| Scenario: AC1 — the promo post completes from an authenticated profile (req: R1) | N/A | manual-review | Operator-deferred on 2026-11-25: the operator chose to close without the public post (task Q&A close-out entry). Not claimed MET. The next real `kk news publish-send` of `linkedin-pub.post` is the live proof. The offline equivalent passes at `plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:40`. |
+| Scenario: AC2 — a composer that never opens explains itself (req: R2) | MET | test | `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:607` |
+| Scenario: AC3 — the recorded DOM opens the composer through the production flow (req: R3) | MET | test | `plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:40` (recorded → ok); `plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:49` (pre-recon → stage composer, effect none); `plugins/publishings/linkedin-pub/tests/linkedin-pub-dom.test.ts:34` (missing Chromium fails loud) |
+| Scenario: AC4 — a pre-submit refusal is retryable (req: R4) | MET | test | `plugins/publishings/linkedin-pub/tests/linkedin-pub.test.ts:780` (four pre-submit stages carry effect none; send-enabled and confirmation carry none) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -184,4 +233,6 @@ So the 06:35Z run's selectors were valid. Its failure is consistent with the deg
 ### History
 
 - 2026-11-25T22:29:06.588Z todo → wip (system)
+- 2026-11-25T22:52:09.783Z wip → testing (system)
+- 2026-11-25T22:52:15.554Z testing → done (system)
 

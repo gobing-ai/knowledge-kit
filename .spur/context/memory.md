@@ -349,3 +349,9 @@ Batch: sequential task-pipeline v9 runs, all three → done, each verdict PASS /
   podcast row never uploaded a remote cover), 0433 (CN-blocked lead must be caught before TTS), 0434
   (ladder vs floor-gate denominators; keep-rate drift), 0435 (`kk news status` reports `bundle: null`
   for a news run).
+
+- 2026-11-25 — 0437 done (verify PASS, AC1 operator-deferred N/A):
+  - Recon with a fresh LinkedIn session: the trigger is now `div[role=button][aria-label="Start a post"]` (no `<button>`), and the composer is a tiptap textbox outside any dialog. The 06:35Z refusal did not reproduce; it is attributed to session degradation.
+  - Fix: the measured aria trigger leads the list, and both clicks use `.filter({ visible: true })` (H1 hidden duplicate, proven by the real-DOM fixture `linkedin-pub-dom-runner.ts`).
+  - Fixture gotcha: an empty contenteditable has zero height, so Playwright's click waits forever. Give it `min-height` plus `<p><br></p>`.
+  - `*-dom.test.ts` runs only in `bun run test:heavy` (`scripts/test-suites.ts:34`), not `bun run test`.
