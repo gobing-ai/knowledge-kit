@@ -460,7 +460,9 @@ describe('linkedin-pub refusals before any browser', () => {
 describe('linkedin-pub session preflight', () => {
     test('an unauthenticated session refuses with the login command and one headed pass', async () => {
         const fake = makeFakeLauncher({ landedUrl: LOGIN_URL });
-        const result = await transport(fake).publish({ content: liveContent });
+        // An explicit step budget also sets the preflight budget (default 90 s), so the refusal
+        // resolves inside the test timeout instead of polling the fake page to the deadline.
+        const result = await transport(fake, 250).publish({ content: liveContent });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('linkedin session preflight refused');
         expect(result.error).toContain(`run: ${LINKEDIN_LOGIN_INSTRUCTION}`);

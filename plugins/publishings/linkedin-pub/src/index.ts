@@ -134,6 +134,15 @@ const PREVIEW_POLL_MS = 250;
 const LINK_PREVIEW_TIMEOUT_MS = 10_000;
 
 const STEP_TIMEOUT_MS = 30_000;
+/**
+ * Default budget for the read-only session preflight. The harness subtracts a print margin and a
+ * launch reserve from whatever it is given, so the 30 s STEP_TIMEOUT_MS became an ~18 s pass — and on
+ * 2026-11-24 that was short enough that a freshly signed-in profile reported "not confirmed", after
+ * which LinkedIn cleared `li_at` and the sign-in was lost. 90 s covers a cold headed feed load.
+ * An explicit `stepTimeoutMs` dep overrides it, so tests and callers that tune the step budget also
+ * tune the preflight.
+ */
+const PREFLIGHT_TIMEOUT_MS = 90_000;
 const LOGIN_TIMEOUT_MS = 180_000;
 /** Operator recovery command every session failure names — never a cookie, DOM dump or stack. */
 export const LINKEDIN_LOGIN_INSTRUCTION = 'bun plugins/publishings/linkedin-pub/src/profile-check.ts login';
@@ -300,6 +309,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
     private readonly operation: LinkedinOperation;
     private readonly launcher: BrowserLauncher;
     private readonly stepTimeoutMs: number;
+    private readonly preflightTimeoutMs: number;
     constructor(
         operation: LinkedinOperation = 'post',
         driver: BrowserDriver = 'script',
@@ -309,6 +319,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
         this.driver = driver;
         this.launcher = deps.launcher ?? kkBrowserLauncher;
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
+        this.preflightTimeoutMs = deps.stepTimeoutMs ?? PREFLIGHT_TIMEOUT_MS;
     }
 
     /**
@@ -355,7 +366,7 @@ export class LinkedinBrowserTransport implements PublishTransport {
             launcher: this.launcher,
             // Headed, not headless: see LINKEDIN_CONFIG.checkHeadedOnly (measured 2026-11-24).
             headedOnly: LINKEDIN_CONFIG.checkHeadedOnly === true,
-            timeoutMs: this.stepTimeoutMs,
+            timeoutMs: this.preflightTimeoutMs,
         });
         if (session.status !== 'verified') {
             // The recovery command leads the message: `fail()` bounds the line, and the operator's
