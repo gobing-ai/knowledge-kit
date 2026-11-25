@@ -80,6 +80,11 @@ freeze writes one there — so the root shape reports `frozen: true` plus an add
 `variantCount`; the `4-publish/` article shape keeps its exact pre-0435 summary
 (`frozen`/`runId`/`variants`, no additions), which is R3's no-change contract.
 
+> The same fix was also applied inline in a concurrent session (`d9dec4c4`, 2026-11-24 session
+> review) before this batch landed. The batch keeps the fuller version — the additive
+> `frozen`/`variantCount` fields and the two AC tests — and this note is the only trace of the
+> duplicate; no behaviour from `d9dec4c4` was lost.
+
 | File | Lines | What / why |
 | --- | --- | --- |
 | `apps/cli/src/commands/content.ts` | 16 | Import `resolveBundlePath` from `../publish-matrix` — one precedence rule for every bundle reader (R1). |
