@@ -657,3 +657,27 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - **`kk news status` reports `bundle: null` for a news run** (it reads `4-publish/bundle.json` while the
   news freeze writes the root) — do not read "no bundle" as "nothing shipped"; check the dispatch ledger
   (`4-publish/dispatch-ledger.json`) and `publish-events.jsonl` instead.
+
+## 2026-11-24 (late) — browser logins: what actually persists, and what a bad probe destroys
+- **`kk plugin login` gives 180 s; a real sign-in needs more.** Every one of the six logins that finally
+  verified tonight did so only when run as the plugin's own CLI with `--timeout 900000`
+  (`bun plugins/publishings/<ch>/src/profile-check.ts login --timeout 900000`). With 180 s the window
+  closed mid-flow and nothing was written — measured on 公众号: the profile's `storage-state.json` stayed
+  at the previous day's mtime after three scan attempts, and the first long-window login rewrote it
+  (21:34) and let the draft row publish.
+- **A storageState channel persists ONLY from the login's `onAuthenticated` hook.** wechatmp writes
+  `browser-profiles/wechatmp/storage-state.json` from the predicate-passing page; the check then injects
+  that file over the profile, so a stale state masks a fresh console session and deleting the file is not
+  a fallback (the check refuses by name). If the login's predicate never passes, nothing is saved — check
+  the file's mtime before believing "the session is expired".
+- **A too-short preflight can log the channel out.** LinkedIn: after a verified login `li_at` was on disk;
+  the publish preflight then probed with an ~18 s budget (30 s step budget minus the harness margin), got
+  the login wall, and the site's response deleted the cookie (`li_at` count 1 → 0). Rule: never probe a
+  channel with a budget you have not measured, and after a login send immediately — no `check` in between.
+- **Headless is not a neutral difference.** LinkedIn refuses a signed-in profile headlessly and verifies
+  headed on the same profile (twice measured), so the preflight now probes headed with a 90 s budget
+  (`headedOnly` + `preflightTimeoutMs`); medium-pub already carried the same shape for Cloudflare.
+- **Orphaned browser leases block the login itself**, not just the check: a killed window leaves
+  `browser-leases/<hash>/owner.json` naming a dead pid and the next `login` refuses with "held by pid N".
+  Diagnose with `ps -p <pid>`; three dead leases were cleared tonight, two of which had eaten an operator
+  sign-in attempt. Task 0431.
