@@ -26,7 +26,7 @@ const server = Bun.serve({
                     }), 50);
                 };
             </script>`,
-                { headers: { 'Content-Type': 'text/html' } },
+                { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
             );
         }
         if (mode === 'http-error') return new Response('failed', { status: 500 });
@@ -94,7 +94,7 @@ for (const mode of ['success', 'receipt', 'string-zero', 'slow-headers']) {
     });
 }
 
-test('a matching autosave while the save button is disabled cannot acknowledge the later explicit click', async () => {
+test('an unrelated click and autosave cannot acknowledge the later explicit save', async () => {
     const page = await browser.newPage();
     try {
         await page.goto(`${server.url}editor?mode=preclick`);
@@ -103,8 +103,9 @@ test('a matching autosave while the save button is disabled cannot acknowledge t
         });
         const wrapped = wrapPlaywrightPage(page);
         if (!wrapped.saveDraftAndWait) throw new Error('Native save acknowledgement seam missing');
-        const pending = wrapped.saveDraftAndWait('#save', 3_000);
+        const pending = wrapped.saveDraftAndWait('button:has-text("保存为草稿")', 3_000);
         await page.waitForTimeout(100);
+        await page.evaluate('document.body.click()');
         await page.evaluate(() => {
             void fetch('/cgi-bin/operate_appmsg?sub=create&mode=old', {
                 method: 'POST',

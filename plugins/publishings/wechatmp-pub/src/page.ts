@@ -281,19 +281,14 @@ async function saveNativeDraft(raw: Page, selector: string, timeoutMs: number): 
     const origin = new URL(raw.url()).origin;
     const marker = `__kkNativeSave_${crypto.randomUUID()}`;
     const button = raw.locator(selector).first();
-    // Register the click-stamp listener via a string expression (not a serialized callback) so
-    // Bun's in-process coverage does not count browser-executed code as uncovered Node functions.
-    await raw.evaluate(
-        `((sel, key) => {
-            let element = null;
-            try { element = document.querySelector(sel); } catch { /* Playwright pseudo-selector */ }
-            const target = element ?? document;
-            const state = { clickedAt: 0 };
-            const handler = () => { state.clickedAt = Date.now(); };
-            globalThis[key] = { state, element: target, handler };
-            target.addEventListener('click', handler, { capture: true, once: true });
-        })(${JSON.stringify(selector)}, ${JSON.stringify(marker)})`,
-    );
+    await button.evaluate((element, key) => {
+        const state = { clickedAt: 0 };
+        const handler = () => {
+            state.clickedAt = Date.now();
+        };
+        (globalThis as unknown as Record<string, unknown>)[key] = { state, element, handler };
+        element.addEventListener('click', handler, { capture: true, once: true });
+    }, marker);
     let deadline: ReturnType<typeof setTimeout> | undefined;
     const responseComplete = raw
         .waitForRequest(
