@@ -13,6 +13,7 @@ import {
 import { runItcStage } from '../itc-stage';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
+import { resolveBundlePath } from '../publish-matrix';
 import { gatePayload, progressPayload } from '../status-progress';
 import { registerContentGenerateVerbs } from './content-generate';
 import { registerContentLaunchVerbs } from './content-launch';
@@ -376,7 +377,10 @@ async function statusPayload(
                   executor: optionalString(receipt.executor),
                   checkoutCommit: optionalString(receipt.checkoutCommit),
               };
-    const bundle = await readJson(fs, join(workDir, '4-publish', 'bundle.json'));
+    // The news freeze writes the bundle at the run root and resolves every variant path relative to
+    // it (0382); reading only `4-publish/bundle.json` reported `bundle: null` for a run that had
+    // already published from it (2026-11-24).
+    const bundle = await readJson(fs, await resolveBundlePath(fs, workDir));
     const bundleSummary =
         bundle === null
             ? null
