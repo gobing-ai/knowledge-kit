@@ -4,7 +4,7 @@ name: kk news status reports bundle null for a news run whose bundle sits at the
 status: todo
 template: issue
 created_at: 2026-11-24T22:43:08.788Z
-updated_at: "2026-11-24T22:43:17.638Z"
+updated_at: "2026-11-25T08:01:36.936Z"
 feature_id: L3
 
 ac_altitude: task-local
@@ -70,11 +70,11 @@ Then status reports the same summary as before this change
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Fixed inline during the 2026-11-24 session review (`d9dec4c4`): `statusPayload` now reads the bundle through `resolveBundlePath` (run root first, `4-publish/` fallback) instead of the hard-coded `4-publish/bundle.json`.
 
 ### Testing
 
-<!-- Filled during verification: regression command(s), outcomes, coverage claim or N/A. -->
+Verified with the command that exhibited the defect: `kk news status --work-dir .works/kk-news-generate/20261124` now prints `bundle.runId 20261124-kk-news-generate-…` with 15 variants (was `"bundle": null`). `apps/cli` typecheck clean; `bun test apps/cli/tests/commands/content.test.ts tests/commands/content-launch.test.ts tests/publish-matrix.test.ts` 51 pass, 0 fail. No new unit test: the payload path needs a full config fixture; the live command is the regression evidence.
 
 ### Review
 
