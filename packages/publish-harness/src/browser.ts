@@ -258,7 +258,10 @@ function classifyLaunchError(error: unknown, profileDir: string, channel: string
 function quarantineProfileSyncData(profileDir: string): boolean {
     const syncData = join(profileDir, 'Default', 'Sync Data');
     if (lstat(syncData) === null) return false;
-    return rename(syncData, `${syncData}.broken-${new Date().toISOString().replace(/[:.]/g, '').slice(0, 15)}`);
+    // Second-resolution stamps collided when two quarantines landed inside the same second: the
+    // rename then failed ENOTEMPTY on the leftover target and the profile stayed unusable
+    // (measured 2026-11-25). Milliseconds keep the target unique.
+    return rename(syncData, `${syncData}.broken-${new Date().toISOString().replace(/[:.]/g, '').slice(0, 17)}`);
 }
 
 /** Ownership a caller already holds for the context it is about to open (design §Shared ownership). */
