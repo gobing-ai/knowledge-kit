@@ -657,8 +657,11 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
     test('profile-check.ts is a pure profile CLI shim over runProfileCli(SHP_CONFIG) (source text, never imported)', async () => {
         const source = await readFile(join(import.meta.dir, '..', 'src', 'profile-check.ts'), 'utf8');
         expect(source).toContain('if (import.meta.main)');
-        expect(source).toContain('process.exit(await runProfileCli(SHP_CONFIG, Bun.argv.slice(2)))');
-        expect(source).not.toContain('kkBrowserLauncher');
+        expect(source).toContain('runProfileCli(SHP_CONFIG, Bun.argv.slice(2)');
+        // 2026-11-26: the shim composes the state-restoring launcher (one scan = more than one
+        // publish) and does no browser work of its own.
+        expect(source).toContain('stateRestoringLauncher');
+        expect(source).not.toContain('page.goto');
     });
 });
 

@@ -50,8 +50,10 @@ import {
     LoginTimeoutError,
     withProfilePage,
 } from '@gobing-ai/ts-browser-automation';
+import { echoError } from '@gobing-ai/ts-utils';
 import type { Locator, Page } from 'playwright';
 import { runAudioPostFlow } from './audio-flow';
+import { centerSquareCover } from './cover-crop';
 import {
     isShipinhaoAuthenticated,
     readRootSnapshot,
@@ -72,6 +74,7 @@ import {
     type ShipinhaoOperationName,
     type ShipinhaoRootSnapshot,
 } from './selectors';
+import { stateRestoringLauncher } from './session-state';
 
 /** Steps (fill, upload, dialog) keep the shared 30s rail. */
 const STEP_TIMEOUT_MS = 30_000;
@@ -920,7 +923,10 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
     ) {
         this.operation = operation;
         this.driver = driver;
-        this.launcher = deps.launcher ?? kkBrowserLauncher;
+        // Every context this transport opens re-injects the captured console session first
+        // (2026-11-26): the profile's cookie store does not survive a restart, so one scan is not one
+        // publish. A profile without a snapshot is untouched, so a fresh login still works.
+        this.launcher = stateRestoringLauncher(deps.launcher ?? kkBrowserLauncher);
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
         this.preflightTimeoutMs = deps.preflightTimeoutMs ?? PREFLIGHT_TIMEOUT_MS;
     }
@@ -995,7 +1001,14 @@ export class ShipinhaoBrowserTransport implements PublishTransport {
                 payload.content.metadata?.coverPath ?? payload.options?.coverPath ?? metadataRecord.coverImage,
             );
             if (cover.error !== undefined) return fail(SHP_TARGET, cover.error);
-            coverPath = cover.path;
+            // 2026-11-26: the 音频 form wants a square 封面 and its own crop dialog is what refused
+            // every backfill with 「请上传封面」. Crop the widest centre square ourselves; a host
+            // without `sips` (or an unreadable file) keeps the original and the dialog path.
+            const square = centerSquareCover(cover.path as string);
+            if ('error' in square) {
+                echoError(`shipinhao-pub: square 封面 not derived (${square.error}) — keeping the original`);
+            }
+            coverPath = 'path' in square ? square.path : (cover.path as string);
         } else {
             const images = await resolveImagesPath(metadataRecord.images);
             if (images.error !== undefined) return fail(SHP_TARGET, images.error);

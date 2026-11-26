@@ -19,6 +19,7 @@
 import type { ChannelBrowserConfig } from '@gobing-ai/publish-harness/browser';
 import { waitUntil } from '@gobing-ai/publish-harness/browser';
 import type { IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation';
+import { persistShipinhaoSessionState, restoreShipinhaoSessionState, SHP_STATE_SETTLE_MS } from './session-state';
 
 /** Site-owned target slug; also the profile channel key (`SHP_PROFILE_DIR`). */
 export const SHP_TARGET = 'shipinhao';
@@ -357,4 +358,20 @@ export const SHP_CONFIG: ChannelBrowserConfig = {
     checkHeadedOnly: true,
     // Headed-only still needs headroom for the hydrate; 180s leaves ~150s for the pass.
     checkTimeoutMs: 180_000,
+    // 2026-11-26 (operator decision, mirroring wechatmp-pub 0371): the console session does not
+    // survive a restart — capture it right after an authenticated login and replay it into every
+    // later context, so one scan is not one publish.
+    sessionState: {
+        onAuthenticated: async ({ context, page, profileDir }) => {
+            // Let the console finish its post-auth Set-Cookie burst before the snapshot.
+            await page.waitForTimeout(SHP_STATE_SETTLE_MS);
+            try {
+                await persistShipinhaoSessionState(context, profileDir);
+            } catch {
+                // Storage-state errors can carry cookie values: never relay the exception.
+                throw new Error('shipinhao authenticated session snapshot failed');
+            }
+        },
+        onOpen: ({ context, page, profileDir }) => restoreShipinhaoSessionState(context, page, profileDir).then(),
+    },
 };
