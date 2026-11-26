@@ -14,15 +14,15 @@
  * shortcut: PNG/JPEG only and no content-aware framing — a cover whose headline sits at the edges
  * loses it to the centre cut; authoring a square audio cover in the bundle is the upgrade.
  */
-import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
+import { NodeSyncProcessExecutor } from '@gobing-ai/ts-runtime';
 
 /** One `sips` invocation, injectable so the crop maths is testable without the binary. */
 export type SipsRun = (args: string[]) => { status: number | null; stdout?: string; stderr?: string };
 
 const defaultRun: SipsRun = (args) => {
-    const result = spawnSync('sips', args, { encoding: 'utf-8' });
-    return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+    const result = new NodeSyncProcessExecutor().runSync({ command: 'sips', args });
+    return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 };
 
 /** Reads `pixelWidth`/`pixelHeight` out of `sips -g` output; `undefined` when either is missing. */
