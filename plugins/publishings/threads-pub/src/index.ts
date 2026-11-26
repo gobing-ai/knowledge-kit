@@ -22,6 +22,10 @@ const TOKEN_ENVS = ['THREADS_ACCESS_TOKEN', 'THREADS_USER_ID'] as const;
  */
 const MAX_TEXT_CHARS = 500;
 
+/** The first http(s) URL in the copy, and the punctuation that ends a sentence rather than a link. */
+const FIRST_URL_RE = /https?:\/\/[^\s<>"'`]+/;
+const TRAILING_PUNCT_RE = /[),.;:!?，。；：！？）》」』]+$/;
+
 /** Declared operations (ADR-029 dispatch): threads-pub posts text only. */
 export const THREADS_OPERATIONS = ['post'] as const;
 export type ThreadsOperation = (typeof THREADS_OPERATIONS)[number];
@@ -184,10 +188,16 @@ export class ThreadsPostApiTransport implements PublishTransport {
 
         const token = process.env.THREADS_ACCESS_TOKEN ?? '';
         const userId = process.env.THREADS_USER_ID ?? '';
+        // Meta's opt-in card parameter. Passing it makes the preview deterministic: the implicit
+        // "first URL in the text becomes the card" rule did not fire for our `…完整节目：<url>` copy
+        // (measured 2026-11-25 — Threads stored `link_preview_attachment: null` and rendered a bare
+        // link, while the identical text carded on X and the page's og:* tags were crawler-clean).
+        const linkUrl = text.match(FIRST_URL_RE)?.[0]?.replace(TRAILING_PUNCT_RE, '');
         const container = await this.postForm('threads container', `${THREADS_API_BASE}/${userId}/threads`, {
             media_type: 'TEXT',
             text,
             access_token: token,
+            ...(linkUrl === undefined || linkUrl.length === 0 ? {} : { link_attachment: linkUrl }),
         });
         if ('error' in container) return fail(container.error);
 

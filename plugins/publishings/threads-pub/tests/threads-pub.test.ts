@@ -204,6 +204,21 @@ describe('threads-pub happy path (R2)', () => {
         expect(containerBody.get('media_type')).toBe('TEXT');
         expect(containerBody.get('text')).toBe('Hello Threads');
         expect(containerBody.get('access_token')).toBe(TOKEN);
+        // No URL in the copy → no card to request: the parameter must be absent, not empty.
+        expect(containerBody.get('link_attachment')).toBeNull();
+    });
+
+    test('a URL in the body rides the container as an explicit link_attachment', async () => {
+        const calls = stubFetch(happyResponses());
+        const url = 'https://podcast.salty.vip/i/daily-ai-2026-11-25/';
+        await withEnv(credentials, async () => {
+            const result = await new ThreadsPostApiTransport().publish({
+                content: { ...content, body: `🎧 完整节目：${url}。` },
+            });
+            expect(result.ok).toBe(true);
+        });
+        // Meta's opt-in card parameter; the trailing full-width period is not part of the link.
+        expect(new URLSearchParams(calls[0]?.body).get('link_attachment')).toBe(url);
         const publishBody = new URLSearchParams(calls[1]?.body);
         expect(publishBody.get('creation_id')).toBe('17900000000000001');
         expect(publishBody.get('access_token')).toBe(TOKEN);
