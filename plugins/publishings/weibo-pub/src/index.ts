@@ -11,12 +11,16 @@ import {
 import {
     type ChannelBrowserConfig,
     checkChannelSession,
+    DEFAULT_CHANNEL_STATE_SETTLE_MS,
     expectOutcome,
     kkBrowserLauncher,
     markdownToHtml,
     pasteHtml,
+    persistChannelSessionState,
     resolveChannelProfileDir,
     resolveSelector,
+    restoreChannelSessionState,
+    stateRestoringLauncher,
     uploadFile,
 } from '@gobing-ai/publish-harness/browser';
 import {
@@ -323,6 +327,23 @@ export const WEIBO_CONFIG: ChannelBrowserConfig = {
     isAuthenticated: isWeiboAuthenticated,
     loginTimeoutMs: LOGIN_TIMEOUT_MS,
     checkHeadedOnly: false,
+    // 2026-11-26: a login that verifies does not survive the window closing — measured: `kk bot
+    // login --save weibo` reported site-verified at 20:54, and 10 minutes later the same profile
+    // answered `GET /api/config` with `login:false` and the desktop redirected to `/newlogin`.
+    // So the mobile session lives in state the profile does not keep (cookies aside), and the same
+    // storageState rail shipinhao/wechatmp use is what makes one sign-in reusable.
+    sessionState: {
+        onAuthenticated: async ({ context, page, profileDir }) => {
+            await page.waitForTimeout(DEFAULT_CHANNEL_STATE_SETTLE_MS);
+            try {
+                await persistChannelSessionState(context, profileDir);
+            } catch {
+                // Storage-state errors can carry cookie values: never relay the exception.
+                throw new Error('weibo authenticated session snapshot failed');
+            }
+        },
+        onOpen: ({ context, page, profileDir }) => restoreChannelSessionState(context, page, profileDir).then(),
+    },
 };
 
 /**
@@ -385,7 +406,9 @@ export class WeiboBrowserTransport implements PublishTransport {
     ) {
         this.operation = operation;
         this.driver = driver;
-        this.launcher = deps.launcher ?? kkBrowserLauncher;
+        // 2026-11-26: every context this transport opens re-injects the captured session first —
+        // the profile's own store does not keep the mobile session across launches.
+        this.launcher = stateRestoringLauncher(deps.launcher ?? kkBrowserLauncher);
         this.stepTimeoutMs = deps.stepTimeoutMs ?? STEP_TIMEOUT_MS;
         // Explicit seam (tests pin a small value); production keeps the longer cover budget.
         this.coverTimeoutMs = deps.coverTimeoutMs ?? COVER_TIMEOUT_MS;

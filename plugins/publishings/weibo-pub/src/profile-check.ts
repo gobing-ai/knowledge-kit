@@ -12,9 +12,11 @@
  * a selector that never attaches is a refusal (`Bun plugins/publishings/weibo-pub/src/profile-check.ts
  * login` is the recovery), never silent success.
  */
-import { runProfileCli } from '@gobing-ai/publish-harness/browser';
+import { kkBrowserLauncher, runProfileCli, stateRestoringLauncher } from '@gobing-ai/publish-harness/browser';
 import { WEIBO_CONFIG } from './index';
 
 if (import.meta.main) {
-    process.exit(await runProfileCli(WEIBO_CONFIG, Bun.argv.slice(2)));
+    process.exit(
+        await runProfileCli(WEIBO_CONFIG, Bun.argv.slice(2), { launcher: stateRestoringLauncher(kkBrowserLauncher) }),
+    );
 }

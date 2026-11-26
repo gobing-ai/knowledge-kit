@@ -186,6 +186,8 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
             url = options.landedUrl ?? target;
         },
         url: () => url,
+        // Login's `sessionState.onAuthenticated` settles for a few seconds before the snapshot.
+        waitForTimeout: async () => undefined,
         locator(selector: string) {
             return { first: () => leaf(selector), count: async () => attached(selector) };
         },
@@ -267,6 +269,12 @@ function makeFakeLauncher(options: FakePageOptions = {}): LauncherHandle {
             const context = {
                 pages: () => [page],
                 newPage: async () => page,
+                // `sessionState.onAuthenticated` (2026-11-26) settles then snapshots the session.
+                cookies: async () => [],
+                addCookies: async () => undefined,
+                storageState: async ({ path }: { path: string }) => {
+                    await writeFile(path, JSON.stringify({ cookies: [], origins: [] }));
+                },
                 close: async () => {
                     closes += 1;
                 },
@@ -744,16 +752,29 @@ describe('weibo-pub profile-check (R7)', () => {
         expect(lines.join('\n')).toContain('usage');
     });
 
-    test('the login command verifies the session through the shared CLI', async () => {
+    test('the login command verifies the session through the shared CLI and snapshots it', async () => {
+        // `sessionState.onAuthenticated` (2026-11-26) means the login now takes the page-scoped path:
+        // the profile dir is pinned to a temp dir so the snapshot never lands in the real profile.
+        const profileDir = join('.works/tmp/test-weibo-pub', 'login-profile');
+        await mkdir(profileDir, { recursive: true });
         const fake = makeFakeLauncher();
         const lines: string[] = [];
-        const code = await runProfileCli(WEIBO_CONFIG, ['login'], {
-            launcher: fake.launcher,
-            stdout: (l) => lines.push(l),
-        });
+        const previous = process.env.WEIBO_PROFILE_DIR;
+        process.env.WEIBO_PROFILE_DIR = profileDir;
+        let code = -1;
+        try {
+            code = await runProfileCli(WEIBO_CONFIG, ['login'], {
+                launcher: fake.launcher,
+                stdout: (l) => lines.push(l),
+            });
+        } finally {
+            if (previous === undefined) delete process.env.WEIBO_PROFILE_DIR;
+            else process.env.WEIBO_PROFILE_DIR = previous;
+        }
         expect(code).toBe(0);
         expect(fake.requests[0]?.headless).toBe(false);
         expect(lines.join(' ')).toContain('profile login verified');
+        expect(await readFile(join(profileDir, 'storage-state.json'), 'utf-8')).toContain('cookies');
     });
 
     test('the profile-check entry is a usage error with no browser when run bare', () => {
@@ -865,6 +886,42 @@ describe('weibo-pub fake transport and IO (R9)', () => {
         } finally {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
         }
+    });
+});
+
+describe('weibo-pub console session hooks (2026-11-26)', () => {
+    test('a verified login snapshots the session and the next open replays it', async () => {
+        // Measured 2026-11-26: `kk bot login --save weibo` verified at 20:54 and the same profile
+        // answered `/api/config` with `login:false` ten minutes later — the mobile session lives in
+        // state the profile does not keep, so the login captures it and every open replays it.
+        const profileDir = join('.works/tmp/test-weibo-pub', 'hook-profile');
+        await mkdir(profileDir, { recursive: true });
+        const saved = {
+            name: 'SUB',
+            value: 'v',
+            domain: '.weibo.cn',
+            path: '/',
+            expires: 2_000_000_000,
+        };
+        const added: unknown[] = [];
+        const context = {
+            cookies: async () => [],
+            addCookies: async (cookies: unknown[]) => {
+                added.push(...cookies);
+            },
+            storageState: async ({ path }: { path: string }) => {
+                await writeFile(path, JSON.stringify({ cookies: [saved], origins: [] }));
+            },
+        };
+        const page = { waitForTimeout: async () => undefined };
+        await WEIBO_CONFIG.sessionState?.onAuthenticated?.({
+            context: context as never,
+            page: page as never,
+            profileDir,
+        });
+        expect(await readFile(join(profileDir, 'storage-state.json'), 'utf-8')).toContain('SUB');
+        await WEIBO_CONFIG.sessionState?.onOpen?.({ context: context as never, page: page as never, profileDir });
+        expect(added).toHaveLength(1);
     });
 });
 
