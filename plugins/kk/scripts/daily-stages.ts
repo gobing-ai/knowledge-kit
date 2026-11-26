@@ -5205,6 +5205,173 @@ export function dailySafetyManifest(args: string[]): void {
 }
 
 /**
+ * Strip URLs, fenced code blocks, and long hex hashes before running deterministic PII regexes so
+ * normal tech-news links, commit SHAs, and code snippets do not trigger false positives.
+ */
+function stripNonProseForPiiScan(text: string): string {
+    return text
+        .replace(/```[\s\S]*?```/g, ' ')
+        .replace(/https?:\/\/\S+/g, ' ')
+        .replace(/\b[0-9a-fA-F]{16,}\b/g, ' ');
+}
+
+const DETERMINISTIC_PII_PATTERNS: ReadonlyArray<{ kind: string; pattern: RegExp }> = [
+    {
+        kind: 'cn-national-id',
+        pattern: /(?<!\d)[1-9]\d{5}(?:19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)/,
+    },
+    {
+        kind: 'cn-mobile',
+        pattern: /(?<!\d)1[3-9]\d{9}(?!\d)/,
+    },
+    {
+        kind: 'email',
+        pattern: /(?<![\w/.-])[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?![\w.-])/,
+    },
+];
+
+function detectVariantPiiKinds(text: string): string[] {
+    const cleaned = stripNonProseForPiiScan(text);
+    const hits: string[] = [];
+    for (const { kind, pattern } of DETERMINISTIC_PII_PATTERNS) {
+        if (pattern.test(cleaned)) hits.push(kind);
+    }
+    return hits;
+}
+
+const AGGREGATOR_CAVEAT_RE = /聚合页转述|未取得原始报道/;
+const SHORT_ATTRIBUTION_RE = /转述|据报道|报道|聚合|来源/;
+
+function isShortFormVariant(key: string): boolean {
+    return key === 'cards' || key.startsWith('cards@') || key.startsWith('social:') || key === 'article@wechatmp-pub';
+}
+
+/**
+ * ADR-059 deterministic post-TTS variant safety gate (`kk stage daily-safety-variants-check`).
+ *
+ * Replaces the post-TTS LLM-as-judge loop in `kk-news-generate` so a second stochastic verdict
+ * cannot abort the episode after 60+ minutes of TTS synthesis. Inherits the approved pre-TTS
+ * drafts stamp (`status` + `excludedPlatforms`), verifies every manifest-listed variant's JSON
+ * integrity and sha256, hard-blocks on deterministic PII hits, records soft attribution hints
+ * into `4-safety-variants/warnings.json`, and writes `4-safety-variants/safety.json` for freeze.
+ */
+export function dailySafetyVariantsCheck(args: string[]): void {
+    const [workDir = '', runDate = ''] = args;
+    timed(workDir, 'safety-variants-check', () => {
+        const scopeDir = join(workDir, SAFETY_VARIANTS_DIR);
+        const evidencePath = join(scopeDir, 'safety.json');
+        const warningsPath = join(scopeDir, 'warnings.json');
+        const clearEvidence = (): void => {
+            if (isFile(evidencePath)) unlinkSync(evidencePath);
+        };
+        const manifest = readManifest(workDir);
+        const keys = Object.keys(manifest.variants).sort();
+        if (keys.length === 0) {
+            clearEvidence();
+            failWith(1, 'safety-variants-check: manifest has no variants to check');
+        }
+
+        const hash = createHash('sha256');
+        const variants: Record<string, string> = {};
+        const texts = new Map<string, string>();
+        const piiHits: string[] = [];
+
+        for (const key of keys) {
+            const entry = manifest.variants[key];
+            const path = join(workDir, entry.path);
+            if (!isFile(path)) {
+                clearEvidence();
+                failWith(1, `safety-variants-check: registered variant file is missing: ${path}`);
+            }
+            const raw = readFileSync(path);
+            const sha = createHash('sha256').update(raw).digest('hex');
+            if (entry.sha256 && sha !== entry.sha256) {
+                clearEvidence();
+                failWith(
+                    1,
+                    `safety-variants-check: variant ${key} bytes changed after manifest (manifest ${entry.sha256}, on disk ${sha})`,
+                );
+            }
+            let parsed: { title?: unknown; body?: unknown };
+            try {
+                parsed = JSON.parse(raw.toString('utf-8')) as { title?: unknown; body?: unknown };
+            } catch {
+                clearEvidence();
+                failWith(1, `safety-variants-check: variant ${key} is not valid JSON (${path})`);
+            }
+            if (
+                typeof parsed.title !== 'string' ||
+                parsed.title.trim() === '' ||
+                typeof parsed.body !== 'string' ||
+                parsed.body.trim() === ''
+            ) {
+                clearEvidence();
+                failWith(
+                    1,
+                    `safety-variants-check: variant ${key} must have non-empty string title and body (${path})`,
+                );
+            }
+            const combined = `${parsed.title}\n${parsed.body}`;
+            const kinds = detectVariantPiiKinds(combined);
+            if (kinds.length > 0) piiHits.push(`${key} (${kinds.join(', ')})`);
+            texts.set(key, combined);
+            variants[key] = sha;
+            hash.update(key).update('\0').update(raw).update('\0');
+        }
+
+        if (piiHits.length > 0) {
+            clearEvidence();
+            failWith(1, `safety-variants-check: deterministic PII detected in ${piiHits.join('; ')} — refusing freeze`);
+        }
+
+        const stampPath = join(workDir, '24-script', `${runDate}_09_safety-judge_stamp.json`);
+        const stamp = isFile(stampPath)
+            ? (readJson(stampPath) as { status?: unknown; excludedPlatforms?: unknown } | null)
+            : null;
+        const ADMITTED = new Set(['pass', 'escalate', 'exclude']);
+        const status = typeof stamp?.status === 'string' && ADMITTED.has(stamp.status) ? stamp.status : 'pass';
+        const excludedPlatforms = Array.isArray(stamp?.excludedPlatforms)
+            ? stamp.excludedPlatforms.filter((entry): entry is string => typeof entry === 'string' && entry !== '')
+            : [];
+
+        // Soft attribution hints: if long-form carries an aggregator caveat, flag short-form
+        // variants that carry no attribution qualifier at all (hint only, never blocks freeze).
+        const hasLongFormAggregatorCaveat = keys.some(
+            (key) => !isShortFormVariant(key) && AGGREGATOR_CAVEAT_RE.test(texts.get(key) ?? ''),
+        );
+        const warnings: Array<{ kind: string; variant: string; detail: string }> = [];
+        if (hasLongFormAggregatorCaveat) {
+            for (const key of keys) {
+                if (!isShortFormVariant(key)) continue;
+                const text = texts.get(key) ?? '';
+                if (!SHORT_ATTRIBUTION_RE.test(text)) {
+                    warnings.push({
+                        kind: 'attribution-caveat-dropped',
+                        variant: key,
+                        detail: 'long-form variants carry an aggregator caveat (聚合页转述/未取得原始报道) that this short-form variant omits',
+                    });
+                }
+            }
+        }
+        if (warnings.length > 0) {
+            sted('write', warningsPath, () => writeJsonText(warningsPath, { schemaVersion: 1, runDate, warnings }));
+            for (const warning of warnings) {
+                console.error(`safety-variants-check: hint [${warning.kind}] ${warning.variant}: ${warning.detail}`);
+            }
+        } else if (isFile(warningsPath)) {
+            unlinkSync(warningsPath);
+        }
+
+        const digest = hash.digest('hex');
+        const evidence = { status, digest, excludedPlatforms, variants };
+        sted('write', evidencePath, () => writeJsonText(evidencePath, evidence));
+        console.log(
+            `safety-variants-check: ${keys.length} variant(s) verified (status=${status}, excluded=${excludedPlatforms.length}, hints=${warnings.length})`,
+        );
+    });
+}
+
+/**
  * Open a content-safety review of the current drafts: drop every artifact of an earlier review
  * (a retry must be re-reviewed on its final version) and write the request the two agent.run
  * steps read. The program passes context only — platform policy lives in the kk:content-safety

@@ -82,15 +82,17 @@ const DESIGN_NODES = [
 
 /** Shell nodes that are NOT nested workflow calls: the ones R2 constrains to one verb call. */
 /**
- * The documented exceptions to "a shell node calls one `kk news <verb>`": both are `kk stage` calls
+ * The documented exceptions to "a shell node calls one `kk news <verb>`": each is a `kk stage` call
  * because the work is deterministic stage work no `news` verb owns.
  * - 0409: `localize-check` — translating inside the plugin would move a model call into a
  *   deterministic step, and translating after the freeze would publish bytes the review never saw.
  * - 0426: `illustrations-render` — whole-plan validation + one pinned `job: illustration` request
  *   per figure with per-figure receipts; no existing verb owns it.
- * Declared once so a third exception cannot slip in through one assertion.
+ * - ADR-059: `safety-variants` — deterministic post-TTS variant integrity + PII gate that inherits
+ *   the pre-TTS `safety` stamp and writes `4-safety-variants/safety.json` for `freeze`.
+ * Declared once so an undocumented exception cannot slip in through one assertion.
  */
-const STAGE_NODE_EXCEPTIONS = new Set(['localize-check', 'illustrations-render']);
+const STAGE_NODE_EXCEPTIONS = new Set(['localize-check', 'illustrations-render', 'safety-variants']);
 
 const verbNodes = (): Node[] =>
     doc.nodes.filter(
@@ -287,18 +289,17 @@ describe('kk-news-generate — R7: the node bodies', () => {
         }
     });
 
-    it('nests the safety machine twice: drafts after render, variants after variants', () => {
-        for (const [id, dep, extra] of [
-            ['safety', 'render', ''],
-            ['safety-variants', 'variants', '\\"safety_scope_dir\\":\\"4-safety-variants\\"'],
-        ] as const) {
-            const node = byId.get(id) as Node;
-            expect(node.action?.kind).toBe('shell');
-            expect(node.dependsOn).toEqual([dep]);
-            expect(command(node)).toContain('spur workflow run plugins/kk/workflows/kk-daily-safety.yaml');
-            expect(command(node)).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST');
-            if (extra !== '') expect(command(node)).toContain(extra);
-        }
+    it('nests the safety machine pre-TTS and runs deterministic safety-variants after variants (ADR-059)', () => {
+        const safetyNode = byId.get('safety') as Node;
+        expect(safetyNode.action?.kind).toBe('shell');
+        expect(safetyNode.dependsOn).toEqual(['render']);
+        expect(command(safetyNode)).toContain('spur workflow run plugins/kk/workflows/kk-daily-safety.yaml');
+        expect(command(safetyNode)).toContain('env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST');
+
+        const variantsNode = byId.get('safety-variants') as Node;
+        expect(variantsNode.action?.kind).toBe('shell');
+        expect(variantsNode.dependsOn).toEqual(['variants']);
+        expect(command(variantsNode)).toContain('kk stage daily-safety-variants-check');
     });
 
     it('gates the voice chain and the card render on a failed step instead of a hard node error', () => {

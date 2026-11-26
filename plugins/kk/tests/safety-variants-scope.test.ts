@@ -144,7 +144,7 @@ describe('0331 authored machines — one scope var, drafts paths untouched by de
         );
     });
 
-    it('AC: the generate DAG wires safety-variants before freeze and runs the nested machine in the variants scope', () => {
+    it('AC: the generate DAG wires deterministic safety-variants before freeze while keeping pre-TTS safety nested', () => {
         const dag = Bun.YAML.parse(readFileSync(VOICE3, 'utf-8')) as {
             nodes: { id: string; dependsOn?: string[]; action?: { kind: string; options?: { command?: string } } }[];
         };
@@ -154,10 +154,9 @@ describe('0331 authored machines — one scope var, drafts paths untouched by de
         const node = byId.get('safety-variants');
         expect(node?.dependsOn).toEqual(['variants']);
         const command = String(node?.action?.options?.command ?? '');
-        expect(command).toContain('kk-daily-safety.yaml');
-        expect(command).toContain('safety_scope_dir');
-        expect(command).toContain(VARIANTS_SCOPE);
+        expect(command).toContain('daily-safety-variants-check');
         // The drafts review keeps its own nested machine with NO scope var (defaults to 24-script).
+        expect(String(byId.get('safety')?.action?.options?.command ?? '')).toContain('kk-daily-safety.yaml');
         expect(String(byId.get('safety')?.action?.options?.command ?? '')).not.toContain('safety_scope_dir');
         expect(byId.get('freeze')?.dependsOn).toContain('safety-variants');
     });
@@ -313,5 +312,75 @@ describe('0331 stages — the variants chain digests registered bytes and leaves
         expect(request.content).toHaveLength(2);
         expect(existsSync(join(dir, '24-script', `${STAMP}_09_safety-prep_script-snapshot.yaml`))).toBe(true);
         expect(existsSync(join(dir, '.safety-revise-count-4-safety-variants'))).toBe(false);
+    });
+});
+
+describe('ADR-059 daily-safety-variants-check — deterministic post-TTS gate', () => {
+    it('AC: verifies manifest bytes, inherits pre-TTS stamp/exclusions, and writes safety.json for freeze', () => {
+        const dir = setupVariantsDir();
+        mkdirSync(join(dir, '24-script'), { recursive: true });
+        writeFileSync(
+            join(dir, '24-script', `${STAMP}_09_safety-judge_stamp.json`),
+            JSON.stringify({ digest: 'draft-digest', status: 'exclude', excludedPlatforms: ['apple-podcasts'] }),
+        );
+        const res = runStage(['daily-safety-variants-check', dir, STAMP]);
+        expect(res.status, res.stderr).toBe(0);
+        const evidence = JSON.parse(readFileSync(join(dir, VARIANTS_SCOPE, 'safety.json'), 'utf-8')) as {
+            status: string;
+            digest: string;
+            excludedPlatforms: string[];
+            variants: Record<string, string>;
+        };
+        const manifest = JSON.parse(readFileSync(join(dir, VARIANTS_SCOPE, 'manifest.json'), 'utf-8'));
+        expect(evidence.status).toBe('exclude');
+        expect(evidence.excludedPlatforms).toEqual(['apple-podcasts']);
+        expect(evidence.digest).toBe(manifestDigest(dir, manifest));
+        expect(evidence.variants['surfdash-pub:post']).toBe(manifest.variants['surfdash-pub:post'].sha256);
+        expect(existsSync(join(dir, VARIANTS_SCOPE, 'warnings.json'))).toBe(false);
+    });
+
+    it('AC: hard-blocks on deterministic PII (email / CN mobile) and writes no safety.json', () => {
+        const dir = tempDir('kk-059-pii-');
+        writeVariants(dir, { 'surfdash-pub_post': '{"title":"t","body":"联系 alice@example.com 或 13812345678"}' });
+        expect(runStage(['daily-safety-manifest', dir, STAMP]).status).toBe(0);
+        const res = runStage(['daily-safety-variants-check', dir, STAMP]);
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain('deterministic PII detected');
+        expect(existsSync(join(dir, VARIANTS_SCOPE, 'safety.json'))).toBe(false);
+    });
+
+    it('AC: hard-blocks when variant bytes change after manifest registration', () => {
+        const dir = setupVariantsDir();
+        writeVariants(dir, { 'surfdash-pub_post': '{"title":"t","body":"tampered"}' });
+        const res = runStage(['daily-safety-variants-check', dir, STAMP]);
+        expect(res.status).not.toBe(0);
+        expect(res.stderr).toContain('bytes changed after manifest');
+        expect(existsSync(join(dir, VARIANTS_SCOPE, 'safety.json'))).toBe(false);
+    });
+
+    it('AC: records soft attribution hint without blocking freeze when short-form omits aggregator caveat', () => {
+        const dir = tempDir('kk-059-hint-');
+        mkdirSync(join(dir, '30-variants'), { recursive: true });
+        writeFileSync(
+            join(dir, '30-variants', 'article.content.json'),
+            JSON.stringify({
+                title: '每日AI乱炖',
+                body: '某公司被判有罪 [来源：news.google.com（聚合页转述，未取得原始报道）]',
+            }),
+        );
+        writeFileSync(
+            join(dir, '30-variants', 'social_x.content.json'),
+            JSON.stringify({ title: 'AI 简报', body: '某公司在纽约被判有罪。' }),
+        );
+        expect(runStage(['daily-safety-manifest', dir, STAMP]).status).toBe(0);
+        const res = runStage(['daily-safety-variants-check', dir, STAMP]);
+        expect(res.status, res.stderr).toBe(0);
+        expect(res.stderr).toContain('attribution-caveat-dropped');
+        expect(existsSync(join(dir, VARIANTS_SCOPE, 'safety.json'))).toBe(true);
+        const warnings = JSON.parse(readFileSync(join(dir, VARIANTS_SCOPE, 'warnings.json'), 'utf-8')) as {
+            warnings: Array<{ kind: string; variant: string }>;
+        };
+        expect(warnings.warnings).toHaveLength(1);
+        expect(warnings.warnings[0]).toMatchObject({ kind: 'attribution-caveat-dropped', variant: 'social:x' });
     });
 });

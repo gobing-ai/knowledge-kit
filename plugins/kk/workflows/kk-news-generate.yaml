@@ -519,11 +519,12 @@ nodes:
 
   - id: safety-variants
     description: >-
-      The final-variant safety review (0331) through the same nested machine, re-rooted by
-      `safety_scope_dir=4-safety-variants`. It leaves `4-safety-variants/safety.json` — status,
-      exclusion record and the sha256 of every reviewed variant — which the freeze carries into the
-      bundle, so live launches and social edits are gated on exactly the reviewed bytes. Fails
-      closed: a block fails this node and the run never freezes.
+      Deterministic final-variant safety check (ADR-059): inherits the approved pre-TTS `safety`
+      stamp (`status` + `excludedPlatforms`), verifies every manifest-listed variant's JSON schema
+      and sha256, hard-blocks on deterministic PII hits, records soft attribution hints to
+      `4-safety-variants/warnings.json`, and writes `4-safety-variants/safety.json` for freeze.
+      Replaces the post-TTS LLM-as-judge loop so stochastic disagreement after 60+ minutes of TTS
+      never aborts the episode.
     dependsOn: [variants]
     condition:
       kind: shell
@@ -532,11 +533,7 @@ nodes:
     action:
       kind: shell
       options:
-        command: >-
-          env -u SPUR_WORKFLOW_RUN_ACTIVE -u SPUR_EXPECTED_DEFINITION_DIGEST
-          spur workflow run plugins/kk/workflows/kk-daily-safety.yaml
-          --vars "{\"work_dir\":\"${vars.work_dir}\",\"run_date\":\"${vars.run_date}\",\"agent\":\"${vars.agent}\",\"safety_scope_dir\":\"4-safety-variants\"}"
-          --quiet --no-plan
+        command: 'kk stage daily-safety-variants-check "${vars.work_dir}" "${vars.run_date}"'
 
   - id: freeze
     description: >-

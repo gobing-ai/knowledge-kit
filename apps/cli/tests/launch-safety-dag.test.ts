@@ -99,8 +99,8 @@ describe('launch safety: one executor var (0360 R1, R2, R3)', () => {
     it('forwards the single agent var to every nested workflow launched from the generate DAG', () => {
         const { raw } = load('kk-news-generate');
         const invocations = nestedInvocations(raw);
-        // Two real nested launches today: the drafts safety review and the variants-scope review.
-        expect(invocations.length).toBe(2);
+        // One real nested launch (ADR-059): the pre-TTS drafts safety review (`safety-variants` is deterministic).
+        expect(invocations.length).toBe(1);
         for (const invocation of invocations) {
             expect(invocation).toContain(`\\"agent\\":\\"${AGENT_REF}\\"`);
             expect(invocation).not.toContain('agent_retry');

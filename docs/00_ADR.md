@@ -2133,3 +2133,17 @@ in-process coverage, so every small task paid the full e2e cost; the split cut t
 281 s without lowering the 90% floor or dropping a test.
 
 **Detail:** `docs/03_ARCHITECTURE.md` § Quality boundary; `scripts/test-suites.ts`.
+
+---
+
+## ADR-059: Post-TTS `safety-variants` is deterministic and pre-TTS `daily-safety-gate` hard-blocks only on PII or contract integrity
+
+**Status:** Accepted (implemented) · **Date:** 2026-11-26 · **Amends:** ADR-033 / 0331 (`safety-variants` post-TTS nested LLM review)
+
+**Decision.**
+1. **Deterministic post-TTS `safety-variants`.** `kk-news-generate`'s `safety-variants` node runs `kk stage daily-safety-variants-check` instead of invoking a second nested `kk-daily-safety` LLM review/judge loop after 60+ minutes of TTS. The stage inherits `status` and `excludedPlatforms` from the approved pre-TTS `24-script/<date>_09_safety-judge_stamp.json`, verifies every manifest-listed `30-variants/*.content.json` file's JSON schema and sha256 against `4-safety-variants/manifest.json`, hard-blocks on deterministic PII hits (CN national ID, CN mobile, email outside URLs/code/hashes), records soft attribution-caveat hints to `4-safety-variants/warnings.json`, and writes `4-safety-variants/safety.json` matching `BundleSafetySchema` verbatim.
+2. **Narrowed pre-TTS hard-block.** `daily-safety-gate`'s `ADMISSION_CRITERIA` expands from `['jurisdictional-rules']` to `['jurisdictional-rules', 'disclosure-presence', 'no-prohibited-claims']`. Non-PII judge fails still trigger bounded pre-TTS `revise` passes; once `safety_max_revise` is exhausted, they route to `exclude` (dropping only platforms that `BLOCK`ed while publishing clean channels on time) rather than whole-run `block`. Hard `block` (+ quarantine) stays enforced for category-3 PII platform blocks, `data-handling` fails, unnamed blocks, empty-finding non-PASS, digest tampering, and malformed/out-of-contract artifacts.
+
+**Why.** On 2026-11-26 (`kk-news-generate-20261126-1795696200790`), pre-TTS `safety` passed (`PASS`, score 0.775), TTS/cards/localize completed (60+ min), and a second LLM judge in `safety-variants` disagreed on aggregator attribution (`AP-06`, `no-prohibited-claims`), hard-blocking `freeze` for all 15 variants across every clean channel at minute 100 when `revise` could not even re-synthesize audio. Separating pre-TTS content review from post-TTS deterministic integrity/PII verification preserves PII/integrity safety while protecting the daily on-time publish SLA.
+
+**Detail:** `plugins/kk/scripts/daily-stages.ts` (`dailySafetyVariantsCheck`, `dailySafetyGate`); `plugins/kk/scripts/kk-workflow-stages.ts` (`ADMISSION_CRITERIA`); `plugins/kk/workflows/kk-news-generate.yaml` (`safety-variants`); `docs/04_DESIGN.md`.
