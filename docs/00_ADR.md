@@ -1414,6 +1414,29 @@ health unknown, never a dead source. Everything else about Daily stays artifacts
 artifact-backed), and IT Content stays artifacts-only without exception. Detail:
 [Workflow board modules](design/workflow-board-modules.md) §9.
 
+### Amendment — 2026-11-25 (G83: day-centric ops console and a guarded action endpoint)
+
+**Status:** Accepted (design) · **Work:** G83
+
+Two changes to the Daily AI Voice boundary. **(1) The day is the unit of view.** The Daily AI Voice
+module is replaced by a day-centric console; the reader gains read-only `GET /api/days/<YYYYMMDD>`
+and `GET /api/days?from&until` routes backed by one shared `projectDay()` projection, which
+`kk news digest` also renders. The retired `kk-daily-ai-voice2` / `kk-daily-ai-voice` layouts leave
+the module, and with them the 2026-10-22 supply-context consumption (it was bound to voice2 runs).
+**(2) The reader is no longer GET-only.** It gains one write route, `POST /api/actions/<kind>`, that
+launches only an allowlisted existing verb (`spur workflow run --from … --from-run …`,
+`spur workflow cancel`, `kk news publish …`, the `kk news generate-*` re-render verbs, `kk store
+release`) after a preview and a single-use confirmation. Spur keeps run authority — the endpoint
+never executes a workflow step itself, holds no run state and edits no artifact. The route is
+**off by default**, loopback-only, exact-origin only, single-flight per day, audit-logged, and a
+live publish additionally needs a typed confirmation (ADR-022 keeps live sends launch-consented).
+
+**Why.** The operator's unit of work is one episode day (a generation run, up to three publish
+windows and a safety loop), and every redo today means hand-reconstructing a CLI line from evidence
+files; the Board host exposes no run-control route and no downstream server hook, so the KK reader
+is the only local process that can turn the console's recipe into the same verb without forking
+Spur. Detail: [Daily AI Voice ops console](design/daily-voice-ops-console.md).
+
 #### API/library claim sources and confidence
 
 | Claim | Source | Local verification | Confidence |

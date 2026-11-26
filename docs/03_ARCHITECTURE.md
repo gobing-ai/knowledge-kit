@@ -704,6 +704,17 @@ its artifact-backed episode funnel. IT Content stays artifacts-only. Detail:
 [collect-store-views.md](design/collect-store-views.md) and
 [workflow-board-modules.md](design/workflow-board-modules.md) §9.
 
+**Daily AI Voice ops console (G83, ADR-035 amendment 2026-11-25 — design).** The Daily module is
+day-centric: `apps/cli/src/board/day.ts` `projectDay(worksRoot, day)` joins the day's
+`kk-news-generate` run(s), the `kk-publish` runs bound to that `work_dir` (grouped by window) and the
+safety verdict into one `DailyDigest`, read from the same run evidence the per-run routes already
+authorize. Three consumers share it: `GET /api/days/<day>`, `GET /api/days?from&until` (History) and
+`kk news digest`. Per-run drill-down reuses the existing news evidence DTO. The reader's single write
+route, `POST /api/actions/<kind>`, maps a recipe to an allowlisted argv and spawns it as a child
+process; it is off by default and gated by preview → single-use token → `kk lock` single-flight →
+`actions.jsonl` audit. It supersedes the 2026-10-22 supply-context panel, which was voice2-bound.
+Detail: [daily-voice-ops-console.md](design/daily-voice-ops-console.md).
+
 ## Repository workflow discovery
 
 Repository workflows have one physical home at
