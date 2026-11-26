@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Daily AI Voice Generation and Publishing detail tabs
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T00:29:45.935Z
-updated_at: "2026-11-26T01:09:16.605Z"
+updated_at: "2026-11-26T04:26:34.766Z"
 feature_id: G83
 priority: P2
 tags:
@@ -14,6 +14,8 @@ tags:
 
 dependencies: ["0440"]
 estimate_hours: 6
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0441. Daily AI Voice Generation and Publishing detail tabs
@@ -34,15 +36,15 @@ Design: docs/design/daily-voice-ops-console.md §4.
 
 ### Requirements
 
-- [ ] R1. Generation tab: run/attempt picker, node timeline with producer state, attempts and step durations from step-timing.json, engine fallback chain, artifacts with availability reasons, bounded diagnostics.
-- [ ] R2. Publishing tab: window × target matrix (tier, mode, status, effect, URL, error), per-window outcome and provenance checks; receipts and plan refs rendered as text.
-- [ ] R3. Missing evidence renders unknown with its reason.
+- [x] R1. Generation tab: run/attempt picker, node timeline with producer state, attempts and step durations from step-timing.json, engine fallback chain, artifacts with availability reasons, bounded diagnostics.
+- [x] R2. Publishing tab: window × target matrix (tier, mode, status, effect, URL, error), per-window outcome and provenance checks; receipts and plan refs rendered as text.
+- [x] R3. Missing evidence renders unknown with its reason.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Generation detail tab shows node-level evidence for debugging
-- [ ] AC2 — Publishing detail tab shows window by target evidence for debugging
-- [ ] AC3 — Unknowns and missing evidence stay explicit across the console
+- [x] AC1 — Generation detail tab shows node-level evidence for debugging
+- [x] AC2 — Publishing detail tab shows window by target evidence for debugging
+- [x] AC3 — Unknowns and missing evidence stay explicit across the console
 
 ### Q&A
 
@@ -94,15 +96,46 @@ Design: docs/design/daily-voice-ops-console.md §4.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Lines | What / why |
+| --- | --- | --- |
+| `apps/board/src/daily-voice/detail-view.ts` | 1-300 (new) | The two detail view models. `generationDetail` joins `NewsGenerationEvidence.progress.nodes`/`engines` with the day's `step-timing.json` durations (a voice fallback reads the same step's duration instead of inventing a gap), keeps a step the run never charted as `state unrecorded`, and bounds diagnostics at `NODE_DIAGNOSTIC_CAP`. `publishingDetail` builds the window × target matrix from the digest, adds the four-check provenance rows as `yes`/`no`/`not checked`, keeps a plan-without-receipt at `planned`, and only promotes a public http(s) URL to a link. |
+| `apps/board/src/daily-voice/index.tsx` | Generation/Publishing panels | The Generation tab gains an attempt picker (newest first) that fetches exactly the selected attempt's `/evidence` on demand — never every attempt eagerly — and renders facts, the node timeline (state, attempts, timing, step duration, per-node recipe), the engine chain, artifacts with their availability reason, and the bounded diagnostics with a truncation line. The Publishing tab renders the matrix, the provenance row, the window's run id as text and receipts/plans as `<code>`, with the window's recipes beneath. Both reuse the shared `RecipeLine`; a row's recipe is the projection's own argv for that subject, so a copied and a clicked command cannot drift. |
+| `apps/board/tests/daily-voice/detail-view.test.ts` | 1-330 (new) | AC1-AC3: the timeline join (including the fallback sharing the voice duration and an uncharted-but-timed step), the uncaptured attempt's `no-capture-record`, artifact availability reasons, the diagnostics cap, the matrix columns, three-state provenance, a not-run window, a plan-without-receipt, and the URL policy. |
+
+Deliberate limits, recorded:
+
+- **No new route.** Everything comes from `GET /api/workflows/kk-news-generate/runs/<id>/evidence`, the existing artifact route and the day digest (design §3), so the drill-down cannot disagree with the reader's own projection.
+- **The node timeline is the union of what the run recorded.** A node with no recorded producer state is shown as `state unrecorded` rather than omitted, because the operator's question is "which step stopped"; a node that only `step-timing.json` knows still gets a duration.
+- **Publishing does not drill into `kk-publish` runs** — `kk-publish` is not a reader `WorkflowName` and the day directory is authoritative (task Q&A). The window's run id is rendered as text for a terminal lookup.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 Generation tab: run/attempt picker, node timeline with producer state + attempts + `step-timing.json` durations, engine fallback chain, artifacts with availability reasons, bounded diagnostics | MET | `apps/board/src/daily-voice/index.tsx:300-470` (attempt picker, on-demand evidence fetch, timeline, engine chain, artifacts, diagnostics); `apps/board/src/daily-voice/detail-view.ts:96-140` (`generationDetail`, `stepIdOf` fallback sharing, `NODE_DIAGNOSTIC_CAP`); `apps/board/tests/daily-voice/detail-view.test.ts:150-240` |
+| R2 Publishing tab: window × target matrix (tier, mode, status, effect, URL, error), per-window outcome and provenance checks, receipts/plans as text | MET | `apps/board/src/daily-voice/index.tsx:475-580` (`PublishingPanel`); `apps/board/src/daily-voice/detail-view.ts:150-240` (`publishingDetail`, `provenanceRows`/`provenanceWord`, `isPublicHttpUrl`); `apps/board/tests/daily-voice/detail-view.test.ts:245-330` |
+| R3 Missing evidence renders unknown with its reason | MET | `apps/board/src/daily-voice/detail-view.ts:110-125` (uncharted step → `state unrecorded`; `no-capture-record`/`no-recorded-projection`), `:190` (`recorded` unknown), `:225` (`unknownReason` carried); `apps/board/tests/daily-voice/detail-view.test.ts:170,300,315` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 Generation detail tab shows node-level evidence for debugging | MET | test | `apps/board/tests/daily-voice/detail-view.test.ts:150` (timeline join, fallback shares the step duration), `:200` (artifact availability reasons), `:225` (engine chain + diagnostics cap) |
+| AC2 Publishing detail tab shows window by target evidence for debugging | MET | test | `apps/board/tests/daily-voice/detail-view.test.ts:245` (matrix columns, receipt as text, only a public URL linked), `:270` (provenance three-state) |
+| AC3 Unknowns and missing evidence stay explicit | MET | test | `apps/board/tests/daily-voice/detail-view.test.ts:170` (uncharted step, `no-recorded-projection`), `:185` (`no-capture-record`), `:300` (not-run window), `:315` (plan without receipt stays `planned`) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -114,3 +147,8 @@ Design: docs/design/daily-voice-ops-console.md §4.
 - Follow-ups: G84 (in-board artifact editor), G85 (digest push notification)
 
 ### History
+
+- 2026-11-26T04:24:51.623Z todo → wip (system)
+- 2026-11-26T04:26:32.824Z wip → testing (system)
+- 2026-11-26T04:26:34.759Z testing → done (system)
+

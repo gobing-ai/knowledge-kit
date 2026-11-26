@@ -24,11 +24,13 @@ import type {
     RunResults,
 } from '../contracts';
 import { type ArtifactView, artifactViews, type ResultFact } from '../shared/collect';
-import { DAILY_WORKFLOW } from './view';
 
 /* -------------------------------------------------------------------------------------------- */
 /* Capture state                                                                                */
 /* -------------------------------------------------------------------------------------------- */
+
+/** The news workflow id (the day-centric console's per-run drill-down reads only this one). */
+export const DAILY_WORKFLOW = 'kk-news-generate';
 
 /** Whether the selected attempt has a capture record at all. */
 export type EvidenceCaptureState = 'captured' | 'uncaptured';

@@ -1416,7 +1416,8 @@ artifact-backed), and IT Content stays artifacts-only without exception. Detail:
 
 ### Amendment — 2026-11-25 (G83: day-centric ops console and a guarded action endpoint)
 
-**Status:** Accepted (design) · **Work:** G83
+**Status:** Accepted · **Work:** G83 (shipped: projection + routes + CLI in 0439, console in 0440,
+detail tabs in 0441, guarded action plane in 0442)
 
 Two changes to the Daily AI Voice boundary. **(1) The day is the unit of view.** The Daily AI Voice
 module is replaced by a day-centric console; the reader gains read-only `GET /api/days/<YYYYMMDD>`

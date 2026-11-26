@@ -281,6 +281,174 @@ export interface DailyProgressBag {
 }
 
 /* ------------------------------------------------------------------------------------------------
+ * Day-centric Daily AI Voice digest (G83, task 0439 — docs/design/daily-voice-ops-console.md §1–§5)
+ *
+ * One projection (`projectDay`) serves `GET /api/days/<day>`, `GET /api/days?from&until` and
+ * `kk news digest`, so the console and the CLI cannot disagree. Missing evidence is an explicit
+ * `unknown` with its reason — never a zero and never a success (R12).
+ * ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The day's overall health. `running` outranks `failed`, which outranks `attention`; `unknown` is
+ * the answer when the evidence needed for the call is missing, and is never rendered as `ok`.
+ */
+export type DayStatus = 'ok' | 'attention' | 'failed' | 'running' | 'unknown';
+
+/** The closed action-kind union shared by a recipe and the reader's action plane (§6). */
+export type ActionKind =
+    | 'generate-from-node'
+    | 'publish-retry'
+    | 'publish-window'
+    | 'rerender-step'
+    | 'cancel-run'
+    | 'store-release';
+
+/** A redo/render recipe: the argv is resolved server-side by the same function that executes it. */
+export interface Recipe {
+    kind: ActionKind;
+    /** Short operator-facing label, e.g. `retry the failed target`. */
+    label: string;
+    /** Only the keys the kind allowlists — never free text. */
+    params: Record<string, string>;
+    argv: string[];
+    /** argv the action plane runs to preview the command, when the kind has one. */
+    dryRunArgv?: string[];
+    /** `true` when the command can send to a live channel and needs a typed confirmation. */
+    live: boolean;
+}
+
+/** The closed attention-rule set; a new rule is added to the design table, never inferred here. */
+export type AttentionKind =
+    | 'generation-failed'
+    | 'generation-refused'
+    | 'engine-fallback'
+    | 'window-not-run'
+    | 'target-failed'
+    | 'provenance-mismatch'
+    | 'safety-flag';
+
+/** One thing that needs the operator, with the evidence that raised it and its recipes. */
+export interface AttentionItem {
+    severity: 'error' | 'warn' | 'info';
+    kind: AttentionKind;
+    /** What the item is about (a node, a window, a target id, `safety`). */
+    subject: string;
+    message: string;
+    /** The artifact path or run id that raised the item, rendered as text. */
+    evidence: string | null;
+    recipes: Recipe[];
+}
+
+/** One recorded launch attempt for the day (a capture record plus its receipt status). */
+export interface DayAttempt {
+    runId: string;
+    capturedAt: string;
+    /** The launch receipt's status when it names this attempt; null when nothing recorded it. */
+    status: string | null;
+}
+
+/** One recorded step duration from `step-timing.json`; `durationMs` is null when the pair is not a range. */
+export interface DayNodeDuration {
+    step: string;
+    startedAt: string;
+    endedAt: string;
+    durationMs: number | null;
+}
+
+/** The generation side of one day: the current attempt, its launch status and recorded durations. */
+export interface DayGeneration {
+    /** The newest captured attempt's run id, or null when no capture record exists. */
+    runId: string | null;
+    /** The launch receipt's own status (`running` | `done` | `no-content` | `failed` | `refused`). */
+    launchStatus: string | null;
+    exitCode: number | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+    /** `episode` when a frozen bundle exists, the receipt's refusal word otherwise, null when unrecorded. */
+    outcome: string | null;
+    attempts: DayAttempt[];
+    bundle: NewsBundleEvidence | null;
+    durations: DayNodeDuration[];
+    /** Why a generation figure is unknown; null when every figure was recorded. */
+    unknownReason: string | null;
+}
+
+/** One publish window of the day: its launcher receipt, recorded outcome and per-target evidence. */
+export interface DayWindow {
+    window: string;
+    /** The window's launcher run id from its receipt; null when no receipt recorded one. */
+    runId: string | null;
+    /**
+     * `not-run` (no receipt and no plan), `unknown` (a plan with no launch receipt), or the
+     * receipt's recorded status. Never derived from the absence of a failure.
+     */
+    launchStatus: 'not-run' | 'unknown' | 'running' | 'done' | 'failed' | 'refused' | 'no-content';
+    unknownReason: string | null;
+    recordedStatus: NewsPublishWindowEvidence['recordedStatus'];
+    provenance: NewsPublishWindowEvidence['provenance'];
+    targets: NewsPublishTargetEvidence[];
+}
+
+/** The day's safety verdict, or the reason it is unknown. */
+export interface DaySafety {
+    /** The recorded safety decision (`pass` | `exclude` | …); null when no decision file exists. */
+    verdict: string | null;
+    /** The judge verdict (`PASS` | `FAIL` | …), when the judge ran and recorded one. */
+    judge: string | null;
+    unknownReason: string | null;
+}
+
+/** One `actions.jsonl` line: a preview, a launch, an exit or a refusal, append-only (§6). */
+export interface DailyActionLine {
+    ts: string;
+    kind: string;
+    /** The day the line belongs to; null for a run-scoped action whose id carries no day. */
+    day?: string | null;
+    argv: string[];
+    origin: string | null;
+    /** `sha256(kind + argv)`, never the token itself. */
+    tokenHash: string | null;
+    runId: string | null;
+    exit: number | null;
+    result?: string;
+    refusal?: string;
+}
+
+/** The action plane's own state, so the console can render recipes-only when it is off. */
+export interface DayActionPlane {
+    enabled: boolean;
+    /** The recorded lines for the day, bounded (newest last). */
+    lines: DailyActionLine[];
+}
+
+/** One day's whole digest — the Today tab, the History drill-down and `kk news digest` payload. */
+export interface DailyDigest {
+    schemaVersion: 1;
+    /** `YYYYMMDD` — the `kk-news-generate` work-dir basename. */
+    day: string;
+    status: DayStatus;
+    generation: DayGeneration;
+    windows: DayWindow[];
+    safety: DaySafety;
+    attention: AttentionItem[];
+    /** The action plane's state and the day's recorded lines (G83/0442). */
+    actions: DayActionPlane;
+    /** Figure → the artifact path or run id that supplied it (R2). */
+    sources: Record<string, string>;
+    diagnostics: BoardDiagnostic[];
+}
+
+/** One row of the History view: a day's health and its per-step durations. */
+export interface DaySummary {
+    day: string;
+    status: DayStatus;
+    runId: string | null;
+    /** Per-window recorded status, or `not-run` when the window has no evidence at all. */
+    windows: { window: string; launchStatus: DayWindow['launchStatus'] }[];
+    durations: DayNodeDuration[];
+}
+
+/* ------------------------------------------------------------------------------------------------
  * Collect store views (G81, task 0307 — docs/design/collect-store-views.md §3)
  *
  * Read-only projections of `<project>/.works/kk.db` (ADR-035 amendment 2026-10-16, Collect only).

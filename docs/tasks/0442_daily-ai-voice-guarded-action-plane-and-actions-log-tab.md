@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Daily AI Voice guarded action plane and Actions log tab
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T00:29:45.936Z
-updated_at: "2026-11-26T01:09:18.910Z"
+updated_at: "2026-11-26T04:35:18.249Z"
 feature_id: G83
 priority: P2
 tags:
@@ -15,6 +15,8 @@ tags:
 
 dependencies: ["0439", "0440"]
 estimate_hours: 10
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0442. Daily AI Voice guarded action plane and Actions log tab
@@ -42,19 +44,19 @@ Design: docs/design/daily-voice-ops-console.md §6.
 
 ### Requirements
 
-- [ ] R1. `POST /api/actions/<kind>` over the closed six-kind allowlist. Argv comes from `resolveArgv`, and the child is spawned without a shell.
-- [ ] R2. Preview returns the argv, the dry-run output and a single-use 5-minute token bound to the argv hash. Execute consumes the token once. A reused or expired token is refused.
-- [ ] R3. Live kinds require a typed confirmation equal to the day.
-- [ ] R4. Single-flight per day, through the store-backed lock name `ops-console:<day>` (the same `LocksDao` that `kk lock` uses).
-- [ ] R5. Off by default (`board.actions.enabled`). A POST requires the exact Board Origin, a loopback Host and `X-KK-Action: 1`. Preflight advertises POST and `x-kk-action` for `/api/actions/*` only.
-- [ ] R6. Append-only `<works>/kk-news-generate/<day>/actions.jsonl` records previews, executions and refusals.
-- [ ] R7. The console follows the spawned run id to terminal and shows the Actions log tab. The ADR-035 amendment moves from Accepted (design) to Accepted when this ships.
+- [x] R1. `POST /api/actions/<kind>` over the closed six-kind allowlist. Argv comes from `resolveArgv`, and the child is spawned without a shell.
+- [x] R2. Preview returns the argv, the dry-run output and a single-use 5-minute token bound to the argv hash. Execute consumes the token once. A reused or expired token is refused.
+- [x] R3. Live kinds require a typed confirmation equal to the day.
+- [x] R4. Single-flight per day, through the store-backed lock name `ops-console:<day>` (the same `LocksDao` that `kk lock` uses).
+- [x] R5. Off by default (`board.actions.enabled`). A POST requires the exact Board Origin, a loopback Host and `X-KK-Action: 1`. Preflight advertises POST and `x-kk-action` for `/api/actions/*` only.
+- [x] R6. Append-only `<works>/kk-news-generate/<day>/actions.jsonl` records previews, executions and refusals.
+- [x] R7. The console follows the spawned run id to terminal and shows the Actions log tab. The ADR-035 amendment moves from Accepted (design) to Accepted when this ships.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — The action plane decision is recorded before any write path ships
-- [ ] AC2 — Actions execute only after a preview and a single-use confirmation
-- [ ] AC3 — The action plane refuses unsafe requests
+- [x] AC1 — The action plane decision is recorded before any write path ships
+- [x] AC2 — Actions execute only after a preview and a single-use confirmation
+- [x] AC3 — The action plane refuses unsafe requests
 
 ### Q&A
 
@@ -130,15 +132,59 @@ Design: docs/design/daily-voice-ops-console.md §6.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Lines | What / why |
+| --- | --- | --- |
+| `apps/cli/src/board/action-plane.ts` | 1-320 (new) | The guard chain and the token map. Order: disabled → unknown kind → exact Origin → loopback Host → `X-KK-Action: 1` → params via `resolveArgv` → preview token (or typed confirmation for a live kind) → store lock → **audit before spawn** → argv spawn. `argvHashOf`, `scopeOf` (day or run lock), `runIdOf` (JSON stdout), `parseActionLog`/`appendActionLog`. Tokens are in-memory, hashed into the audit, consumed once and expire in 5 minutes. |
+| `apps/cli/src/board/actions.ts` | 55-64 | `ACTION_KINDS` — the closed allowlist the plane dispatches on, so the reader cannot accept a kind the digest could not render. |
+| `apps/cli/src/board/reader.ts` | 745-770, 1185-1270 | `POST /api/actions/<kind>` dispatched before the GET/HEAD guard, with its own CORS (`POST`, `x-kk-action`) on that path family only; the production plane wires `board.actions.enabled`, `NodeProcessExecutor` (argv array, no shell), the `kk-store` `locks` single-flight and the day's `actions.jsonl`. Tests inject `actionPlane`. |
+| `apps/cli/src/board/day.ts` | 36-60, 512-520, 580-600 | The digest carries `actions: { enabled, lines }` (the day's bounded audit lines) so the Actions log tab needs no second route, and `DayContext.actionsEnabled` tells it whether a launch is even possible. |
+| `apps/board/src/contracts.ts` | 401-425 | `DailyActionLine` + `DayActionPlane`, and the `DailyDigest.actions` field. |
+| `apps/board/src/shared/api.ts` | 129-140, 812-824 | `BoardClient.action(kind, body)` — the console's only write path, one POST with the action header. |
+| `apps/board/src/daily-voice/day-view.ts` | 216-270 | `actionLogRows` (preview/launched/exit-N/refused with tones, newest first) and `actionPlaneEnabled`. |
+| `apps/board/src/daily-voice/index.tsx` | `ActionLauncher`, `ActionsPanel` | Preview → (typed confirmation for a live kind) → run, all through the same POST; a 202 reports `launched` and refetches the day so the Actions log shows the new lines. When the plane is off the tab shows the disabled diagnostic and recipes only. |
+| `apps/cli/tests/board/action-plane.test.ts` | 1-330 (new) | AC2/AC3: the preview→execute handshake (argv identical to the rendered recipe), token replay, expiry (injected clock), argv binding, typed confirmation, held lock, and every refusal code — each asserting nothing spawned and one audit line written. |
+| `docs/00_ADR.md` | 1419-1421 | The ADR-035 amendment moves from **Accepted (design)** to **Accepted**, naming the shipped slices (R7). |
+| `docs/04_DESIGN.md` | 536-560 | T3 surface: the single write route, the switch, the header set, the handshake, the lock names, the closed refusal vocabulary and the audit file. |
+
+Deliberate limits, recorded:
+
+- **The config switch is read once, at reader start.** A `board.actions.enabled` edit needs a reader restart; that is stated in the UI diagnostic and the design note rather than pretending hot reload.
+- **A refusal is audited even when the plane is disabled**, because the operator's question after an incident is "did anything try?" — the audit append is best-effort (a failed write never blocks a refusal, and never promotes a launch).
+- **The launch line precedes the child**; the exit line follows it. A crash between them leaves an unclosed `launched` row, which is evidence, not a phantom run.
+- **`runId` capture is stdout-based** (`--json`), so a kind that prints no run id records `null` and the UI shows fire-and-forget instead of inventing an id to follow.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 `POST /api/actions/<kind>` over the closed six-kind allowlist; argv from `resolveArgv`; child spawned without a shell | MET | `apps/cli/src/board/reader.ts:745-770` (route + own CORS), `:1230-1270` (`NodeProcessExecutor.run({command,args})`, argv array); `apps/cli/src/board/action-plane.ts:230-260` (`resolveArgv` + `ACTION_KINDS`); `apps/cli/tests/board/action-plane.test.ts:118` (launched argv equals the previewed argv) |
+| R2 Preview returns argv + dry-run output + a single-use 5-minute token bound to the argv hash; execute consumes it once; reused/expired refused | MET | `apps/cli/src/board/action-plane.ts:77`, `:300-345`; `apps/cli/tests/board/action-plane.test.ts:118` (preview), `:160` (replay refused), `:172` (expiry with the injected clock), `:183` (argv binding) |
+| R3 Live kinds require `typedConfirm` equal to the day | MET | `apps/cli/src/board/action-plane.ts:330`; `apps/cli/tests/board/action-plane.test.ts:192` (refused without it, token still usable with it) |
+| R4 Single-flight per day via the store `ops-console:<day>` lock | MET | `apps/cli/src/board/reader.ts:1252-1258` (`store.locks.acquire` / `release`, 2 h TTL); `apps/cli/src/board/action-plane.ts:140-150` (`scopeOf`); `apps/cli/tests/board/action-plane.test.ts:212` (held lock 409, nothing spawned) |
+| R5 Off by default; exact Board Origin, loopback Host and `X-KK-Action: 1`; preflight advertises POST/`x-kk-action` for `/api/actions/*` only | MET | `apps/cli/src/board/reader.ts:1185-1200` (config switch), `:723-740` (path-scoped CORS + POST dispatch before the GET/HEAD guard); `apps/cli/tests/board/action-plane.test.ts:230-275` (disabled, origin, host, header) |
+| R6 Append-only `<works>/kk-news-generate/<day>/actions.jsonl` records previews, executions and refusals | MET | `apps/cli/src/board/action-plane.ts:300,340,360,395` (one audit call per outcome), `:405-420` (`appendActionLog`); `apps/cli/src/board/day.ts:512` (digest carries the bounded lines); `apps/cli/tests/board/action-plane.test.ts:118` (preview → launched → exited order), `:330` (append+read) |
+| R7 The console shows the Actions log tab (and follows the spawned run id); the ADR amendment moves to Accepted | MET | `apps/board/src/daily-voice/index.tsx` (`ActionsPanel`, `ActionLauncher`), `apps/board/src/daily-voice/day-view.ts:216-270` (`actionLogRows`); `docs/00_ADR.md:1419` (Accepted); `apps/board/tests/daily-voice/day-view.test.ts` (log rows + tones) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 The action plane decision is recorded before any write path ships | MET | test | `apps/cli/tests/board/action-plane.test.ts` — "the recorded decision (AC1, feature R9)" asserts the ADR-035 amendment reads Accepted and the design names the route, the switch and all nine refusal codes; sources: `docs/00_ADR.md:1417` and `docs/04_DESIGN.md:536` |
+| AC2 Actions execute only after a preview and a single-use confirmation | MET | test | `apps/cli/tests/board/action-plane.test.ts:118` (handshake, argv equality, audit order), `:160` (replay), `:172` (expiry), `:192` (typed confirmation) |
+| AC3 The action plane refuses unsafe requests | MET | test | `apps/cli/tests/board/action-plane.test.ts:228` (disabled), `:237` (unknown kind), `:244` (origin), `:258` (host/header), `:266` (params), `:212` (lock) — every case asserts `spawned === []` and the audit line |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -150,3 +196,8 @@ Design: docs/design/daily-voice-ops-console.md §6.
 - Follow-ups: G84 (in-board artifact editor), G85 (digest push notification)
 
 ### History
+
+- 2026-11-26T04:32:22.230Z todo → wip (system)
+- 2026-11-26T04:35:17.033Z wip → testing (system)
+- 2026-11-26T04:35:18.240Z testing → done (system)
+

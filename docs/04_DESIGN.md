@@ -422,6 +422,22 @@ media is served as byte ranges. Status vocabulary: `400` bad identity or query, 
 origin or project, `404` unknown capture/artifact or a changed owner, `405` mutating method, `416`
 unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
 
+**Day digest routes (G83, task 0439 — `docs/design/daily-voice-ops-console.md` §3).** Two read-only
+routes serve the day-centric projection `projectDay()`; both are file-backed (no Board call) and
+refuse everything outside the day directory.
+
+| Route | Query | Answers |
+| ------- | ------- | --------- |
+| `/api/days/<YYYYMMDD>` | none | `DailyDigest` for one day; `404 board.day.not-found` names the looked-up directory, `400 board.day.invalid` for a non-`YYYYMMDD` key |
+| `/api/days` | `from`/`until` (required `YYYYMMDD`, `from <= until`, at most 31 days) | `DaySummary[]`, newest first |
+
+With the two day routes and the four Collect store routes taking declared parameters, every other
+route still refuses all of them. Shapes: `DailyDigest` (`{schemaVersion: 1, day, status,
+generation, windows[], safety, attention[], sources, diagnostics}`) and `DaySummary` (`{day, status,
+runId, windows[], durations[]}`) in `apps/board/src/contracts.ts`; `DayStatus` is
+`ok|attention|failed|running|unknown`, worst-of in that order, and `unknown` is what a day with no
+recorded evidence answers — never `ok`.
+
 **Collect store views (G81, task 0307 — `docs/design/collect-store-views.md` §3).** ADR-035's
 2026-10-16 amendment lifts artifacts-only for `kk-collect` alone: four read-only routes project
 `<project>/.works/kk.db` (never Spur, never a copy of the store into artifacts).
@@ -516,6 +532,50 @@ another run is `superseded`, so its config and Spur progress survive but its art
 served. Workflow Config Summary shows only sanitized recorded run values — current definitions and
 defaults live in Settings → Workflows, and uncaptured historical keys stay explicitly unknown. All
 operation is local-loopback and read-only; there is no remote or multi-user mode.
+
+**Guarded action plane (G83, task 0442).** The reader gains exactly one write route,
+`POST /api/actions/<kind>`, over the closed six-kind allowlist (`publish-retry`, `publish-window`,
+`generate-from-node`, `rerender-step`, `cancel-run`, `store-release`). Off by default:
+`board.actions.enabled: true` in `~/.config/kk/config.yaml` (resolved through `resolveKkConfigPath`) —
+a reader restart picks it up. A request must carry the exact Board `Origin` (an absent Origin is
+refused on POST), a loopback `Host` and `X-KK-Action: 1`; the preflight for this path family alone
+advertises `POST` and `x-kk-action`. Argv comes from `resolveArgv` — the same function the digest
+renders — so a copied command and a clicked action are byte-identical, and no parameter is free text.
+
+The handshake: a body without a token is a **preview** that resolves the argv (plus the dry-run
+output for `publish-retry`) and mints a single-use 5-minute token bound to
+`sha256(kind + '\0' + argv.join('\0'))`; presenting it **executes**. A live kind additionally needs
+`typedConfirm` equal to the day. Single-flight is the store-backed lock `ops-console:<day>`
+(`ops-console:run-<runId>` for a run-scoped kind whose id carries no day), TTL 2 h, released on child
+exit. Refusal codes and statuses are closed: `actions.disabled` 403, `actions.kind.unknown` 404,
+`actions.origin.refused`/`actions.host.refused`/`actions.header.missing` 403,
+`actions.params.invalid`/`actions.confirm.missing` 400, `actions.token.invalid`/`actions.lock.held`
+409. Every preview, launch, exit and refusal appends one line to
+`<works>/kk-news-generate/<day>/actions.jsonl` (the day's digest carries the plane's `enabled` flag and
+the bounded lines, so the Actions log tab needs no second route), and the launch line is written
+**before** the child exists. The child is an argv array — no shell, no request data in its
+environment; a `--json` stdout carrying `runId` is recorded for the console to follow.
+
+**Day-centric Daily AI Voice console (G83, task 0440).** `apps/board/src/daily-voice/` is rewritten in
+place at the same route id (`/board/modules/kk-daily-ai-voice2`, bookmarks survive) and lists **days,
+not runs**: `GET /api/days/<YYYYMMDD>` for the open day and `GET /api/days?from&until` for History
+(the default range is 14 days; the reader caps it at 31). Five tabs in the frozen order — Today
+(status banner, generation card, publish-window strip, safety line, severity-ordered attention list
+with copyable recipes, explicit all-clear), Generation (attempts and recorded step durations),
+Publishing (window × target matrix with receipts rendered as text), History (per-day status, window
+outcomes and a per-node duration trend; a day click deep-links into Today) and Actions log (recipes
+only until the guarded plane ships in 0442). The selected day and tab live in the URL hash
+(`#day=YYYYMMDD&tab=…`), validated on read so an operator-edited hash cannot select a foreign day.
+`kk-board-daily-voice` stays the module's host identity class.
+
+Retired with the run-centric layouts (feature R2): the voice2 fallback panels and their Summary /
+Generation / Publishing views over one run selection, the G82 funnel and 2026-10-22 supply-context
+panel (`supplyContextOf`), and `apps/board/src/daily-voice/view.ts` with its confidence-vocabulary
+copy — the console reads a `DailyDigest` whose judge verdict the CLI projection already validated
+against `HIGH|MEDIUM|LOW` (`apps/cli/src/board/day.ts`), so no browser-side copy remains to drift.
+The reader-side per-run projections (`projectProgress`, `dagProducerState`) and the CLI's own
+`WorkflowName` member stay: old `kk-daily-ai-voice2` capture records still resolve through the
+per-run routes with an explicit reason instead of crashing.
 
 **Board contribution ABI.** The three entries export `webModule = { apiVersion: 1, component }` using
 the type-only `@gobing-ai/spur/board` declaration; the installed host advertises `react`,
@@ -1442,6 +1502,11 @@ for both nouns. They resolve `content_types`, create/read the canonical run dire
   `4-publish/` fallback), so a news run whose freeze wrote the root bundle reports `bundle.runId`, `bundle.frozen` and
   the additive `bundle.variantCount` instead of `null`. The `4-publish/` article layout keeps its exact pre-0435
   summary shape.
+- `kk news digest --run-date <day> [--json]` (G83, task 0439) renders the same `DailyDigest` the Board's Today tab
+  reads: markdown by default, the raw projection under `--json`. `--days --from <day> --until <day>` prints the
+  bounded History list instead. A day with no `kk-news-generate/<day>/` directory exits 1 and names the path it
+  looked up; a malformed or missing `--run-date` exits 2. No figure is invented: a missing receipt, unreadable file
+  or unbound publish plan renders `unknown` with its reason.
 - Every episode-length estimate prints its own denominator and provenance (0434): the extract ladder projects the
   ADMITTED set (`poolChars × keepRate` converted at the recorded `keptRatio`), and `ladder.json`, the floor refusal and
   the post-spend duration refusal each carry `keptRatio`/`keptRatioSource`, `keepRate`/`keepRateSource` and (refusals)
@@ -1463,6 +1528,8 @@ kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir
                      [--dummy] [--retry] [--agent <executor>] [--unattended] [--yes] [--timeout-ms <n>]
                      [--allow-dirty] [--dry-run]
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
+kk news digest       --run-date <YYYYMMDD> [--json]
+kk news digest       --days --from <YYYYMMDD> --until <YYYYMMDD> [--json]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
 kk article generate-check --work-dir <dir> --step outline|judge|adapt        # shipped (0368)

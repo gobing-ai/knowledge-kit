@@ -2,11 +2,11 @@
 schema_version: 1
 id: "G83"
 name: "Daily AI Voice Ops Console: day-centric digest, debug tabs and guarded redo tools"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-11-26T00:25:31.429Z"
-updated_at: "2026-11-26T00:26:34.860Z"
+updated_at: "2026-11-26T03:11:27.364Z"
 ---
 
 # G83: Daily AI Voice Ops Console: day-centric digest, debug tabs and guarded redo tools
@@ -165,10 +165,13 @@ Feature: Daily AI Voice Ops Console: day-centric digest, debug tabs and guarded 
 | 0441 | Daily AI Voice Generation and Publishing detail tabs | todo |
 | 0440 | Daily AI Voice console module shell, Today and History tabs, retire the old module | todo |
 | 0442 | Daily AI Voice guarded action plane and Actions log tab | todo |
-| 0439 | Daily AI Voice day projection, /api/days reader routes and kk news digest | todo |
+| 0439 | Daily AI Voice day projection, /api/days reader routes and kk news digest | testing |
 | 0443 | Daily AI Voice console end-to-end evidence and docs sync | todo |
 <!-- END AUTO-GENERATED -->
 
 ## Notes
 
 ## History
+
+- 2026-11-26T03:11:27.364Z backlog → active (system)
+

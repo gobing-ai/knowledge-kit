@@ -31,6 +31,9 @@ describe('content command module', () => {
 
         const noun = program.commands.find((command) => command.name() === 'news');
         expect(noun?.commands.map((command) => command.name()).sort()).toEqual([
+            // `digest` is the news-only day digest (G83, task 0439): the same DailyDigest the
+            // Board's Today tab reads, rendered as markdown or JSON (04_DESIGN §1.14).
+            'digest',
             'generate',
             'generate-bundle',
             'generate-cards',

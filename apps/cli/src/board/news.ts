@@ -240,13 +240,20 @@ function launchEvidence(receiptText: string | undefined, runId: string): NewsLau
     };
 }
 
+/** A recorded vs expected run date, compared on its digits (`2026-11-25` vs the `20261125` stamp). */
+function sameRunDate(recorded: string | undefined, expected: string): boolean | null {
+    if (recorded === undefined) return null;
+    const digits = recorded.replace(/\D/g, '');
+    return digits === expected.replace(/\D/g, '');
+}
+
 /**
  * Per-window publish evidence: the plan, its receipts and the outcome file, each bound to THIS
  * attempt by identity. Only files that pass their identity checks contribute target facts; a
  * failed check keeps the target's plan-side facts and flips the matching provenance bit with a
  * diagnostic, never a fabricated status.
  */
-async function publishingEvidence(input: {
+export async function publishingEvidence(input: {
     runId: string;
     stamp: string;
     markerOwned: boolean;
@@ -294,7 +301,7 @@ async function publishingEvidence(input: {
         const planDigest = createHash('sha256').update(planObservation.text).digest('hex');
         const expectedParent = bundle?.parentRunId ?? runId;
         const provenance = {
-            dateMatch: planData.runDate === undefined ? null : planData.runDate === stamp,
+            dateMatch: sameRunDate(planData.runDate, stamp),
             bundleMatch: bundle === null ? null : planData.bundleRunId === bundle.identity,
             parentMatch: planData.parentRunId === expectedParent,
             digestMatch: null as boolean | null,
@@ -388,7 +395,7 @@ async function publishingEvidence(input: {
         if (outcomeObservation.state === 'present' && outcomeObservation.text !== undefined) {
             const outcome = PublishOutcomeSchema.safeParse(parseJsonOrNull(outcomeObservation.text));
             if (outcome.success && outcome.data.window === window) {
-                if (outcome.data.runDate === stamp) {
+                if (sameRunDate(outcome.data.runDate, stamp) === true) {
                     recordedStatus = outcome.data.status;
                     const receiptStatuses = new Map(windowTargets.map((target) => [target.id, target.status]));
                     for (const row of outcome.data.rows) {
@@ -436,7 +443,7 @@ async function publishingEvidence(input: {
 }
 
 /** The frozen bundle's bounded projection — identity and names, never payload digests. */
-function bundleEvidence(
+export function bundleEvidence(
     text: string | undefined,
     available: boolean,
 ): { bundle: NewsBundleEvidence | null; invalid: boolean } {

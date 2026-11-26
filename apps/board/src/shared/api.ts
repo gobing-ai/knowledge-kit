@@ -10,6 +10,8 @@ import type {
     CollectStoreOverview,
     CollectStoreSelection,
     CollectStoreSelections,
+    DailyDigest,
+    DaySummary,
     RunConfig,
     RunEvidence,
     RunResults,
@@ -130,6 +132,15 @@ export interface BoardClient {
      * workflow projection. Answers even for uncaptured attempts (`capture`/`results` then null).
      */
     evidence(workflow: string, runId: string): Promise<RunEvidence>;
+    /** One day's digest (G83): the day-centric console's single read for Today. */
+    day(day: string): Promise<DailyDigest>;
+    /** The bounded day list (G83) behind the History view. */
+    days(from: string, until: string): Promise<DaySummary[]>;
+    /**
+     * The guarded action plane (G83/0442): one POST to `/api/actions/<kind>`. A preview omits the
+     * token; an execute presents it. The reader refuses everything unless `board.actions.enabled`.
+     */
+    action(kind: string, body: Record<string, unknown>): Promise<{ status: number; body: unknown }>;
     /** The reader URL for one allowlisted artifact (used as a link/download target). */
     artifactUrl(workflow: string, runId: string, artifactId: string): string;
     /** The Spur run history page for a workflow (`/api/runs`). */
@@ -801,6 +812,19 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
             getJson<RunEvidence>(
                 `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/evidence`,
             ),
+        day: (day) => getJson<DailyDigest>(`${reader}/api/days/${encodeURIComponent(day)}`),
+        days: (from, until) =>
+            getJson<DaySummary[]>(
+                `${reader}/api/days?from=${encodeURIComponent(from)}&until=${encodeURIComponent(until)}`,
+            ),
+        action: async (kind, body) => {
+            const response = await doFetch(`${reader}/api/actions/${encodeURIComponent(kind)}`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', 'x-kk-action': '1' },
+                body: JSON.stringify(body),
+            });
+            return { status: response.status, body: await response.json() };
+        },
         progress: (runId) => getJson<unknown>(`${board}/api/runs/${encodeURIComponent(runId)}/progress`),
     };
 }

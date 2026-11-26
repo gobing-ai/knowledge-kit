@@ -3,6 +3,8 @@ import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { type Command, CommanderError } from 'commander';
+import { isDayKey, listDays, projectDay } from '../board/day';
+import { renderDaysMarkdown, renderDigestMarkdown } from '../board/digest';
 import {
     type ContentTypeConfig,
     ContentTypeSkillMissingError,
@@ -40,6 +42,14 @@ interface StatusOptions {
     runDate?: string;
     window?: string;
     workDir?: string;
+}
+
+interface DigestOptions {
+    runDate?: string;
+    json?: boolean;
+    days?: boolean;
+    from?: string;
+    until?: string;
 }
 
 /** Config fields needed by the shared content commands. */
@@ -488,6 +498,54 @@ function configureNew(command: Command, noun: string, defaultType: string): void
     command.action((options: NewOptions) => newAction(defaultType, options, noun === 'article'));
 }
 
+function configureDigest(command: Command): void {
+    command
+        .option('--run-date <YYYYMMDD>', 'news run date')
+        .option('--json', 'emit the same DailyDigest JSON the Board reads')
+        .option('--days', 'list recorded days instead of one digest')
+        .option('--from <YYYYMMDD>', 'range start for --days')
+        .option('--until <YYYYMMDD>', 'range end for --days')
+        .action((options: DigestOptions) => digestAction(options));
+}
+
+/**
+ * `kk news digest` — the operator's day digest (G83, task 0439).
+ *
+ * Renders the same `DailyDigest` the Board's Today tab reads, as markdown by default and as the raw
+ * JSON under `--json`. A day with no directory exits 1 and names the path it looked up.
+ */
+async function digestAction(options: DigestOptions): Promise<void> {
+    const fs = createNodeFileSystem();
+    const configFile = configPath();
+    let config: ContentConfigDocument;
+    try {
+        config = await readConfig(configFile, fs);
+    } catch (error) {
+        fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
+    }
+    const ctx = { projectPath: process.cwd(), fs, worksDir: resolveWorksDir(config, configFile) };
+    if (options.days === true) {
+        const until = options.until ?? options.runDate ?? '';
+        const from = options.from ?? '';
+        if (!isDayKey(from) || !isDayKey(until)) {
+            fail(2, 'kk.content.digest', '--days needs --from and --until as YYYYMMDD keys');
+        }
+        const days = await listDays(ctx, from, until);
+        consoleOutput.write(options.json === true ? JSON.stringify(days) : renderDaysMarkdown(days));
+        return;
+    }
+    const day = options.runDate;
+    if (day === undefined) fail(2, 'kk.content.digest', '--run-date is required');
+    if (!isDayKey(day)) fail(2, 'kk.content.digest', '--run-date must be a YYYYMMDD key');
+    const digest = await projectDay(ctx, day);
+    if ('notFound' in digest) {
+        if (options.json === true)
+            consoleOutput.write(JSON.stringify({ day, notFound: true, lookedUp: digest.lookedUp }));
+        fail(1, 'kk.content.digest.missing', `no kk-news-generate day directory at ${digest.lookedUp}`);
+    }
+    consoleOutput.write(options.json === true ? JSON.stringify(digest) : renderDigestMarkdown(digest));
+}
+
 function configureStatus(command: Command, noun: string, defaultType: string): void {
     if (noun === 'article') {
         command.option('--type <type>', 'content type', defaultType).option('--slug <slug>', 'article run slug');
@@ -506,6 +564,9 @@ export function registerContentVerbs(program: Command, noun: string, defaultType
     const group = program.command(noun).description(`${noun} content operations`);
     configureNew(group.command('new').description('create a content run request'), noun, defaultType);
     configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
+    if (noun === 'news') {
+        configureDigest(group.command('digest').description('render the day digest (G83)'));
+    }
     registerContentLaunchVerbs(group, noun, defaultType);
     registerContentPublishVerbs(group, defaultType);
     registerContentGenerateVerbs(group, noun, defaultType);

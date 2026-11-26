@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Daily AI Voice day projection, /api/days reader routes and kk news digest
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T00:29:45.929Z
-updated_at: "2026-11-26T01:09:11.965Z"
+updated_at: "2026-11-26T03:11:28.169Z"
 feature_id: G83
 priority: P1
 tags:
@@ -14,6 +14,8 @@ tags:
   - cli
 
 estimate_hours: 10
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0439. Daily AI Voice day projection, /api/days reader routes and kk news digest
@@ -36,22 +38,22 @@ Design: docs/design/daily-voice-ops-console.md §1–§3, §5.
 
 ### Requirements
 
-- [ ] R1. `projectDay({projectPath, fs}, day)` in `apps/cli/src/board/day.ts` joins the day's sources into one `DailyDigest` with per-figure sources:
+- [x] R1. `projectDay({projectPath, fs}, day)` in `apps/cli/src/board/day.ts` joins the day's sources into one `DailyDigest` with per-figure sources:
   - the kk-news-generate attempts (capture records whose `workspacePath` is the day dir, plus `schedule-receipt.json`);
   - the per-window publish evidence (`4-publish/*.<window>.json` and `schedule-receipt.<window>.json`);
   - the safety outcome.
-- [ ] R2. Status is worst-of per the satellite. The closed attention rule set emits severity-ordered items, and each item carries recipes.
-- [ ] R3. `resolveArgv(kind, params)` in `apps/cli/src/board/actions.ts` produces recipe argv from validated params only. No free text is accepted.
-- [ ] R4. The reader serves GET `/api/days/<YYYYMMDD>` and `/api/days?from&until` (at most 31 days) under the existing loopback and origin rules.
-- [ ] R5. `kk news digest --run-date <day> [--json]` renders the same digest. A missing day exits nonzero and names the path it looked up.
-- [ ] R6. Missing evidence reads as unknown with a reason, never as zero or success. Examples: no receipt, an unreadable file, a running receipt.
+- [x] R2. Status is worst-of per the satellite. The closed attention rule set emits severity-ordered items, and each item carries recipes.
+- [x] R3. `resolveArgv(kind, params)` in `apps/cli/src/board/actions.ts` produces recipe argv from validated params only. No free text is accepted.
+- [x] R4. The reader serves GET `/api/days/<YYYYMMDD>` and `/api/days?from&until` (at most 31 days) under the existing loopback and origin rules.
+- [x] R5. `kk news digest --run-date <day> [--json]` renders the same digest. A missing day exits nonzero and names the path it looked up.
+- [x] R6. Missing evidence reads as unknown with a reason, never as zero or success. Examples: no receipt, an unreadable file, a running receipt.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — One shared day projection joins generation, publish windows and safety
-- [ ] AC2 — The digest is available from the CLI as markdown and JSON
-- [ ] AC3 — Every attention item and detail row offers a pre-filled redo recipe
-- [ ] AC4 — Unknowns and missing evidence stay explicit across the console
+- [x] AC1 — One shared day projection joins generation, publish windows and safety
+- [x] AC2 — The digest is available from the CLI as markdown and JSON
+- [x] AC3 — Every attention item and detail row offers a pre-filled redo recipe
+- [x] AC4 — Unknowns and missing evidence stay explicit across the console
 
 ### Q&A
 
@@ -148,15 +150,60 @@ Surface shapes land in `docs/04_DESIGN.md` in the same commit (T3).
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Lines | What / why |
+| --- | --- | --- |
+| `apps/cli/src/board/day.ts` | 1-620 | New: `projectDay()` / `listDays()` join the day's generation attempts (capture records), per-window publish evidence and safety verdict into one `DailyDigest`. Capture records are the only authority for "this run belongs to that day"; every read goes through `observeRelative` containment; no Board call and no store read. |
+| `apps/cli/src/board/day.ts` | 150-300 | Worst-of status (`running > failed > attention > ok`, `unknown` when nothing was recorded) and the closed attention rule set (generation-failed/refused, window-not-run past its slot, target-failed, provenance-mismatch, safety-flag), each carrying its evidence and recipes. |
+| `apps/cli/src/board/actions.ts` | 1-260 | New: `resolveArgv(kind, params)` — the single argv mapping the digest renders and the action plane will execute. Closed key sets per kind, no free text, typed `ActionParamError`; `recipeOf` returns null instead of a half-valid recipe. |
+| `apps/cli/src/board/digest.ts` | 1-115 | New: markdown renderers for one digest and the day list. Presentation only — unknown renders as `unknown (<reason>)`, recipes as copyable commands, an empty attention list as an explicit all-clear. |
+| `apps/cli/src/board/news.ts` | 244-260, 304, 398, 446 | Exported `publishingEvidence`/`bundleEvidence` for reuse instead of reimplementation, and normalized the plan/outcome run-date comparison (`2026-11-25` vs the `20261125` stamp) so a real day no longer reads as a provenance mismatch. |
+| `apps/cli/src/board/reader.ts` | 701-725, 754-780, 947-963 | `GET /api/days/<YYYYMMDD>` and `GET /api/days?from&until`, matched before the no-query-parameter gate; `parseDaysQuery` validates the 31-day bound (the span is computed from the digit key, not `Date.parse` of a non-ISO string). |
+| `apps/cli/src/commands/content.ts` | 30-35, 60-70, 500-560 | `kk news digest --run-date <day> [--json]` and `--days --from/--until`; missing day exits 1 naming the looked-up path, malformed input exits 2. |
+| `apps/board/src/contracts.ts` | 283-420 | `DailyDigest`, `DaySummary`, `DayStatus`, `DayGeneration`, `DayWindow`, `DaySafety`, `AttentionItem`, `Recipe`, `ActionKind`, `DayAttempt`, `DayNodeDuration` — the shapes 0440-0442 consume unchanged. |
+| `apps/cli/tests/board/board-day.test.ts` | 1-430 | AC1/AC4: the join and its sources, worst-of status, every unknown case, the attention rules and their recipes, `listDays` bounds. |
+| `apps/cli/tests/board/board-actions-argv.test.ts` | 1-215 | AC3: every kind's frozen argv, and each refusal (unknown kind, foreign key, free text, bad day/window/channel/runId, engine on a non-voice step, escaping `dayDir`). |
+| `apps/cli/tests/board/news-digest.test.ts` | 1-330 | AC2: markdown vs `--json` equality, missing-day exit 1 with the path, malformed exit 2, `--days`, and the renderer's unknown/all-clear/recipe output. |
+| `apps/cli/tests/board/reader-days.test.ts` | 1-140 | The two routes: 200 digest, 404 with the path, 400 for a bad key or any query, the bounded list, and every refused range. |
+| `docs/04_DESIGN.md` | 425-441, 1461-1467, 1487-1488 | T3 surface: the two routes and their status vocabulary, the `kk news digest` verb and its exit codes. |
+
+Deliberate limits, recorded rather than hidden:
+
+- `DayContext.worksDir` is optional and defaults to `<project>/.works`; the CLI wires the configured root, the reader uses the default (the compiled layout), so an external works root is a CLI-side fact today.
+- `engine-fallback` is in the closed rule set but is not emitted: the fallback chain lives in run-detail action rows, which the file-backed projection does not have. 0441 owns the Generation tab that reads them; no invented guess was added here.
+- A failed generation names a resume node only when `step-timing.json` recorded a start without an end; otherwise the item says the node is unrecorded and carries no recipe.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 `projectDay({projectPath, fs}, day)` joins generation attempts, per-window publish evidence and safety, with per-figure sources | MET | `apps/cli/src/board/day.ts:591` (entry), `:180` (`captureIndex` — attempts keyed by the capture record's `workspacePath`), `:256` (`windowLaunch` — per-window receipt), `:196` (`safetyOf`), `:530` (sources map); `apps/cli/tests/board/day.test.ts:170` asserts every source key |
+| R2 Worst-of status; closed severity-ordered attention rule set, each item carrying recipes | MET | `apps/cli/src/board/day.ts:423` (`worstOf`), `:296` (`attentionItems`), `:420`/`:547` (severity sort); `apps/cli/tests/board/day.test.ts:250,300,340,380,420,440` |
+| R3 `resolveArgv(kind, params)` produces recipe argv from validated params only, no free text | MET | `apps/cli/src/board/actions.ts:116`, validation helpers `:62-113`, `ActionParamError` `:45`; `apps/cli/tests/board/actions.test.ts:88-160` (every refusal) |
+| R4 Reader serves `GET /api/days/<YYYYMMDD>` and `/api/days?from&until` (≤31 days) under the existing loopback/origin rules | MET | `apps/cli/src/board/reader.ts:754` (route match before the no-parameter gate), `:701`/`:716` (handlers), `:947` (`parseDaysQuery`, span from the digit key); origin/host/method gates above them unchanged (`:735-750`); `apps/cli/tests/board/reader-days.test.ts:64` |
+| R5 `kk news digest --run-date <day> [--json]` renders the same digest; missing day exits nonzero naming the path | MET | `apps/cli/src/commands/content.ts:501,517`; `apps/cli/tests/board/digest.test.ts:109,127` (exit 1 + path, markdown/JSON equality) |
+| R6 Missing evidence reads unknown with a reason, never zero/success | MET | `apps/cli/src/board/day.ts:238` (`no-launch-receipt`), `:120` (`unrecognized-launch-status`), `:453` (`unknown` when nothing recorded), `:210` (bundle safety fallback); `apps/cli/tests/board/day.test.ts:216,235,250,265,290` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 One shared day projection joins generation, publish windows and safety | MET | test | `apps/cli/tests/board/day.test.ts:170`; `apps/cli/src/board/day.ts:591` |
+| AC2 The digest is available from the CLI as markdown and JSON | MET | test | `apps/cli/tests/board/digest.test.ts:109` (both modes read the same digest; missing day exits 1 with the path) |
+| AC3 Every attention item and detail row offers a pre-filled redo recipe | MET | test | `apps/cli/tests/board/actions.test.ts:28-80` (frozen argv per kind), `apps/cli/tests/board/day.test.ts:340` (target-failed recipe + dry run), `:420` (resume recipe); refusals carry none by design (`:380`) |
+| AC4 Unknowns and missing evidence stay explicit | MET | test | `apps/cli/tests/board/day.test.ts:216-300` (no directory, plan without receipt, malformed receipt, unknown status, empty day, no judge confidence) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -168,3 +215,8 @@ Surface shapes land in `docs/04_DESIGN.md` in the same commit (T3).
 - Follow-ups: G84 (in-board artifact editor), G85 (digest push notification)
 
 ### History
+
+- 2026-11-26T01:56:12.109Z todo → wip (system)
+- 2026-11-26T03:11:26.025Z wip → testing (system)
+- 2026-11-26T03:11:28.160Z testing → done (system)
+

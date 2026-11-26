@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type {
     BoardDiagnostic,
     RunCapture,
@@ -6,8 +7,17 @@ import type {
     StoreChannelsQuery,
     WorkflowName,
 } from '@gobing-ai/kk-board/contracts';
-import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
-import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
+import { ITEM_DECISION_IDS, openStore, resolveStorePath } from '@gobing-ai/kk-store';
+import { createNodeFileSystem, type FileSystem, NodeProcessExecutor } from '@gobing-ai/ts-runtime';
+import { resolveKkConfigPath } from '../invoke';
+import {
+    ACTION_LOCK_TTL_MS,
+    type ActionChild,
+    type ActionPlane,
+    actionLogPath,
+    appendActionLog,
+    createActionPlane,
+} from './action-plane';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
 import {
     type ArtifactObservation,
@@ -28,6 +38,7 @@ import {
     storeSelections,
 } from './collect-store';
 import { dagProducerState, projectDailyResults, sanitizeFunnelArtifact } from './daily-voice';
+import { isDayKey, listDays, MAX_DAY_RANGE, projectDay } from './day';
 import { itcResultSpecs, projectItcResults } from './itc';
 import {
     type ArtifactSpec,
@@ -70,6 +81,11 @@ export interface BoardReaderOptions {
     projectPath?: string;
     fs?: FileSystem;
     fetchImpl?: FetchLike;
+    /**
+     * The guarded action plane (G83/0442). Omitted, the reader builds one from the configured
+     * `board.actions.enabled`, the store lock and a real argv spawn executor; tests inject a stub.
+     */
+    actionPlane?: (deps: { projectPath: string; fs: FileSystem; boardOrigin: string }) => Promise<ActionPlane>;
 }
 
 /** A running reader. */
@@ -664,8 +680,9 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
     }
 
     /**
-     * The three Collect store views (G81): read-only projections of `.works/kk.db`. They are the
-     * ONLY routes that take query parameters, and only the ones their design declares.
+     * The three Collect store views (G81): read-only projections of `.works/kk.db`. With the day
+     * routes below they are the ONLY routes that take query parameters, and only the ones their
+     * design declares.
      */
     async function storeOverviewFor(runIds: readonly string[]): Promise<BoardResponse> {
         return { status: 200, body: await storeOverview({ projectPath, fs }, runIds) };
@@ -695,6 +712,63 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: await storeChannels({ projectPath, fs }, query) };
     }
 
+    /** The day digest (G83): one file-backed projection, no Board call. */
+    async function dayFor(day: string): Promise<BoardResponse> {
+        const digest = await projectDay({ projectPath, fs }, day);
+        if ('notFound' in digest) {
+            return {
+                status: 404,
+                body: {
+                    code: 'board.day.not-found',
+                    message: `No kk-news-generate day directory exists at '${digest.lookedUp}'.`,
+                },
+            };
+        }
+        return { status: 200, body: digest };
+    }
+
+    /** The bounded day list (G83): History reads this, one projection per day. */
+    async function daysFor(query: { from: string; until: string }): Promise<BoardResponse> {
+        return { status: 200, body: await listDays({ projectPath, fs }, query.from, query.until) };
+    }
+
+    /**
+     * The guarded action plane (G83/0442). Off by default: the config switch decides, and every
+     * refusal is audited before anything is launched.
+     */
+    const plane: Promise<ActionPlane> =
+        options.actionPlane === undefined
+            ? Promise.resolve(defaultActionPlane({ projectPath, fs, boardOrigin }))
+            : options.actionPlane({ projectPath, fs, boardOrigin });
+
+    /** POST `/api/actions/<kind>` — the reader's only write route. */
+    async function actionFor(request: Request): Promise<Response> {
+        const kind = decodeURIComponent(/^\/api\/actions\/([^/]+)$/.exec(new URL(request.url).pathname)?.[1] ?? '');
+        let body: unknown = null;
+        try {
+            body = await request.json();
+        } catch {
+            body = null;
+        }
+        const handler = await plane;
+        const answer = await handler.handle({
+            kind,
+            origin: request.headers.get('origin'),
+            host: request.headers.get('host'),
+            actionHeader: request.headers.get('x-kk-action'),
+            body,
+        });
+        return Response.json(answer.body, {
+            status: answer.status,
+            headers: {
+                'access-control-allow-origin': boardOrigin,
+                'access-control-allow-methods': 'POST, OPTIONS',
+                'access-control-allow-headers': 'content-type, x-kk-action',
+                vary: 'origin',
+            },
+        });
+    }
+
     const server = Bun.serve({
         hostname: '127.0.0.1',
         port,
@@ -718,6 +792,22 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             if (!isLoopbackHost(request.headers.get('host') ?? '')) {
                 return jsonResponse({ code: 'board.host.refused', message: 'Host must be loopback.' }, 403, cors);
             }
+            // The action plane declares its own CORS: POST plus the `x-kk-action` header, on this
+            // path family only (design §6 — every other route stays GET/HEAD/OPTIONS).
+            if (pathIsAction(request)) {
+                const actionCors: Record<string, string> = {
+                    ...cors,
+                    'access-control-allow-methods': 'POST, OPTIONS',
+                    'access-control-allow-headers': 'content-type, x-kk-action',
+                };
+                if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: actionCors });
+                if (request.method === 'POST') return actionFor(request);
+                return jsonResponse(
+                    { code: 'board.method.refused', message: 'The action plane answers POST and OPTIONS only.' },
+                    405,
+                    actionCors,
+                );
+            }
             if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
             if (request.method !== 'GET' && request.method !== 'HEAD') {
                 return jsonResponse({ code: 'board.method.refused', message: 'Only GET/HEAD/OPTIONS.' }, 405, cors);
@@ -726,6 +816,29 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             const path = url.pathname;
             if (path === '/api/health') {
                 return jsonResponse({ schemaVersion: 1, projectPath }, 200, cors);
+            }
+            // The day digest routes (G83 task 0439) are matched before the no-query-parameter
+            // gate: like the store views they declare their own parameters.
+            const dayMatch = /^\/api\/days\/([^/]+)$/.exec(path);
+            if (path === '/api/days' || dayMatch !== null) {
+                if (dayMatch !== null) {
+                    const day = decodeURIComponent(dayMatch[1] ?? '');
+                    if (!isDayKey(day)) {
+                        return jsonResponse(
+                            { code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' },
+                            400,
+                            cors,
+                        );
+                    }
+                    const refused = parseQuery(url.searchParams);
+                    if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
+                    const response = await dayFor(day);
+                    return jsonResponse(response.body, response.status, cors);
+                }
+                const query = parseDaysQuery(url.searchParams);
+                if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
+                const response = await daysFor(query.query);
+                return jsonResponse(response.body, response.status, cors);
             }
             const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
             const selectionsMatch = /^\/api\/workflows\/([^/]+)\/store\/selections$/.exec(path);
@@ -896,6 +1009,33 @@ export function parseRunsQuery(params: URLSearchParams): { runIds: string[] } | 
 }
 
 /**
+ * `?from=&until=` for `/api/days`: both required `YYYYMMDD` keys, `from <= until`, and a range of at
+ * most {@link MAX_DAY_RANGE} days.
+ */
+export function parseDaysQuery(
+    params: URLSearchParams,
+): { query: { from: string; until: string } } | { response: BoardResponse } {
+    for (const key of params.keys()) {
+        if (key !== 'from' && key !== 'until') {
+            return { response: invalidQuery('This route accepts only `from` and `until`.') };
+        }
+    }
+    const from = params.get('from') ?? '';
+    const until = params.get('until') ?? '';
+    if (!isDayKey(from) || !isDayKey(until)) {
+        return { response: invalidQuery('`from` and `until` are required YYYYMMDD keys.') };
+    }
+    if (from > until) return { response: invalidQuery('`from` must not be after `until`.') };
+    const asDate = (day: string): number =>
+        Date.parse(`${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}T00:00:00Z`);
+    const span = (asDate(until) - asDate(from)) / 86_400_000 + 1;
+    if (!Number.isFinite(span) || span > MAX_DAY_RANGE) {
+        return { response: invalidQuery(`At most ${MAX_DAY_RANGE} days are accepted.`) };
+    }
+    return { query: { from, until } };
+}
+
+/**
  * The `…/store/items` query: syntactically validated here, with `source` checked against the
  * store's own values downstream (that domain is data, not syntax).
  */
@@ -1033,6 +1173,95 @@ function parseQuery(params: URLSearchParams): BoardResponse | null {
         status: 400,
         body: { code: 'board.query.invalid', message: 'This reader route accepts no query parameters.' },
     };
+}
+
+/** True when the request targets the action plane (`/api/actions/<kind>`). */
+function pathIsAction(request: Request): boolean {
+    return /^\/api\/actions\/[^/]+$/.test(new URL(request.url).pathname);
+}
+
+/** Read `board.actions.enabled` from the operator config; absent or malformed reads as off. */
+async function actionsEnabledFromConfig(fs: FileSystem): Promise<boolean> {
+    const path = resolveKkConfigPath();
+    try {
+        if (!(await fs.exists(path))) return false;
+        const parsed = Bun.YAML.parse(await fs.readFile(path)) as unknown;
+        if (typeof parsed !== 'object' || parsed === null) return false;
+        const board = (parsed as Record<string, unknown>).board;
+        if (typeof board !== 'object' || board === null) return false;
+        const actions = (board as Record<string, unknown>).actions;
+        if (typeof actions !== 'object' || actions === null) return false;
+        return (actions as Record<string, unknown>).enabled === true;
+    } catch {
+        return false;
+    }
+}
+
+/** One argv array as a child the plane can follow: no shell, inherited environment only. */
+function spawnArgv(executor: NodeProcessExecutor, argv: string[], cwd: string): ActionChild {
+    const [command, ...args] = argv;
+    if (command === undefined) throw new Error('an action argv cannot be empty');
+    let captured = '';
+    const run = executor.run({ command, args, cwd, timeout: null }).then((result) => {
+        captured = `${result.stdout}${result.stderr}`;
+        return result.exitCode ?? 1;
+    });
+    return { exit: run, stdout: () => captured };
+}
+
+/**
+ * The production action plane: config switch, real argv spawn, store-backed single-flight lock and
+ * the day's `actions.jsonl`.
+ */
+function defaultActionPlane(deps: { projectPath: string; fs: FileSystem; boardOrigin: string }): Promise<ActionPlane> {
+    return productionPlane({
+        projectPath: deps.projectPath,
+        fs: deps.fs,
+        boardOrigin: deps.boardOrigin,
+        executor: new NodeProcessExecutor(),
+    });
+}
+
+/** Build the production plane: config switch, argv spawn, store lock, day audit file. */
+async function productionPlane(input: {
+    projectPath: string;
+    fs: FileSystem;
+    boardOrigin: string;
+    executor: NodeProcessExecutor;
+}): Promise<ActionPlane> {
+    const enabled = await actionsEnabledFromConfig(input.fs);
+    const store = await openStore({ path: await resolveStorePath(resolveKkConfigPath()) });
+    const runsRoot = join(input.projectPath, '.works', 'kk-news-generate');
+    const holder = `ops-console:${crypto.randomUUID()}`;
+    return createActionPlane({
+        enabled: () => enabled,
+        now: () => Date.now(),
+        randomHex: () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex'),
+        boardOrigin: input.boardOrigin,
+        spawn: (argv) => spawnArgv(input.executor, argv, input.projectPath),
+        preview: async (argv) => {
+            const [command, ...args] = argv;
+            if (command === undefined) return '';
+            const result = await input.executor.run({
+                command,
+                args,
+                cwd: input.projectPath,
+                timeout: 120_000,
+            });
+            const text = `${result.stdout}${result.stderr}`.trim();
+            return text.length > 4_000 ? `${text.slice(0, 4_000)}\n… truncated` : text;
+        },
+        acquireLock: async (name) => {
+            const acquired = await store.locks.acquire(name, holder, ACTION_LOCK_TTL_MS);
+            if (!acquired) return null;
+            return { release: async () => void (await store.locks.release(name, holder)) };
+        },
+        audit: async (line) => {
+            const dir = line.day == null ? runsRoot : join(runsRoot, line.day);
+            await input.fs.ensureDir(dir);
+            await appendActionLog(input.fs, actionLogPath(dir), line);
+        },
+    });
 }
 
 /** Validate the workflow/run path identity before any filesystem or Board work. */

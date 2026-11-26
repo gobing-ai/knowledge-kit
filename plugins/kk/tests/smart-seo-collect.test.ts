@@ -695,14 +695,26 @@ describe('Stage Execution: seo-preflight and seo-collect (R1–R3)', () => {
         const optFile = join(testDir, 'auto-opt.json');
         writeFileSync(optFile, JSON.stringify({ url: 'https://example.com' }), 'utf-8');
 
-        await seoPreflight(['', optFile, 'run-alloc-1', 'false']);
-        const runWorkDirFile = resolve('.spur', 'run', 'run-alloc-1-seo-work-dir.txt');
-        expect(existsSync(runWorkDirFile)).toBe(true);
-        // Plain text on purpose: the workflow projects this exact file into `work_dir`
-        // with `file.read.into-var`, which sets the var to the raw file content (design §3).
-        const recorded = readFileSync(runWorkDirFile, 'utf-8').trim();
-        expect(recorded).toContain('.works/kk-smart-seo');
-        expect(existsSync(recorded)).toBe(true);
+        // The default allocation is cwd-relative (`resolve('.works/kk-smart-seo/…')`), so the case
+        // runs from a temp cwd: asserting it from the repo root used to create a real
+        // `<repo>/.works/kk-smart-seo` that tripped every later run's works-pollution guard
+        // (`apps/cli/tests/commands/daily.test.ts`, observed 2026-11-26).
+        const before = process.cwd();
+        const scratch = mkdtempSync(join(tmpdir(), 'kk-seo-alloc-'));
+        try {
+            process.chdir(scratch);
+            await seoPreflight(['', optFile, 'run-alloc-1', 'false']);
+            const runWorkDirFile = resolve('.spur', 'run', 'run-alloc-1-seo-work-dir.txt');
+            expect(existsSync(runWorkDirFile)).toBe(true);
+            // Plain text on purpose: the workflow projects this exact file into `work_dir`
+            // with `file.read.into-var`, which sets the var to the raw file content (design §3).
+            const recorded = readFileSync(runWorkDirFile, 'utf-8').trim();
+            expect(recorded).toContain(join(scratch, '.works', 'kk-smart-seo'));
+            expect(existsSync(recorded)).toBe(true);
+        } finally {
+            process.chdir(before);
+            rmSync(scratch, { recursive: true, force: true });
+        }
     });
 
     it('handles offline fixture mode in seo-collect', async () => {

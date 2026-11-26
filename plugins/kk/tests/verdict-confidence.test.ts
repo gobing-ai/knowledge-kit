@@ -672,11 +672,10 @@ describe('the board confidence vocabulary copies stay in lockstep', () => {
     // browser bundles cannot import the CLI tree, so the copy is deliberate. A drifted copy would
     // render an out-of-contract level as a real confidence in the Board while the reader reports
     // unknown for the same bytes, so all three declarations are held byte-identical here.
-    const VOCABULARY_FILES = [
-        'apps/cli/src/board/manifest.ts',
-        'apps/board/src/daily-voice/view.ts',
-        'apps/board/src/itc/view.ts',
-    ];
+    // G83/0440 retired the run-centric daily-voice view: the day-centric console consumes a
+    // `DailyDigest` whose judge verdict the CLI projection already validated against the enum
+    // (`apps/cli/src/board/day.ts`), so it no longer holds a browser-side copy to keep in lockstep.
+    const VOCABULARY_FILES = ['apps/cli/src/board/manifest.ts', 'apps/board/src/itc/view.ts'];
     const VOCABULARY = "['HIGH', 'MEDIUM', 'LOW']";
 
     it('every vocabulary copy declares exactly HIGH/MEDIUM/LOW', () => {
@@ -692,7 +691,9 @@ describe('the board confidence vocabulary copies stay in lockstep', () => {
         // Both views must keep the out-of-vocabulary value explicit as unknown: the echo is always
         // `confidence: isConfidenceLevel(<bag>.confidence) ? <bag>.confidence : null`, never a raw
         // pass-through of the recorded string.
-        const views = ['apps/board/src/daily-voice/view.ts', 'apps/board/src/itc/view.ts'];
+        // Only the ITC view still reads a raw verdict bag (the daily-voice console reads the
+        // already-guarded digest), so it is the single remaining guard site.
+        const views = ['apps/board/src/itc/view.ts'];
         const guarded = /confidence: isConfidenceLevel\((\w+)\.confidence\) \? \1\.confidence : null/;
         const offenders = views.filter((rel) => !guarded.test(readFileSync(join(REPO, rel), 'utf-8')));
         const detail = `${views.length} views, offenders: ${offenders.join(',') || 'none'}`;

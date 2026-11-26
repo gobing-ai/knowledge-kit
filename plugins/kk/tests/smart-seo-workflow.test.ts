@@ -58,10 +58,14 @@ const flatWorkflow = workflowSource.replace(/\s+/g, ' ');
 const varRef = (name: string): string => ['$' + '{vars.', name, '}'].join('');
 
 /** Run one `kk stage run` against the checkout sources (the workflow's own invocation shape). */
-function kkStage(args: string[], env: Record<string, string> = {}): { status: number | null; stderr: string } {
+function kkStage(
+    args: string[],
+    env: Record<string, string> = {},
+    cwd: string = repoRoot,
+): { status: number | null; stderr: string } {
     const res = spawnSync('bun', [kkEntry, 'stage', 'run', ...args], {
         encoding: 'utf-8',
-        cwd: repoRoot,
+        cwd,
         env: { ...process.env, ...env },
         timeout: 120_000,
     });
@@ -250,25 +254,31 @@ describe('kk-smart-seo workflow — shipped config invariants (R2)', () => {
 
 describe('kk-smart-seo fixture chain — narrative, report and terminal status (R1/R2)', () => {
     let dir: string;
+    let cwd: string;
     let workDir: string;
     let runId: string;
 
     beforeAll(() => {
+        // The default work-dir allocation is cwd-relative, so the chain runs from a scratch cwd:
+        // asserting it from the repo root created a real `<repo>/.works/kk-smart-seo` that tripped
+        // every later run's works-pollution guard (2026-11-26).
         dir = mkdtempSync(join(tmpdir(), 'kk-smart-seo-wf-'));
+        cwd = mkdtempSync(join(tmpdir(), 'kk-smart-seo-cwd-'));
         runId = `wf-fixture-${Date.now()}`;
-        const preflight = kkStage(['seo-preflight', '', optionsFile(dir), runId, 'false']);
+        const preflight = kkStage(['seo-preflight', '', optionsFile(dir), runId, 'false'], {}, cwd);
         expect(preflight.status).toBe(0);
-        const workDirFile = join(repoRoot, '.spur', 'run', `${runId}-seo-work-dir.txt`);
+        const workDirFile = join(cwd, '.spur', 'run', `${runId}-seo-work-dir.txt`);
         expect(existsSync(workDirFile)).toBe(true);
         workDir = readFileSync(workDirFile, 'utf-8').trim();
-        expect(workDir).toContain('.works/kk-smart-seo');
+        expect(workDir).toContain(join(cwd, '.works', 'kk-smart-seo'));
     });
 
     afterAll(() => {
         try {
             rmSync(dir, { recursive: true, force: true });
-            rmSync(join(repoRoot, '.spur', 'run', `${runId}-seo-work-dir.txt`), { force: true });
+            rmSync(join(cwd, '.spur', 'run', `${runId}-seo-work-dir.txt`), { force: true });
             if (workDir) rmSync(workDir, { recursive: true, force: true });
+            rmSync(cwd, { recursive: true, force: true });
         } catch {
             // best-effort cleanup
         }
@@ -648,6 +658,11 @@ describe('narrative rejection matrix (R1)', () => {
 });
 
 describe('workflow preflight decision contracts (R2)', () => {
+    // These two cases must run from the repo cwd (the decisions they check are a cwd-relative
+    // catalog layer), so they pass an explicit work_dir instead of the auto-allocated one: the
+    // auto path is cwd-relative too and used to create a real `<repo>/.works/kk-smart-seo` that
+    // tripped every later run's works-pollution guard (`apps/cli/tests/commands/daily.test.ts`,
+    // observed 2026-11-26). The allocation itself is covered by smart-seo-collect.test.ts.
     it('fails with the config pointer when the SEO catalogs are not served', async () => {
         const dir = mkdtempSync(join(tmpdir(), 'kk-seo-preflight-'));
         const previous = process.env.KK_SPUR_BIN;
@@ -657,9 +672,9 @@ describe('workflow preflight decision contracts (R2)', () => {
             chmodSync(stub, 0o755);
             process.env.KK_SPUR_BIN = stub;
             const { seoPreflight } = await import('../scripts/seo-stages');
-            await expect(seoPreflight(['', optionsFile(dir), 'preflight-missing', 'true'])).rejects.toThrow(
-                /decisions\.paths/,
-            );
+            await expect(
+                seoPreflight([join(dir, 'work-missing'), optionsFile(dir), 'preflight-missing', 'true']),
+            ).rejects.toThrow(/decisions\.paths/);
         } finally {
             if (previous === undefined) delete process.env.KK_SPUR_BIN;
             else process.env.KK_SPUR_BIN = previous;
@@ -681,7 +696,9 @@ describe('workflow preflight decision contracts (R2)', () => {
             for (const catalog of REQUIRED_SEO_CATALOGS) expect(servedCatalogs.has(catalog)).toBe(true);
             for (const id of REQUIRED_SEO_DECISION_IDS) expect(servedIds.has(id)).toBe(true);
 
-            await expect(seoPreflight(['', optionsFile(dir), 'preflight-real', 'true'])).resolves.toBeUndefined();
+            await expect(
+                seoPreflight([join(dir, 'work-real'), optionsFile(dir), 'preflight-real', 'true']),
+            ).resolves.toBeUndefined();
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }
