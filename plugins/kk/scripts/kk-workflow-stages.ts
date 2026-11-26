@@ -73,11 +73,13 @@ const REVISE_COUNT = '.revise-count';
 /** Bounded draft-remediation counter for the daily safety loop (20261005). */
 export const SAFETY_REVISE_COUNT = '.safety-revise-count';
 /**
- * Verdict criteria that describe *platform admission* (the daily's CN 资质口径 / 播报形态 rules) rather
- * than a defect in the draft itself. Only these can be answered by dropping a publish target; every
- * other `fail` is draft integrity, which would ship to the remaining targets too (20261005).
+ * Verdict criteria that can be answered by per-platform exclusion or recorded-risk publication once
+ * the pre-TTS remediation budget is spent (ADR-059). Only `data-handling` (PII) and category-3 PII
+ * platform blocks remain hard whole-run blocks; `jurisdictional-rules`, `disclosure-presence`, and
+ * `no-prohibited-claims` still trigger bounded pre-TTS `revise`, then route to `exclude` so clean
+ * channels publish on time.
  */
-export const ADMISSION_CRITERIA = new Set(['jurisdictional-rules']);
+export const ADMISSION_CRITERIA = new Set(['jurisdictional-rules', 'disclosure-presence', 'no-prohibited-claims']);
 /** content-safety category 3 (可识别个人信息): a draft property, so no target choice answers it. */
 export const PII_FINDING_CATEGORY = 3;
 export const SAFETY_PLATFORM_DECISIONS = new Set(['OK', 'RISK', 'BLOCK']);
@@ -2209,6 +2211,11 @@ if (import.meta.main)
         case 'daily-safety-manifest': {
             const { dailySafetyManifest } = await loadDailyStages();
             dailySafetyManifest(rest);
+            break;
+        }
+        case 'daily-safety-variants-check': {
+            const { dailySafetyVariantsCheck } = await loadDailyStages();
+            dailySafetyVariantsCheck(rest);
             break;
         }
         case 'daily-safety-prep': {

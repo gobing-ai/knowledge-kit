@@ -1629,12 +1629,13 @@ is accepted design, not surface: do not invoke it as if it exists.
   **News `generate-bundle` splits on its own stage boundary** (`apps/cli/src/commands/content-generate.ts`).
   `--stage variants` runs `daily-publish-prep` → `daily-bundle-variants` → `daily-safety-manifest`
   and writes no bundle; `--stage freeze` runs the matrix bundle **only** — it never re-renders
-  `30-variants/*` and never re-writes the manifest. The variants safety review edits exactly those
-  files, so a freeze that re-rendered them discarded the review's revisions and then failed its own
-  digest guard (`publish-matrix-bundle: final-variant safety evidence is stale`, 2026-11-18: the
-  04:30 run lost 2h36m and published nothing). The node table's `bundle-freeze` row and the
-  `kk-news-generate` DAG's `variants` → `safety-variants` → `freeze` order already assumed that
-  split; the row table matched neither for one release.
+  `30-variants/*` and never re-writes the manifest. Between them, `safety-variants` runs the
+  deterministic `kk stage daily-safety-variants-check` (ADR-059): it inherits the approved pre-TTS
+  `safety` stamp (`status` + `excludedPlatforms`), verifies every manifest-listed variant's JSON
+  schema and sha256, hard-blocks on deterministic PII hits, records soft attribution hints to
+  `4-safety-variants/warnings.json`, and writes `4-safety-variants/safety.json` for `freeze`
+  (replacing the post-TTS LLM judge loop while keeping the `variants` → `safety-variants` → `freeze`
+  digest contract intact).
 - Hidden compatible routes (ADR-037, 0369 R5): `kk itc …` and `kk daily …` are registered
   `hidden: true` — absent from `--help`, still answering for existing callers. Still planned: the
   `kk stage run` names listed in the design's stage migration table.

@@ -206,6 +206,14 @@ switch (stage) {
     case 'daily-intro': case 'daily-voice-audit': case 'daily-quality-report':
     case 'daily-quality-verdict': case 'daily-episode-duration': case 'daily-safety-manifest':
         break;
+    case 'daily-safety-variants-check':
+        writeJson(join(workDir, '4-safety-variants', 'safety.json'), {
+            status: 'pass',
+            digest: 'stub-variants-review',
+            excludedPlatforms: [],
+            variants: {},
+        });
+        break;
     case 'daily-show-notes':
         write(join(workDir, '31-publish', runDate + '_15_show-notes_show-notes.md'), '- 00:00 intro\n');
         break;

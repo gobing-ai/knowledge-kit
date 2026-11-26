@@ -770,6 +770,38 @@ describe('content-safety verdict gate (task 0189 R10 / AC10)', () => {
         rmSync(dir, { recursive: true, force: true });
     });
 
+    it('ADR-059: non-PII no-prohibited-claims fail after budget spent routes to exclude, not block', () => {
+        const report = {
+            confidence: 'MEDIUM',
+            platforms: [
+                {
+                    platform: 'apple-podcasts',
+                    decision: 'BLOCK',
+                    findings: [{ category: 4, item: 'AP-06', disposition: 'escalate' }],
+                },
+                {
+                    platform: 'xiaoyuzhou',
+                    decision: 'OK',
+                    findings: [{ category: 3, item: 'XY-04', disposition: 'note' }],
+                },
+            ],
+        };
+        const verdict = {
+            verdict: 'FAIL',
+            confidence: 'MEDIUM',
+            findings: [
+                { criterion: 'no-prohibited-claims', status: 'fail' },
+                { criterion: 'data-handling', status: 'pass' },
+            ],
+        };
+        const dir = setup(report, verdict);
+        expect(gateWith(dir, '0')).toBe('exclude');
+        const stamp = readJson<{ excludedPlatforms: string[] }>(at(dir, 'safety-judge_stamp.json'));
+        expect(stamp.excludedPlatforms).toEqual(['apple-podcasts']);
+        expect(existsSync(join(dir, '24-script', `.quarantine-${STAMP}-judge-block`))).toBe(false);
+        rmSync(dir, { recursive: true, force: true });
+    });
+
     it('daily-safety-revise restores a VoiceScript whose item-section structure the edit broke', () => {
         // 2026-10-21 04:30: the remediation pass removed 3 segments (27 → 24, 6 → 5 item sections).
         // `daily-wrap-docs` derives the spoken sections from `gap_ms: 1200` and refuses a mismatch with
