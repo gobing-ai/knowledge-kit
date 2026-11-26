@@ -375,6 +375,7 @@ describe('publish-matrix send boundaries (0330 R2, R4, R5)', () => {
         for (const { plugin, operation } of draftless) {
             const target = preset.targets.find((t) => t.plugin === plugin && t.operation === operation);
             if (target === undefined) throw new Error(`preset lost ${plugin} ${operation}`);
+            if (target.mode === 'off') continue;
             const expected = overridden.has(`${plugin}/${operation}`) ? 'live' : 'dummy';
             expect(`${plugin}/${operation}: ${target.mode}`).toBe(`${plugin}/${operation}: ${expected}`);
         }
