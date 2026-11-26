@@ -376,7 +376,7 @@ const SPEAK_CHAR_EXPANSION = 1.4;
 /**
  * The cold-start ratio the PRE-SPEND widen decision uses, and it is deliberately not 1.4.
  *
- * The consumers need opposite safe directions (the same argument `scriptFloorCharRate` makes about
+ * The consumers need opposite safe directions (the same argument `SCRIPT_FLOOR_CHAR_RATE` makes about
  * the char rate): the reported arithmetic wants the typical ratio, while the pre-spend gates want
  * the *worst measured* ratio, because a cheap error is a rung too many and the expensive one is an
  * authoring pass the TTS gate then refuses.
@@ -1677,7 +1677,7 @@ export function dailyGenerate(args: string[]): void {
     // Pre-spend script floor gate (2026-10-22). QC's candidate-text estimate does not predict the
     // spoken length — 20261020 planned 3968 chars and rendered 8.4 min, 20261021 planned 4548 and
     // rendered 17.9 — but the authored VoiceScript IS the spoken text, and 14 measured episodes
-    // deliver it at 5.24-5.94 chars/s. The floor estimate uses `scriptFloorCharRate`, NOT
+    // deliver it at 5.24-5.94 chars/s. The floor estimate uses `SCRIPT_FLOOR_CHAR_RATE`, NOT
     // `spokenCharRate`: the fit rate's slow calibration over-predicts minutes and passes a thin
     // script into the full synthesis, which the measured gate then refuses (20261111).
     const minMinutes = episodeMinMinutes === '' ? 0 : Number(episodeMinMinutes);
@@ -1695,7 +1695,7 @@ export function dailyGenerate(args: string[]): void {
                 (sum, segment) => sum + (typeof segment.text === 'string' ? segment.text.length : 0),
                 0,
             );
-            const charRate = scriptFloorCharRate(vdriver);
+            const charRate = SCRIPT_FLOOR_CHAR_RATE;
             const seconds = 8 + chars / charRate;
             // Record what the writer delivered before judging it: a refused day still teaches the
             // next run's ladder what this pool really yielded (0377 R2/R3).
@@ -5529,11 +5529,11 @@ function voicescriptToBlockYaml(script: Record<string, unknown>): string {
  * 5.64 chars/s; band 5.33-5.88 across 20261004/07 + the 0237 live dry run). 5.6 — the band center
  * and the voicebox default — refuses a17-class days before any spend; slow-mix days near the
  * floor may be refused early, the cheaper error per the ceiling gate's own economics.
+ * voxcpm joined the band 2026-11-25: 5.31-5.70 chars/s over 20261118-25 (median 5.6). At its 5.2 fit
+ * rate, 20261124's 4,200-char script estimated 13.6 min, passed the 13 min floor, then rendered 12.6.
+ * Every measured driver now sits in the same band, so the floor rate is driver-independent.
  */
-function scriptFloorCharRate(vdriver: string): number {
-    if (vdriver === 'gemini') return 5.6;
-    return spokenCharRate(vdriver);
-}
+const SCRIPT_FLOOR_CHAR_RATE = 5.6;
 
 /** Measured driver rates from dailyGenerate. Unknown drivers reuse the voicebox rate. */
 function spokenCharRate(vdriver: string): number {

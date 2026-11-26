@@ -1206,6 +1206,24 @@ describe('2026-10-22 — pre-spend script floor gate in daily-generate', () => {
         });
     }, 30_000);
 
+    it('refuses the 2026-11-24 voxcpm script before synthesis: the floor uses the measured 5.6 band', () => {
+        withFixtureDir(({ dir, binDir, date, logFile }) => {
+            setupSixItemFixture(dir, date, 6);
+            setupDurationFixture(dir, date, 510);
+            // 4200 chars passed at voxcpm's 5.2 fit rate (13.6 min) and rendered 12.6 min after a full
+            // synthesis; voxcpm measured 5.31-5.70 chars/s across 20261118-25.
+            writeScriptTotal(join(dir, '24-script', `${date}_08_script_voicescript.yaml`), 4200);
+            rmSync(logFile, { force: true });
+
+            const res = runStage(['daily-generate', dir, date, '', '', 'voxcpm', '1', '25', '13'], binDir, logFile);
+            expect(res.status, res.stderr).toBe(0);
+            expect(res.stderr + res.stdout).toContain('below the 13 min floor');
+            expect(existsSync(logFile) ? startEvents(logFile).length : 0).toBe(0);
+            const refusal = JSON.parse(readFileSync(refusalPath(dir, date), 'utf-8')) as Record<string, unknown>;
+            expect(refusal.charRate).toBe(5.6);
+        });
+    }, 30_000);
+
     it('lets a script that clears the floor through to the driver, and writes no refusal', () => {
         withFixtureDir(({ dir, binDir, date, logFile }) => {
             setupSixItemFixture(dir, date, 6);
