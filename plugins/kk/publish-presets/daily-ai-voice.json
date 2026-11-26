@@ -96,7 +96,7 @@
             "variant": "social:x",
             "tier": 3,
             "window": "after-generate",
-            "mode": "live"
+            "mode": "off"
         },
         {
             "plugin": "weibo-pub",
@@ -148,13 +148,6 @@
         }
     ],
     "overrides": [
-        {
-            "plugin": "x-pub",
-            "operation": "post",
-            "mode": "live",
-            "reason": "operator instruction 2026-11-21: publish illustrated promo post linking unified {{podcast_url}} (temporary until RSS sync lag resolved); no draftable rail exists, so this is a recorded exception to ADR-022",
-            "until": "until Xiaoyuzhou/Apple Podcasts RSS sync lag resolved"
-        },
         {
             "plugin": "weibo-pub",
             "operation": "post",
