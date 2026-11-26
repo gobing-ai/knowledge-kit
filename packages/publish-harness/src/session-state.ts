@@ -1,8 +1,8 @@
 /**
- * Durable shipinhao console session (2026-11-26, operator decision: mirror `wechatmp-pub`'s 0371
+ * Durable channel console session (2026-11-26, operator decision: mirror `wechatmp-pub`'s 0371
  * storageState capture).
  *
- * WHY: the Channels console session does not survive our own launches. Measured 2026-11-26 — a
+ * WHY: the site console session does not survive our own launches. Measured 2026-11-26 — a
  * scanned login verified, `Default/Cookies` held two live `channels.weixin.qq.com` cookies, and two
  * to three minutes later the next launch refused readiness with the cookie rows gone. Every publish
  * therefore needed a fresh QR scan, and one scan bought a single row.
@@ -14,18 +14,18 @@
  * is reported, never silently ignored.
  */
 import { randomUUID } from 'node:crypto';
-import { chmod, createExclusiveFile } from '@gobing-ai/publish-harness/browser';
 import type { BrowserLauncher } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
 import type { BrowserContext, Page } from 'playwright';
+import { chmod, createExclusiveFile } from './bot-fs';
 
 /** Where the captured console session lives inside its profile directory. */
-export function shipinhaoStorageStatePath(profileDir: string): string {
+export function channelStorageStatePath(profileDir: string): string {
     return `${profileDir}/storage-state.json`;
 }
 
 /** How long the console gets to finish its post-auth `Set-Cookie` burst before the snapshot. */
-export const SHP_STATE_SETTLE_MS = 3_000;
+export const DEFAULT_CHANNEL_STATE_SETTLE_MS = 3_000;
 
 interface SavedState {
     cookies?: Parameters<BrowserContext['addCookies']>[0];
@@ -35,7 +35,7 @@ interface SavedState {
 /** Reads the snapshot; `undefined` when absent, `throw`-free on a corrupt file (reported by caller). */
 async function readSavedState(profileDir: string): Promise<{ state?: SavedState; corrupt: boolean }> {
     const fs = createNodeFileSystem();
-    const file = shipinhaoStorageStatePath(profileDir);
+    const file = channelStorageStatePath(profileDir);
     try {
         if (!(await fs.exists(file))) return { corrupt: false };
         return { state: JSON.parse(await fs.readFile(file)) as SavedState, corrupt: false };
@@ -49,11 +49,11 @@ async function readSavedState(profileDir: string): Promise<{ state?: SavedState;
  * file sits beside the target so the final rename is atomic on the profile filesystem, and cleanup
  * is best-effort so it can never mask the storageState or rename failure.
  */
-export async function persistShipinhaoSessionState(
+export async function persistChannelSessionState(
     context: { storageState(options: { path: string }): Promise<unknown> },
     profileDir: string,
 ): Promise<void> {
-    const target = shipinhaoStorageStatePath(profileDir);
+    const target = channelStorageStatePath(profileDir);
     const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
     const fs = createNodeFileSystem();
     let reserved = false;
@@ -80,17 +80,22 @@ export async function persistShipinhaoSessionState(
  * The page argument is used only for the localStorage replay: Playwright restores origin storage on
  * a page, and the console reads its token from there.
  */
-export async function restoreShipinhaoSessionState(
+export async function restoreChannelSessionState(
     context: BrowserContext,
     page: Page | undefined,
     profileDir: string,
 ): Promise<{ restored: boolean; skippedExpired: number; shadowed: number }> {
     const { state, corrupt } = await readSavedState(profileDir);
     if (corrupt) {
-        throw new Error(`shipinhao saved session state is unreadable (${shipinhaoStorageStatePath(profileDir)})`);
+        throw new Error(`the channel saved session state is unreadable (${channelStorageStatePath(profileDir)})`);
     }
     const saved = state?.cookies ?? [];
     if (saved.length === 0) return { restored: false, skippedExpired: 0, shadowed: 0 };
+    // A real Playwright context always exposes both; a test double may not, and a snapshot must never
+    // turn that into a failure the caller misreads as an expired session.
+    if (typeof context.cookies !== 'function' || typeof context.addCookies !== 'function') {
+        return { restored: false, skippedExpired: 0, shadowed: 0 };
+    }
     const nowSeconds = Date.now() / 1000;
     const current = await context.cookies().catch(() => []);
     const alive = saved.filter(
@@ -137,11 +142,11 @@ export function stateRestoringLauncher(base: BrowserLauncher): BrowserLauncher {
                 // a test double without it still exercises the restore path.
                 const pages = typeof context.pages === 'function' ? context.pages() : [];
                 const page = pages[0];
-                const outcome = await restoreShipinhaoSessionState(context, page, request.profileDir);
+                const outcome = await restoreChannelSessionState(context, page, request.profileDir);
                 if (outcome.skippedExpired > 0 || outcome.shadowed > 0) {
                     // Bounded, name-free: the operator sees WHY the snapshot was not replayed whole.
                     process.stderr.write(
-                        `shipinhao-pub: replayed ${outcome.restored ? 'a' : 'no'} saved session (${outcome.skippedExpired} expired, ${outcome.shadowed} shadowed by the profile)\n`,
+                        `the channel-pub: replayed ${outcome.restored ? 'a' : 'no'} saved session (${outcome.skippedExpired} expired, ${outcome.shadowed} shadowed by the profile)\n`,
                     );
                 }
             } catch (error: unknown) {

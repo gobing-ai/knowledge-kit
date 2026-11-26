@@ -2,6 +2,14 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Content, Result } from '@gobing-ai/kk-core';
 
+export {
+    channelStorageStatePath,
+    DEFAULT_CHANNEL_STATE_SETTLE_MS,
+    persistChannelSessionState,
+    restoreChannelSessionState,
+    stateRestoringLauncher,
+} from './session-state';
+
 /**
  * Common payload passed to publish transport implementations.
  */

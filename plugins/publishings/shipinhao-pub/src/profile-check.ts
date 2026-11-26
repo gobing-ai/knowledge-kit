@@ -18,9 +18,8 @@
  * `input[type=file]`, shipinhao.js:580-583, and the 添加描述/标题 placeholders, shipinhao.js:516-518,
  * 669-674 — see `src/selectors.ts`); an unsupported-browser page is also not-ready.
  */
-import { kkBrowserLauncher, runProfileCli } from '@gobing-ai/publish-harness/browser';
+import { kkBrowserLauncher, runProfileCli, stateRestoringLauncher } from '@gobing-ai/publish-harness/browser';
 import { SHP_CONFIG } from './selectors';
-import { stateRestoringLauncher } from './session-state';
 
 if (import.meta.main) {
     process.exit(

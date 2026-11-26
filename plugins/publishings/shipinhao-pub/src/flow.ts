@@ -42,6 +42,7 @@ import {
     kkBrowserLauncher,
     markdownToHtml,
     resolveChannelProfileDir,
+    stateRestoringLauncher,
     waitUntil,
 } from '@gobing-ai/publish-harness/browser';
 import {
@@ -74,7 +75,6 @@ import {
     type ShipinhaoOperationName,
     type ShipinhaoRootSnapshot,
 } from './selectors';
-import { stateRestoringLauncher } from './session-state';
 
 /** Steps (fill, upload, dialog) keep the shared 30s rail. */
 const STEP_TIMEOUT_MS = 30_000;

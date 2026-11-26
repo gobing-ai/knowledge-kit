@@ -17,9 +17,13 @@
  * fallback.
  */
 import type { ChannelBrowserConfig } from '@gobing-ai/publish-harness/browser';
-import { waitUntil } from '@gobing-ai/publish-harness/browser';
+import {
+    DEFAULT_CHANNEL_STATE_SETTLE_MS,
+    persistChannelSessionState,
+    restoreChannelSessionState,
+    waitUntil,
+} from '@gobing-ai/publish-harness/browser';
 import type { IsAuthenticatedPredicate } from '@gobing-ai/ts-browser-automation';
-import { persistShipinhaoSessionState, restoreShipinhaoSessionState, SHP_STATE_SETTLE_MS } from './session-state';
 
 /** Site-owned target slug; also the profile channel key (`SHP_PROFILE_DIR`). */
 export const SHP_TARGET = 'shipinhao';
@@ -364,14 +368,14 @@ export const SHP_CONFIG: ChannelBrowserConfig = {
     sessionState: {
         onAuthenticated: async ({ context, page, profileDir }) => {
             // Let the console finish its post-auth Set-Cookie burst before the snapshot.
-            await page.waitForTimeout(SHP_STATE_SETTLE_MS);
+            await page.waitForTimeout(DEFAULT_CHANNEL_STATE_SETTLE_MS);
             try {
-                await persistShipinhaoSessionState(context, profileDir);
+                await persistChannelSessionState(context, profileDir);
             } catch {
                 // Storage-state errors can carry cookie values: never relay the exception.
                 throw new Error('shipinhao authenticated session snapshot failed');
             }
         },
-        onOpen: ({ context, page, profileDir }) => restoreShipinhaoSessionState(context, page, profileDir).then(),
+        onOpen: ({ context, page, profileDir }) => restoreChannelSessionState(context, page, profileDir).then(),
     },
 };

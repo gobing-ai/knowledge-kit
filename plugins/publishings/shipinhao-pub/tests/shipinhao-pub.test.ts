@@ -27,7 +27,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
-import { markdownToHtml } from '@gobing-ai/publish-harness/browser';
+import { DEFAULT_CHANNEL_STATE_SETTLE_MS, markdownToHtml } from '@gobing-ai/publish-harness/browser';
 import {
     type BrowserContext,
     type BrowserLauncher,
@@ -662,6 +662,35 @@ describe('1. declared surface (selectors, constants, config, operations, manifes
         // publish) and does no browser work of its own.
         expect(source).toContain('stateRestoringLauncher');
         expect(source).not.toContain('page.goto');
+    });
+
+    test('the session rail snapshots right after login and replays it into every later context', async () => {
+        // One scan is not one publish: the console cookie store dies with the window, so the login
+        // snapshot is what carries the session into the next launch (2026-11-26).
+        const profileDir = join(TMP_DIR, 'session-rail');
+        await mkdir(profileDir, { recursive: true });
+        const waited: number[] = [];
+        const added: { name: string }[] = [];
+        const context = {
+            storageState: async ({ path }: { path: string }) => {
+                await writeFile(path, JSON.stringify({ cookies: [{ name: 'SUB' }], origins: [] }));
+            },
+            cookies: async () => [],
+            addCookies: async (cookies: { name: string }[]) => {
+                added.push(...cookies);
+            },
+        };
+        const page = { waitForTimeout: async (ms: number) => void waited.push(ms), evaluate: async () => undefined };
+        const rail = SHP_CONFIG.sessionState;
+        expect(rail).toBeDefined();
+        await rail?.onAuthenticated?.({ context, page, profileDir } as never);
+        expect(waited).toEqual([DEFAULT_CHANNEL_STATE_SETTLE_MS]);
+        const saved = JSON.parse(await readFile(join(profileDir, 'storage-state.json'), 'utf8')) as {
+            cookies: unknown[];
+        };
+        expect(saved.cookies).toHaveLength(1);
+        await rail?.onOpen?.({ context, page, profileDir } as never);
+        expect(added.map((cookie) => cookie.name)).toEqual(['SUB']);
     });
 });
 

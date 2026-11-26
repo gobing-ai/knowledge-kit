@@ -29,6 +29,13 @@ import {
 import { chmod, lstat, rename } from './bot-fs';
 
 export { chmod, createExclusiveFile, mkdirExclusive, rmdir } from './bot-fs';
+export {
+    channelStorageStatePath,
+    DEFAULT_CHANNEL_STATE_SETTLE_MS,
+    persistChannelSessionState,
+    restoreChannelSessionState,
+    stateRestoringLauncher,
+} from './session-state';
 
 import { type BotTransaction, beginBotTransaction } from './bot-transaction';
 import { resolveBrowserProfileDir, trySelectors } from './index';
