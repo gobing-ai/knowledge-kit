@@ -945,16 +945,23 @@ export async function insertHtmlBody(
 ): Promise<void> {
     const selector = await findSelector(page, selectors, 'article body', deps.stepTimeoutMs);
 
-    // The historical path: a synthetic ClipboardEvent carrying rich HTML. Older editor builds
-    // honour it; `appmsg_edit_v2` (measured 2026-11-12) silently ignores it and every paste ends
-    // with an empty body, so a failed paste falls back rather than aborting the publish.
+    // The historical path: a synthetic ClipboardEvent carrying rich HTML. WeChat MP's ProseMirror
+    // paste handler commits asynchronously (~100-500ms), so poll `bodyLength` briefly before
+    // falling back — a single immediate read sees 0 and falls through to `execCommand('insertHTML')`,
+    // which wraps the HTML into an unformatted `<section>` before the async paste lands (duplicate
+    // unformatted + formatted body).
     try {
         await pasteHtml(asPlaywrightPage(page), selector, html, { timeoutMs: Math.min(deps.stepTimeoutMs, 10_000) });
-        // `pasteHtml` reads plain `textContent`, which the placeholder widget (从这里开始写正文)
-        // satisfies on an EMPTY editor — so its resolve is not success. Re-measure without the
-        // widget before trusting it (0423 R1: this unguarded return saved the a2ui-intro draft with
-        // textLen 0 and only the cover image in the body).
-        if ((await bodyLength(page, selector)) > 0) return;
+        const pasted = await waitUntil(
+            async () => (await bodyLength(page, selector)) > 0,
+            Math.min(deps.stepTimeoutMs, 1_500),
+            100,
+        );
+        if (pasted) {
+            const hasBlocks = /<(h[1-6]|p|ul|ol|pre)\b/i.test(html);
+            const blockCount = hasBlocks ? await bodyBlockCount(page, selector) : 1;
+            if (blockCount > 0) return;
+        }
     } catch {
         // fall through to the real-editing-command path
     }
@@ -962,15 +969,41 @@ export async function insertHtmlBody(
     // This build answers a paste with its own modal (`article-preview` inside `#js_vue_dialog`,
     // measured 2026-11-12) that covers the body block, so clear it before the fallback click.
     await closeOpenDialogs(page);
-    // ProseMirror only honours an editing command once the block holds a selection, so click it
-    // first and let the browser insert the HTML itself; plain text is the last resort so a draft
-    // is never saved with an empty body.
     await clickSelector(page, selector, deps.stepTimeoutMs);
+    await page.evaluate(clearBodyScript(selector)).catch(() => undefined);
     const inserted = await page.evaluate(insertHtmlScript(selector, html)).catch(() => 'failed');
     if (String(inserted) === 'true' && (await bodyLength(page, selector)) > 0) return;
+    await page.evaluate(clearBodyScript(selector)).catch(() => undefined);
     await page.evaluate(insertTextScript(selector, body)).catch(() => 'failed');
     if ((await bodyLength(page, selector)) > 0) return;
     throw new Error(`article body: ${selector} stayed empty after paste, insertHTML and insertText`);
+}
+
+async function bodyBlockCount(page: WechatPage, selector: string): Promise<number> {
+    const script = `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        return el ? el.querySelectorAll('h1,h2,h3,h4,h5,h6,p,ul,ol,pre').length : 0;
+    })()`;
+    return Number(await page.evaluate(script).catch(() => 0));
+}
+
+export function clearBodyScript(selector: string): string {
+    return `(() => {
+        const el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return;
+        el.focus();
+        try {
+            const sel = window.getSelection();
+            if (sel) {
+                const range = document.createRange();
+                range.selectNodeContents(el);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+            document.execCommand('selectAll', false);
+            document.execCommand('delete', false);
+        } catch {}
+    })()`;
 }
 
 /**
@@ -998,6 +1031,13 @@ export function insertHtmlScript(selector: string, html: string): string {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return 'missing';
         el.focus();
+        const sel = window.getSelection();
+        if (sel) {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
         return String(document.execCommand('insertHTML', false, ${JSON.stringify(html)}));
     })()`;
 }

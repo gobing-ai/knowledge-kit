@@ -744,6 +744,9 @@ function makeConsole(initial: ConsoleState) {
                     imageUploadProbes += 1;
                     return imageUploadProbes > (state.imageUploadDelayPolls ?? 0) ? uploads.length : 0;
                 }
+                if (expression.includes('h1,h2,h3,h4,h5,h6,p,ul,ol,pre')) {
+                    return pastedHtml.length > 0 ? 1 : 0;
+                }
                 // 0423 R1: the body-length probe strips the placeholder widget, so it answers the
                 // real article length — the read that catches "paste accepted, body empty".
                 if (expression.includes('editor_content_placeholder')) {

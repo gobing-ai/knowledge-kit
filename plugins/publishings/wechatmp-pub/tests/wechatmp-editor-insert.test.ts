@@ -100,7 +100,19 @@ function editorHtml(mode: string): string {
             </script>`
             : mode === 'ignore-all'
               ? `<script>document.execCommand = () => false;</script>`
-              : '';
+              : mode === 'plain-paste-then-html'
+                ? `<script>
+                    document.addEventListener('DOMContentLoaded', () => {
+                        const pm = document.querySelector('.ProseMirror');
+                        pm.addEventListener('paste', (e) => {
+                            const plain = e.clipboardData?.getData('text/plain') || '';
+                            pm.appendChild(document.createTextNode(plain));
+                        });
+                    });
+                    const origExec = document.execCommand.bind(document);
+                    document.execCommand = (cmd, ui, val) => origExec(cmd, ui, val);
+                </script>`
+                : '';
     // No paste listener at all: the browser's default paste on a contenteditable is what the real
     // console intercepts, and dropping the event is the closest deterministic model of that.
     return `<!doctype html><meta charset="utf-8"><body>
@@ -156,6 +168,14 @@ describe('wechatmp insertBody fallback after pasteHtml (real Chromium)', () => {
     test('a build that refuses every insertion throws instead of returning an empty body', async () => {
         const page = await openEditorPage('ignore-all');
         await expect(insertBody(page, insertDeps(ARTICLE_BODY))).rejects.toThrow(/stayed empty after paste/);
+    });
+
+    test('a paste that lands only unformatted plain text is cleared before insertHTML so content never duplicates', async () => {
+        const page = await openEditorPage('plain-paste-then-html');
+        await insertBody(page, insertDeps(ARTICLE_BODY));
+        const text = String(await page.evaluate("document.querySelector('.ProseMirror').textContent"));
+        const occurrences = text.split('正文真的落到了编辑器里').length - 1;
+        expect(occurrences).toBe(1);
     });
 });
 
