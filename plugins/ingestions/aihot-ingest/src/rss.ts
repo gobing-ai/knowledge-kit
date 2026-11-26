@@ -38,19 +38,30 @@ export interface RssEntry {
     category: string | null;
 }
 
+/** A numeric character reference, or the reference itself when it names no code point (feed text is untrusted). */
+function codePoint(ref: string, value: number): string {
+    return value <= 0x10ffff ? String.fromCodePoint(value) : ref;
+}
+
 /** Strip XML/HTML tags and normalize common entities to plain text. */
 function stripMarkup(raw: string): string {
-    return raw
-        .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/&lt;/g, '<')
-        .replace(/&gt;/g, '>')
-        .replace(/&quot;/g, '"')
-        .replace(/&#39;|&apos;/g, "'")
-        .replace(/\s+/g, ' ')
-        .trim();
+    return (
+        raw
+            .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'")
+            // Ars sends `&#039;` (zero-padded), which a literal `&#39;` missed (2026-11-25 run report).
+            .replace(/&#(\d+);/g, (ref, dec: string) => codePoint(ref, Number(dec)))
+            .replace(/&#x([0-9a-f]+);/gi, (ref, hex: string) => codePoint(ref, Number.parseInt(hex, 16)))
+            // Last, so `&amp;lt;` decodes once to `&lt;` instead of twice to `<`.
+            .replace(/&amp;/g, '&')
+            .replace(/\s+/g, ' ')
+            .trim()
+    );
 }
 
 /** RSS <pubDate> (RFC 822) or Atom <published>/<updated> (ISO-8601) → ISO-8601. */

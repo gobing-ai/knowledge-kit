@@ -355,6 +355,14 @@ describe('aihot-ingest plugin (0072)', () => {
             expect(first?.summary).toBe('OpenAI released Sora 2 with real-time edits. & updates.');
         });
 
+        it('parseFeed decodes padded numeric and hex entities, double-encoded ones included', () => {
+            // 2026-11-25 run report: `Amazon says hackers&#039; AI agents …` reached the episode plan.
+            const xml =
+                '<rss><channel><item><title>hackers&#039; agents &#x2014; &amp;#039;x&amp;#039; &amp;lt; &#99999999;</title>' +
+                '<link>https://example.com/a</link></item></channel></rss>';
+            expect(parseFeed(xml)[0]?.title).toBe("hackers' agents \u2014 &#039;x&#039; &lt; &#99999999;");
+        });
+
         it('parseFeed falls back to Atom entries', () => {
             const entries = parseFeed(SAMPLE_ATOM);
             expect(entries.length).toBe(1);
