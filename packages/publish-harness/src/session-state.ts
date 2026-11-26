@@ -16,6 +16,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BrowserLauncher } from '@gobing-ai/ts-browser-automation';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
+import { echoError } from '@gobing-ai/ts-utils';
 import type { BrowserContext, Page } from 'playwright';
 import { chmod, createExclusiveFile } from './bot-fs';
 
@@ -145,8 +146,8 @@ export function stateRestoringLauncher(base: BrowserLauncher): BrowserLauncher {
                 const outcome = await restoreChannelSessionState(context, page, request.profileDir);
                 if (outcome.skippedExpired > 0 || outcome.shadowed > 0) {
                     // Bounded, name-free: the operator sees WHY the snapshot was not replayed whole.
-                    process.stderr.write(
-                        `the channel-pub: replayed ${outcome.restored ? 'a' : 'no'} saved session (${outcome.skippedExpired} expired, ${outcome.shadowed} shadowed by the profile)\n`,
+                    echoError(
+                        `channel session: replayed ${outcome.restored ? 'a' : 'no'} saved session (${outcome.skippedExpired} expired, ${outcome.shadowed} shadowed by the profile)`,
                     );
                 }
             } catch (error: unknown) {

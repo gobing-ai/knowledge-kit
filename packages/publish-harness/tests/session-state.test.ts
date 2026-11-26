@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BrowserLauncher, ProfileLaunchRequest } from '@gobing-ai/ts-browser-automation';
+import { createBufferTarget, setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import type { BrowserContext } from 'playwright';
 import {
     channelStorageStatePath,
@@ -238,19 +239,15 @@ describe('channel console session snapshot (2026-11-26)', () => {
             }),
         );
         const { context } = fakeContext([cookie('MINE', '.channels.weixin.qq.com', 2_000_000_000)]);
-        const lines: string[] = [];
-        const original = process.stderr.write.bind(process.stderr);
-        process.stderr.write = ((chunk: string) => {
-            lines.push(String(chunk));
-            return true;
-        }) as typeof process.stderr.write;
+        const err = createBufferTarget();
+        const restore = setDefaultOutputTargets({ stderr: err });
         try {
             await stateRestoringLauncher({ launch: async () => context }).launch({ profileDir, headless: true });
         } finally {
-            process.stderr.write = original;
+            restore();
         }
-        expect(lines.join('')).toContain('1 expired, 1 shadowed');
-        expect(lines.join('')).not.toContain('MINE');
+        expect(err.text()).toContain('1 expired, 1 shadowed');
+        expect(err.text()).not.toContain('MINE');
     });
 
     test('a context whose cookie read throws is still restored from the snapshot', async () => {
