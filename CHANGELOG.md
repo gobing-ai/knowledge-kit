@@ -1,5 +1,68 @@
 ## [Unreleased]
 
+## [0.1.28] - 2026-11-25
+
+### Added
+
+- feat(daily-voice): replace the run-centric Daily AI Voice module with a day-centric console — one `projectDay()` projection behind `GET /api/days/<day>` and `GET /api/days?from&until` rendered by `kk news digest`, with a guarded `POST /api/actions/<kind>` write route (75c568dc)
+<!-- src: apps/cli/src/board/day.ts:604 -->
+
+
+### Fixed
+
+- fix(news): estimate the script floor at the measured 5.6 band for every driver, so the pre-spend floor no longer depends on the TTS driver (0fa10840)
+<!-- src: plugins/kk/scripts/daily-stages.ts:5536 -->
+
+- fix(news): re-settle the pool gate after a post-synthesis duration refusal, so a no-content day no longer freezes a bundle (9c94613c)
+<!-- src: apps/cli/src/commands/content-generate.ts:1015 -->
+
+- fix(launch): record a HITL pause as incomplete and keep the run resumable instead of cancelling it (25e24632)
+<!-- src: apps/cli/src/launch.ts:703 -->
+
+- fix(news): resolve the editorial-judge rubric through `visual_skill_root` rather than a cwd-relative checkout path (efcfb89d)
+<!-- src: plugins/kk/workflows/kk-news-generate.yaml:261 -->
+
+- fix(aihot-ingest): decode padded decimal and hex numeric entities, and decode `&amp;` last so a double-encoded reference unwraps once (650a1c64)
+<!-- src: plugins/ingestions/aihot-ingest/src/rss.ts:58 -->
+
+- fix(threads-pub): pass the first body URL as an explicit `link_attachment` instead of relying on the implicit card rule (ebf06472)
+<!-- src: plugins/publishings/threads-pub/src/index.ts:200 -->
+
+- fix(weibo-pub): require the site's own `/api/config` login flag before posting, and send `X-XSRF-TOKEN` on the mobile write endpoint (02e6a1e5)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:299 -->
+
+- fix(weibo-pub): snapshot the session at login and replay it on every launch, so one sign-in stays reusable (9ebe8914)
+<!-- src: plugins/publishings/weibo-pub/src/index.ts:411 -->
+
+- fix(shipinhao-pub): persist the console session and pre-crop a square 音频 cover before the form's own crop dialog sees it (4277d106)
+<!-- src: plugins/publishings/shipinhao-pub/src/flow.ts:929 -->
+
+- fix(publish-harness): keep quarantined-profile targets unique inside one second (916f9fe7)
+<!-- src: packages/publish-harness/src/browser.ts:264 -->
+
+- fix(publish-harness): name the replayed session line `channel session:` now that the rail is shared (21986797)
+<!-- src: packages/publish-harness/src/session-state.ts:150 -->
+
+
+### Changed
+
+- refactor(daily-voice): move the action plane's config switch, argv spawn and store lock beside `createActionPlane`, leaving the reader only the POST dispatch (352c1bdd)
+<!-- src: apps/cli/src/board/action-plane.ts:200 -->
+
+- refactor(publish-harness): host the channel session rail in the shared package as `channel*`, with the profile's own cookies still winning (3dc74e28)
+<!-- src: packages/publish-harness/src/index.ts:5 -->
+
+- refactor(shipinhao-pub): run the cover crop through `NodeSyncProcessExecutor` instead of `node:child_process` (790c42f6)
+<!-- src: plugins/publishings/shipinhao-pub/src/cover-crop.ts:24 -->
+
+
+### Other
+
+- docs(daily-voice): record the G83 design — the ADR-035 amendment, the ops-console design doc, and G84/G85 as follow-up features (b0302a20)
+
+- docs(daily-voice): sync the G83 feature row and record the batch learnings (30d1c938)
+
+
 ## [0.1.26] - 2026-11-25
 
 ### Added
