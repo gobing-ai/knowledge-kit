@@ -1010,6 +1010,9 @@ export const GENERATE_ROWS: GenerateVerbRow[] = [
             { ...STEP.intro(), when: candidatesNonEmpty },
             { ...STEP.voiceAudit(), when: candidatesNonEmpty },
             { ...STEP.duration(), when: candidatesNonEmpty },
+            // The post-synthesis refusal empties the candidates too, but after the re-settle above:
+            // 2026-11-24 kept PASS, so variants, safety-variants and freeze ran and froze a bundle.
+            STEP.poolGate(),
             { ...STEP.qualityReport(), when: candidatesNonEmpty },
             { ...STEP.qualityVerdict(), when: candidatesNonEmpty },
             { ...STEP.showNotes(), when: candidatesNonEmpty },

@@ -200,10 +200,27 @@ switch (stage) {
             process.exit(1);
         }
         break;
+    case 'daily-episode-duration':
+        // The post-synthesis refusal (0266): the real stage writes this artifact and empties the
+        // QC candidates AFTER the audio exists (2026-11-24: 12.6 < 13 min after the full TTS spend).
+        if (process.env.KK_STUB_DURATION_REFUSAL === '1') {
+            writeJson(join(workDir, '30-audio', runDate + '_11_generate_content_duration-refusal.json'), {
+                measuredMinutes: 12.6,
+                estimatedMinutes: 13.1,
+                minMinutes: 13,
+                keptCount: 2,
+            });
+            writeJson(join(workDir, '21-plan', runDate + '_04_quality-control-content_candidates.json'), {
+                title: '每日AI乱炖',
+                format: 'markdown',
+                body: 'candidates',
+                metadata: { docs: [] },
+            });
+        }
+        break;
     case 'daily-voice-audit':
     case 'daily-quality-report':
     case 'daily-quality-verdict':
-    case 'daily-episode-duration':
         break;
     case 'daily-show-notes':
         write(join(workDir, '31-publish', runDate + '_15_show-notes_show-notes.md'), '- 00:00 intro\n');
@@ -387,6 +404,23 @@ describe('kk news generate step verbs — AC2: the nine design invocations', () 
         // closes `done` (a no-content day), not `failed`.
         expect(JSON.parse(readFileSync(join(workDir, 'pool-gate.json'), 'utf-8'))).toEqual({ status: 'EMPTY' });
         expect(readFileSync(join(workDir, 'run-report.summary.txt'), 'utf-8')).toContain('no-content');
+    });
+
+    it('closes a post-synthesis duration refusal as no-content so variants and freeze skip (2026-11-24)', async () => {
+        const fx = makeFixture();
+        await seedStore(fx);
+        const workDir = join(fx.works, 'kk-news-generate', DIGITS);
+        expect(kk(fx, ['news', 'prepare', '--work-dir', workDir, '--run-date', DIGITS]).code).toBe(0);
+
+        // The gate was re-settled after `generate` (PASS: audio exists), then `duration` refused.
+        // Left at PASS, 11-24 ran variants, safety-variants and freeze and froze a bundle for a
+        // run its own receipt called no-content.
+        const voice = kk(fx, ['news', 'generate-voice', '--work-dir', workDir, '--engine', 'voxcpm'], {
+            KK_STUB_DURATION_REFUSAL: '1',
+        });
+        expect(voice.code, voice.err).toBe(0);
+        expect(JSON.parse(readFileSync(join(workDir, 'pool-gate.json'), 'utf-8'))).toEqual({ status: 'EMPTY' });
+        expect(readFileSync(join(workDir, 'run-report.summary.txt'), 'utf-8')).toContain('below the 13 min floor');
     });
 
     it('reads the bare Doc[] pool.json that dailyExtract writes', async () => {
