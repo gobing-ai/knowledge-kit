@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { ActionKind, DailyActionLine } from '@gobing-ai/kk-board/contracts';
-import type { FileSystem } from '@gobing-ai/ts-runtime';
+import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
+import { type FileSystem, NodeProcessExecutor } from '@gobing-ai/ts-runtime';
+import { resolveKkConfigPath } from '../invoke';
 import { ACTION_KINDS, ActionParamError, DAY_PATTERN, type ResolvedAction, resolveArgv } from './actions';
 
 /**
@@ -392,6 +394,109 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
     }
 
     return { handle };
+}
+
+/** Read `board.actions.enabled` from the operator config; absent or malformed reads as off. */
+export async function actionsEnabledFromConfig(fs: FileSystem): Promise<boolean> {
+    const path = resolveKkConfigPath();
+    try {
+        if (!(await fs.exists(path))) return false;
+        const parsed = Bun.YAML.parse(await fs.readFile(path)) as unknown;
+        if (typeof parsed !== 'object' || parsed === null) return false;
+        const board = (parsed as Record<string, unknown>).board;
+        if (typeof board !== 'object' || board === null) return false;
+        const actions = (board as Record<string, unknown>).actions;
+        if (typeof actions !== 'object' || actions === null) return false;
+        return (actions as Record<string, unknown>).enabled === true;
+    } catch {
+        return false;
+    }
+}
+
+/** One argv array as a child the plane can follow: no shell, inherited environment only. */
+export function spawnArgv(executor: NodeProcessExecutor, argv: string[], cwd: string): ActionChild {
+    const [command, ...args] = argv;
+    if (command === undefined) throw new Error('an action argv cannot be empty');
+    let captured = '';
+    const run = executor.run({ command, args, cwd, timeout: null }).then((result) => {
+        captured = `${result.stdout}${result.stderr}`;
+        return result.exitCode ?? 1;
+    });
+    return { exit: run, stdout: () => captured };
+}
+
+/**
+ * The production action plane: config switch, real argv spawn, store-backed single-flight lock and
+ * the day's `actions.jsonl`.
+ */
+export function defaultActionPlane(
+    deps: {
+        projectPath: string;
+        fs: FileSystem;
+        boardOrigin: string;
+    },
+    /** Test seam: a stub executor/store covers the preview and lock wiring without a real child. */
+    overrides: {
+        executor?: NodeProcessExecutor;
+        store?: { locks: { acquire: ActionLockAcquire; release: ActionLockRelease } };
+    } = {},
+): Promise<ActionPlane> {
+    return productionPlane({
+        projectPath: deps.projectPath,
+        fs: deps.fs,
+        boardOrigin: deps.boardOrigin,
+        executor: overrides.executor ?? new NodeProcessExecutor(),
+        store: overrides.store,
+    });
+}
+
+/** The store lock surface the plane uses (the one `kk lock` wraps). */
+export type ActionLockAcquire = (name: string, holder: string, ttlMs: number) => Promise<boolean>;
+
+/** The matching release surface. */
+export type ActionLockRelease = (name: string, holder: string) => Promise<boolean>;
+
+/** Build the production plane: config switch, argv spawn, store lock, day audit file. */
+async function productionPlane(input: {
+    projectPath: string;
+    fs: FileSystem;
+    boardOrigin: string;
+    executor: NodeProcessExecutor;
+    store?: { locks: { acquire: ActionLockAcquire; release: ActionLockRelease } };
+}): Promise<ActionPlane> {
+    const enabled = await actionsEnabledFromConfig(input.fs);
+    const store = input.store ?? (await openStore({ path: await resolveStorePath(resolveKkConfigPath()) }));
+    const runsRoot = join(input.projectPath, '.works', 'kk-news-generate');
+    const holder = `ops-console:${crypto.randomUUID()}`;
+    return createActionPlane({
+        enabled: () => enabled,
+        now: () => Date.now(),
+        randomHex: () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex'),
+        boardOrigin: input.boardOrigin,
+        spawn: (argv) => spawnArgv(input.executor, argv, input.projectPath),
+        preview: async (argv) => {
+            const [command, ...args] = argv;
+            if (command === undefined) return '';
+            const result = await input.executor.run({
+                command,
+                args,
+                cwd: input.projectPath,
+                timeout: 120_000,
+            });
+            const text = `${result.stdout}${result.stderr}`.trim();
+            return text.length > 4_000 ? `${text.slice(0, 4_000)}\n… truncated` : text;
+        },
+        acquireLock: async (name) => {
+            const acquired = await store.locks.acquire(name, holder, ACTION_LOCK_TTL_MS);
+            if (!acquired) return null;
+            return { release: async () => void (await store.locks.release(name, holder)) };
+        },
+        audit: async (line) => {
+            const dir = line.day == null ? runsRoot : join(runsRoot, line.day);
+            await input.fs.ensureDir(dir);
+            await appendActionLog(input.fs, actionLogPath(dir), line);
+        },
+    });
 }
 
 /** The audit file a day's action lines land in (`<day>/actions.jsonl`). */

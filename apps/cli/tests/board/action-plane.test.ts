@@ -19,21 +19,24 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DailyActionLine } from '@gobing-ai/kk-board/contracts';
-import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
+import { createNodeFileSystem, type NodeProcessExecutor } from '@gobing-ai/ts-runtime';
 import {
     ACTION_TOKEN_TTL_MS,
     type ActionChild,
     type ActionInput,
     actionLogPath,
+    actionsEnabledFromConfig,
     appendActionLog,
     createActionPlane,
+    defaultActionPlane,
     parseActionLog,
     runIdOf,
     scopeOf,
+    spawnArgv,
 } from '../../src/board/action-plane';
 
 const ORIGIN = 'http://127.0.0.1:4340';
@@ -297,6 +300,136 @@ describe('the recorded decision (AC1, feature R9)', () => {
         ]) {
             expect(`${code}: ${design.includes(code)}`).toBe(`${code}: true`);
         }
+    });
+});
+
+describe('the production wiring (R5/R6)', () => {
+    /** Point the CLI config at a temp file with the given YAML body. */
+    async function withConfig<T>(yaml: string, fn: () => Promise<T>): Promise<T> {
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-action-config-')));
+        const path = join(dir, 'config.yaml');
+        writeFileSync(path, yaml);
+        const before = process.env.KK_CONFIG;
+        process.env.KK_CONFIG = path;
+        try {
+            return await fn();
+        } finally {
+            if (before === undefined) delete process.env.KK_CONFIG;
+            else process.env.KK_CONFIG = before;
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }
+
+    it('reads the switch from config, and reads absent or malformed as off', async () => {
+        const fs = createNodeFileSystem();
+        await withConfig('board:\n  actions:\n    enabled: true\n', async () => {
+            expect(await actionsEnabledFromConfig(fs)).toBe(true);
+        });
+        await withConfig('board: {}\n', async () => {
+            expect(await actionsEnabledFromConfig(fs)).toBe(false);
+        });
+        await withConfig('board: [not an object]\n', async () => {
+            expect(await actionsEnabledFromConfig(fs)).toBe(false);
+        });
+    });
+
+    it('builds a plane from the config that refuses everything offline defaults', async () => {
+        const fs = createNodeFileSystem();
+        await withConfig('board:\n  actions:\n    enabled: false\n', async () => {
+            const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-action-project-')));
+            const plane = await defaultActionPlane({ projectPath: dir, fs, boardOrigin: ORIGIN });
+            const answer = await plane.handle(request('cancel-run', body({ runId: 'run-1' })));
+            expect(answer.status).toBe(403);
+            expect(answer.body.code).toBe('actions.disabled');
+            rmSync(dir, { recursive: true, force: true });
+        });
+    });
+
+    it('runs a preview through the injected executor and takes the injected lock', async () => {
+        const fs = createNodeFileSystem();
+        const runs: string[][] = [];
+        const locks: { acquire: string[]; release: string[] } = { acquire: [], release: [] };
+        const executor = {
+            run: async (options: { command: string; args?: string[] }) => {
+                runs.push([options.command, ...(options.args ?? [])]);
+                return {
+                    command: options.command,
+                    args: options.args ?? [],
+                    exitCode: 0,
+                    stdout: 'dry run: 3 targets would send',
+                    stderr: '',
+                    durationMs: 1,
+                };
+            },
+        } as unknown as NodeProcessExecutor;
+        const store = {
+            locks: {
+                acquire: async (name: string) => {
+                    locks.acquire.push(name);
+                    return true;
+                },
+                release: async (name: string) => {
+                    locks.release.push(name);
+                    return true;
+                },
+            },
+        };
+        const dir = realpathSync(mkdtempSync(join(tmpdir(), 'kk-action-plane-dir-')));
+        await withConfig('board:\n  actions:\n    enabled: true\n', async () => {
+            const plane = await defaultActionPlane({ projectPath: dir, fs, boardOrigin: ORIGIN }, { executor, store });
+            const preview = await plane.handle(request('publish-retry', body(WINDOW_PARAMS)));
+            expect(preview.status).toBe(200);
+            expect(String(preview.body.dryRun)).toContain('3 targets would send');
+            expect(runs[0]?.at(-1)).toBe('--dry-run');
+            // The preview audited one line into the day's own file.
+            expect(
+                parseActionLog(await fs.readFile(join(dir, '.works/kk-news-generate/20261125/actions.jsonl'))),
+            ).toHaveLength(1);
+
+            const execute = await plane.handle(
+                request(
+                    'publish-retry',
+                    body(WINDOW_PARAMS, { token: preview.body.token as string, typedConfirm: '20261125' }),
+                ),
+            );
+            expect(execute.status).toBe(202);
+            expect(locks.acquire).toEqual(['ops-console:20261125']);
+            // The release rides the child's exit and the exit audit's fs append: bounded wait.
+            for (let attempt = 0; attempt < 50 && locks.release.length === 0; attempt += 1) {
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+            expect(locks.release).toEqual(['ops-console:20261125']);
+        });
+        rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('spawns one argv array and reports its exit code and captured output', async () => {
+        const calls: { command: string; args?: string[] }[] = [];
+        const executor = {
+            run: async (options: { command: string; args?: string[] }) => {
+                calls.push(options);
+                return {
+                    command: options.command,
+                    args: options.args ?? [],
+                    exitCode: 3,
+                    stdout: '{"runId":"r-1"}',
+                    stderr: '',
+                    durationMs: 1,
+                };
+            },
+        } as unknown as Parameters<typeof spawnArgv>[0];
+        const child = spawnArgv(executor, ['kk', 'news', 'publish', '--retry'], '/tmp');
+        expect(calls[0]?.command).toBe('kk');
+        expect(calls[0]?.args).toEqual(['news', 'publish', '--retry']);
+        expect(await child.exit).toBe(3);
+        expect(runIdOf(child.stdout())).toBe('r-1');
+    });
+
+    it('refuses an empty argv rather than spawning anything', () => {
+        const executor = { run: async () => ({ exitCode: 0, stdout: '', stderr: '' }) } as unknown as Parameters<
+            typeof spawnArgv
+        >[0];
+        expect(() => spawnArgv(executor, [], '/tmp')).toThrow(/cannot be empty/);
     });
 });
 

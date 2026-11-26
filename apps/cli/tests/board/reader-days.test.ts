@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DailyDigest, DaySummary } from '@gobing-ai/kk-board/contracts';
+import type { ActionInput, ActionPlane } from '../../src/board/action-plane';
 import { type BoardReader, createBoardReader } from '../../src/board/reader';
 
 const servers: BoardReader[] = [];
@@ -83,6 +84,63 @@ describe('GET /api/days/<day> (task R4)', () => {
         expect((await fetch(`${url}/api/days/29991210?from=29991201`)).status).toBe(400);
         const refused = (await fetch(`${url}/api/days/29991210?window=cn-peak`)).json() as Promise<{ code: string }>;
         expect((await refused).code).toBe('board.query.invalid');
+    });
+});
+
+describe('the action plane route (G83/0442)', () => {
+    /** A stub plane that records what the reader handed it and answers 202. */
+    function stubPlane(
+        seen: ActionInput[],
+    ): (deps: { projectPath: string; fs: unknown; boardOrigin: string }) => Promise<ActionPlane> {
+        return async () => ({
+            handle: async (input: ActionInput) => {
+                seen.push(input);
+                return { status: 202, body: { launched: true } };
+            },
+        });
+    }
+
+    it('dispatches POST /api/actions/<kind> to the plane and refuses other methods', async () => {
+        const seen: ActionInput[] = [];
+        const reader = createBoardReader({
+            boardOrigin: 'http://127.0.0.1:4340',
+            port: 0,
+            projectPath: seededDay('29991206'),
+            actionPlane: stubPlane(seen),
+        });
+        servers.push(reader);
+
+        const post = await fetch(`${reader.url}/api/actions/publish-retry`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-kk-action': '1' },
+            body: JSON.stringify({ params: { day: '29991206', window: 'after-generate' } }),
+        });
+        expect(post.status).toBe(202);
+        expect(seen[0]?.kind).toBe('publish-retry');
+        expect(seen[0]?.actionHeader).toBe('1');
+
+        // The preflight for this path family advertises POST and x-kk-action.
+        const preflight = await fetch(`${reader.url}/api/actions/publish-retry`, { method: 'OPTIONS' });
+        expect(preflight.status).toBe(204);
+        expect(preflight.headers.get('access-control-allow-methods')).toContain('POST');
+        expect(preflight.headers.get('access-control-allow-headers')).toContain('x-kk-action');
+
+        // Every other method on the action path is refused, and the GET routes still refuse POST.
+        expect((await fetch(`${reader.url}/api/actions/publish-retry`)).status).toBe(405);
+        expect((await fetch(`${reader.url}/api/days/29991206`, { method: 'POST' })).status).toBe(405);
+    });
+
+    it('advertises GET-only CORS on every non-action route', async () => {
+        const reader = createBoardReader({
+            boardOrigin: 'http://127.0.0.1:4340',
+            port: 0,
+            projectPath: seededDay('29991205'),
+            actionPlane: stubPlane([]),
+        });
+        servers.push(reader);
+        const preflight = await fetch(`${reader.url}/api/days/29991205`, { method: 'OPTIONS' });
+        expect(preflight.headers.get('access-control-allow-methods')).toBe('GET, HEAD, OPTIONS');
+        expect(preflight.headers.get('access-control-allow-headers')).toBe('range, content-type');
     });
 });
 

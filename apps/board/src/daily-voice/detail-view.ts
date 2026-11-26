@@ -1,13 +1,11 @@
 import type { DailyDigest, NewsGenerationEvidence, NewsPublishWindowEvidence, RunEvidence } from '../contracts';
 import type { ResultFact } from '../shared/collect';
-import { formatDuration, type HistoryRow, windowRows } from './day-view';
+import { windowRows } from './day-view';
 import {
     type GenerationStageRow,
     generationStageRows,
     newsSummaryFacts,
     newsSummaryOf,
-    type PublishingWindowRow,
-    publishingWindowRows,
     type StateTone,
 } from './evidence';
 
@@ -255,28 +253,4 @@ export function publishingDetail(digest: DailyDigest): PublishingDetailWindow[] 
             notRun: window.launchStatus === 'not-run' && window.targets.length === 0,
         };
     });
-}
-
-/** The per-node duration trend of one day, for the timeline's footer (never a cross-day series). */
-export function dayDurations(digest: DailyDigest): { step: string; text: string }[] {
-    return digest.generation.durations.map((duration) => ({
-        step: duration.step,
-        text: formatDuration(duration.durationMs),
-    }));
-}
-
-/** A History row's total duration as display text (re-exported so panels share one formatter). */
-export function historyTotal(row: HistoryRow): string {
-    return formatDuration(row.totalMs);
-}
-
-/** The publishing model's unexplained windows, as History-style labels (used by the Actions panel). */
-export function unrunWindows(windows: readonly PublishingDetailWindow[]): string[] {
-    return windows.filter((window) => window.notRun).map((window) => window.window);
-}
-
-/** The projected window groups of one attempt, for the drill-down link target. */
-export function attemptWindowRows(evidence: RunEvidence): PublishingWindowRow[] {
-    const summary = newsSummaryOf(evidence);
-    return summary === null ? [] : publishingWindowRows(summary);
 }
