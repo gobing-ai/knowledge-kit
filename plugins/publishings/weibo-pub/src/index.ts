@@ -272,11 +272,36 @@ export const isWeiboAuthenticated: IsAuthenticatedPredicate = async (page) => {
                 },
             )
         ).found;
+        // The composer alone is not a session: m.weibo.cn renders the same 发送/公开 surface for a
+        // guest (measured 2026-11-26 — logged-out profile, empty `SUB` session, every post answered
+        // `ok:-100` + a passport redirect). The site's own write-session flag is the evidence.
+        if (weiboSurfaceReady(facts) && MOBILE_HOST_RE.test(facts.url)) return weiboSessionCanWrite(page);
         if (weiboSurfaceReady(facts)) return true;
     }
     facts.articleTitle = (await trySelectors(page, WEIBO_ARTICLE_SELECTORS.title, { visible: false })).found;
     return weiboSurfaceReady(facts);
 };
+
+/** `m.weibo.cn` — the host whose `/api/config` flag states whether this session can write. */
+const MOBILE_HOST_RE = /^https?:\/\/m\.weibo\.cn\//;
+
+/**
+ * Whether this mobile session may actually post: the site's own `/api/config` `login` flag.
+ *
+ * A guest page carries a composer, a `st` and a `uid`, so nothing on the rendered surface separates
+ * "signed in" from "signed out"; the write endpoint does, and it answers a guest with
+ * `{"ok":-100}`. Fail closed: a probe that cannot answer is not a session.
+ */
+async function weiboSessionCanWrite(page: Page): Promise<boolean> {
+    const canWrite = await page
+        .evaluate(async () => {
+            const response = await fetch('https://m.weibo.cn/api/config', { credentials: 'include' });
+            const body = (await response.json()) as { data?: { login?: unknown } };
+            return body.data?.login === true;
+        })
+        .catch(() => false);
+    return canWrite === true;
+}
 
 /**
  * Site-owned config for the shared session check and operator CLI (ADR-032). The publish preflight
@@ -849,6 +874,15 @@ function apiSubmitScript(text: string, picId: string): string {
     const cfg = (window.config || {});
     const form = new URLSearchParams({ content: ${JSON.stringify(text)}, st: String(cfg.st || '') });
     ${picId === '' ? '' : `form.set('pic_id', ${JSON.stringify(picId)});`}
+    // The mobile write endpoint answers a request without the site's own XSRF token with
+    // ok:-100 + a passport signin URL even on a live session (measured 2026-11-26: fresh
+    // SUB/MLOGIN, st present, composer logged in). Send the cookie back as the header.
+    // No regex here on purpose: this body is a template literal, where an escape would collapse
+    // before the page ever runs it.
+    const xsrf = document.cookie
+        .split('; ')
+        .filter((c) => c.indexOf('XSRF-TOKEN=') === 0)
+        .map((c) => c.slice('XSRF-TOKEN='.length))[0] || '';
     let response;
     try {
         response = await fetch('https://m.weibo.cn/api/statuses/update', {
@@ -859,6 +893,7 @@ function apiSubmitScript(text: string, picId: string): string {
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
                 'X-Requested-With': 'XMLHttpRequest',
+                ...(xsrf === '' ? {} : { 'X-XSRF-TOKEN': decodeURIComponent(xsrf) }),
                 Referer: 'https://m.weibo.cn/compose/',
             },
             body: form.toString(),
@@ -870,7 +905,7 @@ function apiSubmitScript(text: string, picId: string): string {
     try { body = await response.json(); } catch { body = null; }
     const data = (body && body.data) || {};
     const id = String(data.id ?? data.idstr ?? '');
-    const detail = id !== '' ? '' : JSON.stringify(body ?? {}).replace(/s+/g, ' ').slice(0, 160);
+    const detail = id !== '' ? '' : JSON.stringify(body ?? {}).replace(/\\s+/g, ' ').slice(0, 160);
     return JSON.stringify({ status: response.status, id: id, detail: detail });
 })()`;
 }

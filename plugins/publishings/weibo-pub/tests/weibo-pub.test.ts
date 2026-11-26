@@ -194,7 +194,10 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
             if (options.coverAttached !== false && options.v5CoverModal !== true) images += 1;
         },
         async evaluate(expression: string) {
-            calls.push(`evaluate:${expression.slice(0, 40)}`);
+            calls.push(`evaluate:${String(expression).slice(0, 40)}`);
+            // A function-valued evaluate is the session probe (`/api/config`): this fake models a
+            // signed-in profile unless a test says otherwise via the surface helpers.
+            if (typeof expression === 'function') return true;
             if (expression.includes('kk-weibo-draft-init')) return options.draftPaneReset !== false;
             if (expression.includes('kk-weibo-confirm-publish'))
                 return options.onPublish === 'article' ? 'clicked' : 'none';
@@ -225,6 +228,9 @@ function makeFakePage(options: FakePageOptions, calls: string[]): Page {
             if (expression.includes('kk-weibo-submit')) {
                 const api = options.apiSubmit ?? {};
                 calls.push(expression.includes('pic_id') ? 'submit:with-pic' : 'submit:no-pic');
+                // The mobile write endpoint refuses a request that carries no site XSRF token
+                // (2026-11-26: fresh `SUB`+`MLOGIN` session, `st` present, still `ok:-100` signin).
+                calls.push(expression.includes('X-XSRF-TOKEN') ? 'submit:xsrf' : 'submit:no-xsrf');
                 if (options.submitFailureToast !== undefined) toasts.push(options.submitFailureToast);
                 const id = api.id ?? '';
                 return JSON.stringify({
@@ -591,6 +597,7 @@ describe('weibo-pub post flow (R3, R4, R9)', () => {
             true,
         );
         expect(fake.calls).toContain('submit:no-pic');
+        expect(fake.calls).toContain('submit:xsrf');
     });
 
     test('a one-image post uploads the cover and submits its pic id', async () => {
@@ -888,7 +895,10 @@ describe('weibo-pub readiness on the surface the flow uses (0436 R3)', () => {
     }
 
     /** A page rendering only the mobile composer's two controls the post flow needs. */
-    function mobileComposerPage(url: string): { url: () => string; locator: (selector: string) => unknown } {
+    function mobileComposerPage(
+        url: string,
+        options: { canWrite?: boolean } = {},
+    ): { url: () => string; locator: (selector: string) => unknown; evaluate: (fn: unknown) => Promise<unknown> } {
         const rendered = new Set<string>([WEIBO_POST_SELECTORS.composer[0], WEIBO_POST_SELECTORS.send[0]]);
         return {
             url: () => url,
@@ -896,8 +906,18 @@ describe('weibo-pub readiness on the surface the flow uses (0436 R3)', () => {
                 first: () => ({ count: async () => (rendered.has(selector) ? 1 : 0) }),
                 count: async () => (rendered.has(selector) ? 1 : 0),
             }),
+            // The write session probe: the site's own `/api/config` login flag.
+            evaluate: async () => options.canWrite ?? true,
         };
     }
+
+    test('a composer rendered for a guest is not a session: the write api decides', async () => {
+        // Measured 2026-11-26: a logged-out profile renders the same 发送/公开 composer, and every
+        // post then dies on `{"ok":-100}` + a passport redirect — so the surface alone is not a
+        // session. `/api/config` answered `login:false` on exactly that page.
+        const guest = mobileComposerPage(WEIBO_MOBILE_COMPOSE_URL, { canWrite: false });
+        expect(await isWeiboAuthenticated(guest as unknown as Page)).toBe(false);
+    });
 
     test('a bare textarea (a search box) is not a session: the composer AND its send control must render', async () => {
         // The composer ladder ends in a bare `textarea`, which matched any page with one — including
@@ -908,7 +928,6 @@ describe('weibo-pub readiness on the surface the flow uses (0436 R3)', () => {
     test('the mobile composer the post flow drives is a verified surface', async () => {
         expect(await isWeiboAuthenticated(mobileComposerPage(WEIBO_MOBILE_COMPOSE_URL) as unknown as Page)).toBe(true);
     });
-
     test('a login/passport redirect is refused before any selector is read', async () => {
         expect(await isWeiboAuthenticated(mobileComposerPage(LOGIN_URL) as unknown as Page)).toBe(false);
     });
