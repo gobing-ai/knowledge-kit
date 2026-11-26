@@ -258,7 +258,7 @@ nodes:
           Content to evaluate: ${vars.work_dir}/24-script/${vars.run_date}_08_script-write_plan.json
           Plan docs reference: ${vars.work_dir}/21-plan/${vars.run_date}_03_plan_plan.json
           Rubric: news-balance
-          Load the rubric definition from plugins/kk/skills/content-judge/references/rubrics.md (section: news-balance) and the contract from plugins/kk/skills/content-judge/SKILL.md.
+          Load the rubric definition from ${vars.visual_skill_root}/content-judge/references/rubrics.md (section: news-balance) and the contract from ${vars.visual_skill_root}/content-judge/SKILL.md.
           Evaluate the script plan against every criterion in news-balance (news-first, commentary-share, no-restatement, tech-depth, ordering).
           Write the verdict JSON (with confidence HIGH | MEDIUM | LOW) to ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json.
         expectFile: ${vars.work_dir}/24-script/${vars.run_date}_08_editorial-judge_verdict.json

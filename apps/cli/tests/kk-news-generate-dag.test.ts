@@ -263,6 +263,11 @@ describe('kk-news-generate — R7: the node bodies', () => {
             expect(input).toContain(`${visualRoot}/daily-news-illustrations/SKILL.md`);
             expect(input).toContain(`${visualRoot}/news-editorial/references/daily-visual-composition.md`);
         }
+        // The judge reads its rubric from the same package skill root: a checkout-relative path
+        // resolved against the launch cwd, not the installed package the other prompts read.
+        const judge = String(byId.get('editorial-judge')?.action?.options?.input);
+        expect(judge).toContain(`${visualRoot}/content-judge/references/rubrics.md`);
+        expect(judge).toContain(`${visualRoot}/content-judge/SKILL.md`);
         // The two fix passes and the judge resolve above the primary's rung.
         for (const id of ['curate-fix', 'script-fix', 'editorial-judge']) {
             expect(byId.get(id)?.action?.options?.role).toBe('reviewer');
