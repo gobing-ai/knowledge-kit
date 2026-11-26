@@ -388,3 +388,21 @@
 - **Implement dispatches can hit the 30-minute subagent cap.** 0436's implement timed out after the code was green; the runbook is resume-from-partial-tree, not restart — the Solution section and receipt can be completed inline.
 - **`persist-out` caps evidence at 64 `.spur/run/` files per owner.** Six pipeline attempts for one WBS (multi-visit reviews) exceed it; prune superseded `_prev-*` archives before teardown.
 - **`git worktree remove` after a landing does not remove the branch's `.spur/run` scratch** — and `bun run spur-check` on the merged tree must be re-run after a `git merge main` into the batch branch, because the merge can introduce other writers' code.
+
+## 2026-11-26 — batch-harness traps found during G83
+
+- **`require-corresponding-test` matches file names**: a test for `board/day.ts` must be
+  `board/day.test.ts`. A descriptive name (`board-day.test.ts`) fails the gate as "no corresponding
+  test" and the failure reads like a missing test rather than a naming rule.
+- **A verdict row that is MET with `static-ref` evidence rolls the whole review to PARTIAL.** Behavior-
+  bearing AC rows need `test` or `command`; a doc-only criterion needs an exemption tag on the task's
+  own AC. Write the doc-contract test instead of citing a doc line.
+- **A pipeline run can fail in `remediate` with no findings file**: when the gate is green, the
+  findings file does not exist, so the hop dies on `file.read.into-var`. The task is then `wip` with a
+  PASS verdict — close it through the owning surfaces (`spur task verdict --from-answer`,
+  `spur task record`, `spur task update <wbs> testing`, `done`) and say so.
+- **`spur workflow run --from <node>` is opt-in per workflow**; `task-pipeline.yaml` does not mark
+  `review` startable, so a failed post-review run cannot be re-entered mid-graph.
+- **A fresh worktree reddens any test that writes into `<repo>/.works`** (`daily.test.ts`'s
+  pollution guard). `plugins/kk/tests/smart-seo-*.test.ts` did exactly that via a cwd-relative
+  auto work-dir; pin a temp cwd or an explicit `--work-dir`.

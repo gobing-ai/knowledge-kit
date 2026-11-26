@@ -3,9 +3,9 @@ name: Features
 doc: 05_FEATURES
 owns: STATUS — feature decomposition + state
 authority: derived
-version: 2.34.0
+version: 2.35.0
 created_at: 2026-07-22
-updated_at: 2026-11-18
+updated_at: 2026-11-26
 derived_from: [01_PRD, 02_ROADMAP]
 edit_rules: 99 §6.6
 sync: [T4]
@@ -112,6 +112,7 @@ sync: [T4]
 | G7 | kk workflow run ledger | ⏳ planned | — | cross-workflow capabilities |
 | G71 | Per-workflow run ledger from spur action_runs | ⏳ ready | — | task `0207` |
 | G8 | Workflow visibility in Spur Board: Collect, Daily AI Voice, IT Content | 🔧 active | 3 | tasks `0252`–`0254` done; `0255` adds the separately-packed-install acceptance (`apps/board/tests/installed-board.test.ts`, `scripts/tests/board-package.test.ts`), four tabs per module, operator setup in `docs/04_DESIGN.md`; 0319 adds the Collect channel-yield aggregate and 0320 the Daily episode funnel + supply-context panel (ADR-035 amendments 2026-10-16/22); [satellite](design/workflow-board-modules.md) |
+| G83 | Daily AI Voice day-centric ops console: day digest, debug tabs, guarded redo tools | 🔶 partial | P1 | tasks `0439`–`0442` **done** (day projection + `/api/days` routes + `kk news digest`; console shell at the same route id with Today/Generation/Publishing/History/Actions-log; guarded `POST /api/actions/<kind>` behind `board.actions.enabled`); `0443` (repeatable browser E2E artifact + docs sync) remains **todo**, so the feature is not done. Retires the voice2 fallback layouts and the G82 supply-context panel (feature R2) — that panel has no home in the five-tab design. ADR-035 amendment 2026-11-25 now **Accepted**; [design](design/daily-voice-ops-console.md) |
 | G9 | kk-smart-seo: evidence-grounded SEO and GEO audits | ⏳ planned | P2 | tasks `0281`–`0286` implemented: bounded public-site audit stages, typed decision provenance (22 catalog decisions in four catalogs), JSON/Markdown report and validated narrative, one `kk:smart-seo` skill with its references, and the separately-packed installed acceptance (`apps/cli/tests/smart-seo-installed.test.ts`: real fixture workflow offline, `decision status/show` under an offline maker, documented `decisions.paths` append that preserves existing paths and makers); surface and evidence limits in `docs/04_DESIGN.md`; status unchanged pending feature-level verification, and an operator-run live-site audit remains; [design](design/kk-smart-seo.md), ADR-039 |
 | **H** | Real STORM + wt generator harvest | ❌ cancelled | — | split into **D4** plus former D5, now **F2** |
 | **I** | LLM wiki (umbrella) | ⏳ planned | 3 | Committed 2026-11-10 by the operator specs; implementation lives in child **I1**; the treasury Quartz repository is a follow-on run |

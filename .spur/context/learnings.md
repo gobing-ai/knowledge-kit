@@ -701,3 +701,19 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   batch branch (a concurrent session had released 0.1.25, fixed 0435 inline and touched linkedin-pub),
   two resolved conflicts, a full `bun run spur-check` on the merged tree, then `--ff-only` on main. The
   durable rule: never FF a batch branch that has not been merged with the current base first.
+
+## 2026-11-26 — G83 day-centric ops console (batch `runall-g83-d098`)
+
+- A **day projection** beats a per-surface join: `projectDay()` serves the reader routes and the CLI
+  verb, so the console and `kk news digest` cannot disagree. Anything that needs the same figures
+  composes that function rather than re-reading the day directory.
+- **A capture stamp and a plan run date are different spellings of the same day** (`20261125` vs
+  `2026-11-25`). Comparing them raw made every real news day report a false provenance mismatch and
+  discard its outcome file; compare on digits (`sameRunDate`, `apps/cli/src/board/news.ts:244`).
+- **A judge verdict without its confidence is not evidence.** The reader now refuses to surface one
+  (`board.day.judge-confidence-unverified`), which is also what the `verdict-confidence` contract
+  scan enforces across `apps/cli/src` and `plugins/kk/scripts`.
+- **The token handshake must be audited before the spawn.** A `launched` line that precedes the
+  child means a crash leaves an unclosed row (evidence) instead of a run with no trace.
+- **Work-item receipts are files, not prose**: `spur workflow continue <run>` wants
+  `--answer-text <path-to>.spur/run/<run>/receipts/<state>.json`, never a sentence.
