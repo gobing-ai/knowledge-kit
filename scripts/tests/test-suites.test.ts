@@ -9,6 +9,7 @@ import {
     isHeavyTest,
     main,
 } from '../test-suites';
+import { captureMainAsync } from './capture-output';
 
 const REPO_ROOT = resolve(import.meta.dir, '../..');
 
@@ -58,7 +59,9 @@ describe('scripts/test-suites (0429)', () => {
     });
 
     test('main rejects invalid mode with exit 2 and forwards selected files to spawn', async () => {
-        expect(await main(['invalid'], REPO_ROOT)).toBe(2);
+        const invalid = await captureMainAsync(() => main(['invalid'], REPO_ROOT));
+        expect(invalid.code).toBe(2);
+        expect(invalid.stderr).toContain('usage: bun scripts/test-suites.ts <fast|heavy>');
 
         let capturedArgv: string[] = [];
         const code = await main(['heavy', '--', '--bail'], REPO_ROOT, ((cmd: string[]) => {
