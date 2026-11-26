@@ -694,6 +694,13 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
             const summary = await readOptional(deps.fs, join(options.workDir, 'run-report.summary.txt'));
             status = summary?.startsWith('no-content:') === true ? 'no-content' : 'done';
         }
+        // spur exits 1 at a HITL pause node. That run is resumable, not failed: cancelling it and
+        // recycling its reservations (the failed path) killed the 2026-11-20/23 manual runs at `review`.
+        const pausedAt =
+            status === 'failed' && !interrupted && !spawnFailed
+                ? /workflow paused: \S+ -> (\S+)/.exec(`${result.stderr}${result.stdout}`)?.[1]
+                : undefined;
+        if (pausedAt !== undefined) status = 'incomplete';
         const exitCode =
             status === 'done' || status === 'no-content'
                 ? 0
@@ -711,7 +718,9 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
                   ? 'launch interrupted by a signal'
                   : timedOut
                     ? `workflow exceeded --timeout-ms ${timeoutMs}`
-                    : `workflow ${status === 'failed' ? 'failed' : 'ended'}: ${refusalDetail(result.stdout, result.stderr, result.exitCode)}`;
+                    : pausedAt !== undefined
+                      ? `paused at ${pausedAt}; resume with \`spur workflow continue ${runId}\``
+                      : `workflow ${status === 'failed' ? 'failed' : 'ended'}: ${refusalDetail(result.stdout, result.stderr, result.exitCode)}`;
 
         // Cleanup (design §3.1 lines 294–423): each step is isolated so one failure cannot skip the
         // next, and the lock release in `finally` still runs when all three throw.
@@ -741,7 +750,7 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
             status === 'done' && (await deps.fs.exists(await resolveBundlePath(deps.fs, options.workDir)));
         // A `no-content` generate recycles too (0393 R2): a late floor/duration refusal lands AFTER
         // store-select reserved the pool, and an early empty pool reserved nothing (a no-op release).
-        if (options.workflow !== PUBLISH_WORKFLOW && !greenWithBundle) {
+        if (options.workflow !== PUBLISH_WORKFLOW && !greenWithBundle && pausedAt === undefined) {
             try {
                 await deps.recycleRun(runId);
             } catch (error) {

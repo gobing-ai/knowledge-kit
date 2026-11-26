@@ -458,6 +458,33 @@ describe('launchWorkflow — child lifecycle and cleanup (0365 R4, R5, AC3)', ()
         }
     });
 
+    it('records a HITL pause as incomplete and leaves the run resumable: no cancel, no recycle', async () => {
+        const space = scratch();
+        const stub = harness({
+            reply: (call) => {
+                if (call.args.includes('workflow') && call.args.includes('run')) {
+                    // spur exits 1 on a pause node (2026-11-20/23 manual runs stopped at `review`).
+                    return { exitCode: 1, stderr: 'workflow paused: kk-news-generate -> review' };
+                }
+                return defaultReply(call);
+            },
+        });
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: stub.deps });
+
+            expect(receipt.status).toBe('incomplete');
+            expect(receipt.exitCode).toBe(1);
+            expect(receipt.reason).toContain('paused at review');
+            expect(receipt.reason).toContain(`spur workflow continue ${receipt.runId}`);
+            expect(stub.calls.filter((call) => call.args.includes('cancel'))).toHaveLength(0);
+            expect(stub.recycled).toEqual([]);
+            expect(stub.ledgers).toHaveLength(1);
+            expect(stub.releases).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
     it('reports a spawn failure as failed with the engine error named, releasing the lock', async () => {
         const space = scratch();
         const stub = harness({
