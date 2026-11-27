@@ -6,7 +6,7 @@ status: backlog
 priority: P2
 tags: []
 created_at: "2026-11-26T19:32:00.623Z"
-updated_at: "2026-11-26T19:33:20.451Z"
+updated_at: "2026-11-27T08:12:01.715Z"
 ---
 
 # D9: Short-form vertical video generation and three-channel podcast promotion
@@ -17,7 +17,7 @@ Enable `knowledge-kit` to automatically generate branded 9:16 vertical promotion
 
 ## Scope
 
-### In Scope
+### In scope
 - Typed `videoGenContentSchema` (`format: "video"`) in `@gobing-ai/kk-core`.
 - Unified `plugins/generations/video-gen` generator plugin with a shared local Remotion (TypeScript/React) 9:16 composition shell: 45–60s teaser hook extraction from daily AI news, audio slicing, `faster-whisper` word-level caption timestamps, branded 1080×1920 template (headline cards, kinetic ZH/EN captions, audio waveform, platform safe-zones, podcast CTA outro), and H.264/AAC MP4 output.
 - Pluggable visual modes inside `video-gen`:
@@ -29,7 +29,7 @@ Enable `knowledge-kit` to automatically generate branded 9:16 vertical promotion
   - New `plugins/publishings/youtube-pub` plugin backed by YouTube Data API v3 (`videos.insert`, OAuth2 refresh-token auth) with `private`/draft-first safety.
 - Phased delivery across three shippable milestones: M1 (Daily News local editorial MVP + 3-channel publish), M2 (Colab GPU worker + Drive cache + Wan2.1 I2V), M3 (MuseTalk/EchoMimicV2 avatar & hybrid-pip modes).
 
-### Out of Scope
+### Out of scope
 - Long-form horizontal (16:9) full-episode video rendering or live video podcast clipping (`FunClip`/`Openshorts`).
 - Stock-footage / generic-TTS faceless automation (`MoneyPrinterTurbo`/`ShortGPT`).
 - Commercial paid video generation APIs (HeyGen, Kling, Runway).
