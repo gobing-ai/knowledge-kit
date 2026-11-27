@@ -14,7 +14,11 @@
 
 import { describe, expect, it } from 'bun:test';
 import { createHash } from 'node:crypto';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { DailyActionLine } from '@gobing-ai/kk-board/contracts';
+import { createNodeFileSystem, type NodeProcessExecutor } from '@gobing-ai/ts-runtime';
 import {
     type ActionChild,
     type ActionInput,
@@ -22,6 +26,11 @@ import {
     argvHashOf,
     bodyBoundHashOf,
     createActionPlane,
+    editRefusalOf,
+    planeArtifacts,
+    planeDayDir,
+    runIdOf,
+    spawnArgv,
 } from '../../src/board/action-plane';
 import { EDIT_BODY_CAP_BYTES, resolveArgv } from '../../src/board/actions';
 
@@ -240,3 +249,81 @@ describe('revert-artifact (R4)', () => {
 function byte(hex: string): number {
     return hex.length;
 }
+
+describe('the production seams (0445)', () => {
+    it('reads the draft and its newest backup from the day directory', async () => {
+        const project = mkdtempSync(join(tmpdir(), 'kk-plane-artifacts-'));
+        const dayDir = join(project, '.works', 'kk-news-generate', DAY);
+        mkdirSync(join(dayDir, '22-article'), { recursive: true });
+        mkdirSync(join(dayDir, 'edits'), { recursive: true });
+        writeFileSync(join(dayDir, '22-article', `${DAY}_06_article-write_body.md`), 'current\n');
+        writeFileSync(join(dayDir, 'edits', '20260101T000000.000Z-article.md'), 'older\n');
+        writeFileSync(join(dayDir, 'edits', '20260102T000000.000Z-article.md'), 'newer\n');
+        const seam = planeArtifacts(project, createNodeFileSystem());
+
+        expect(await seam.read('edit-artifact', { day: DAY, artifact: 'article' })).toEqual({
+            path: `22-article/${DAY}_06_article-write_body.md`,
+            text: 'current\n',
+        });
+        expect(await seam.newestBackup({ day: DAY, artifact: 'article' })).toBe('newer\n');
+        // A parameter outside the closed enum resolves nothing, so nothing is read.
+        expect(await seam.read('edit-artifact', { day: DAY, artifact: 'audio' })).toEqual({ path: '', text: null });
+        expect(await seam.read('edit-artifact', { day: 'not-a-day', artifact: 'article' })).toEqual({
+            path: '',
+            text: null,
+        });
+        expect(await seam.newestBackup({ day: 'not-a-day', artifact: 'article' })).toBeNull();
+    });
+
+    it('reports no backup when the day has no edits directory', async () => {
+        const project = mkdtempSync(join(tmpdir(), 'kk-plane-nobackup-'));
+        const seam = planeArtifacts(project, createNodeFileSystem());
+        expect(await seam.newestBackup({ day: DAY, artifact: 'script' })).toBeNull();
+    });
+
+    it('carries a body to the child on stdin through the streaming handle', async () => {
+        const written: string[] = [];
+        const executor = {
+            run: () => Promise.resolve({ exitCode: 0, stdout: '', stderr: '' }),
+            runStreaming: () => {
+                const stream = new ReadableStream<Uint8Array>({
+                    start(controller) {
+                        controller.enqueue(new TextEncoder().encode('{"runId":"stub-9"}'));
+                        controller.close();
+                    },
+                });
+                return {
+                    pid: 1,
+                    stdout: stream,
+                    stderr: null,
+                    exited: Promise.resolve(0),
+                    writeStdin: (input: string | Uint8Array) => written.push(String(input)),
+                    endStdin: () => written.push('<end>'),
+                    kill: () => undefined,
+                };
+            },
+        } as unknown as NodeProcessExecutor;
+        const child = spawnArgv(
+            executor,
+            ['kk', 'news', 'edit', '--from-file', '-'],
+            '/tmp',
+            { KK_LOCK_HOLDER: 'h' },
+            'body\n',
+        );
+        expect(await child.exit).toBe(0);
+        expect(written).toEqual(['body\n', '<end>']);
+        expect(runIdOf(child.stdout())).toBe('stub-9');
+    });
+
+    it("relays the verb's own refusal code, and null when it named none", () => {
+        expect(editRefusalOf('kk.news.edit.failed: news.edit.frozen: the day is frozen')).toBe('news.edit.frozen');
+        expect(editRefusalOf('kk.news.edit.failed: news.edit.base-sha.mismatch: moved current=abc')).toBe(
+            'news.edit.base-sha.mismatch',
+        );
+        expect(editRefusalOf('boom')).toBeNull();
+    });
+
+    it('derives the day directory the audit lines use', () => {
+        expect(planeDayDir('/p', DAY)).toBe(join('/p', '.works', 'kk-news-generate', DAY));
+    });
+});

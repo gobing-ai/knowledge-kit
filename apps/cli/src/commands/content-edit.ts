@@ -275,17 +275,19 @@ function artifactOf(raw: string): EditableArtifact {
 
 /** The new body text: from `--from-file`, or stdin for `-`, capped before anything consumes it. */
 async function readBody(fs: FileSystem, fromFile: string): Promise<string> {
-    if (fromFile === '-') {
-        const body = await readStdinBounded(EDIT_BODY_CAP_BYTES);
-        if (byteLengthOf(body) > EDIT_BODY_CAP_BYTES) {
+    const capped = (body: string): string => {
+        // An empty draft is never what the operator meant, and writing it would destroy the file.
+        if (body.trim() === '') throw new EditRefusedError('news.edit.body.empty', 'the new body is empty');
+        const bytes = byteLengthOf(body);
+        if (bytes > EDIT_BODY_CAP_BYTES) {
             throw new EditRefusedError(
                 'news.edit.body.too-large',
-                'news.edit.body.empty',
-                `the body is ${byteLengthOf(body)} bytes; the cap is ${EDIT_BODY_CAP_BYTES}`,
+                `the body is ${bytes} bytes; the cap is ${EDIT_BODY_CAP_BYTES}`,
             );
         }
         return body;
-    }
+    };
+    if (fromFile === '-') return capped(await readStdinBounded(EDIT_BODY_CAP_BYTES));
     const path = resolve(fromFile);
     let stat: Awaited<ReturnType<FileSystem['stat']>>;
     try {
@@ -302,14 +304,7 @@ async function readBody(fs: FileSystem, fromFile: string): Promise<string> {
     } catch {
         throw new EditRefusedError('news.edit.source.unreadable', `${fromFile} could not be read`);
     }
-    if (byteLengthOf(body) > EDIT_BODY_CAP_BYTES) {
-        throw new EditRefusedError(
-            'news.edit.body.too-large',
-            'news.edit.body.empty',
-            `the body is ${byteLengthOf(body)} bytes; the cap is ${EDIT_BODY_CAP_BYTES}`,
-        );
-    }
-    return body;
+    return capped(body);
 }
 
 /** Read the current artifact text, or null when it does not exist yet. */

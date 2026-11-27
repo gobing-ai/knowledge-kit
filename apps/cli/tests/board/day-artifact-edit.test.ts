@@ -18,7 +18,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, utimesSync, writeFi
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createNodeFileSystem } from '@gobing-ai/ts-runtime';
-import { projectDay } from '../../src/board/day';
+import { dayArtifact, isEditableArtifact, projectDay } from '../../src/board/day';
 
 const REPO = resolve(import.meta.dir, '../../../..');
 const CHECK = join(REPO, 'plugins/kk/scripts/safety-artifact-check.ts');
@@ -146,5 +146,53 @@ describe('safety staleness (R5)', () => {
         // draft is the exit-1 "unchanged" answer asserted in the first test. Both sides agree.
         expect(gate.text).not.toContain('draft digest is unchanged');
         expect(gate.status).toBe(0);
+    });
+});
+
+describe('dayArtifact — the editor document (0445)', () => {
+    it('answers the bytes, the sha and both recipes, and refuses an unknown day', async () => {
+        const { project, dayDir } = seededDay();
+        mkdirSync(join(dayDir, 'edits'), { recursive: true });
+        writeFileSync(join(dayDir, 'edits', '20260101T000000.000Z-article.md'), 'old\n');
+
+        const document = await dayArtifact(ctx(project), DAY, 'article');
+        if ('notFound' in document) throw new Error('day not projected');
+        expect(document.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(document.text).toContain('# Episode');
+        expect(document.recipe?.kind).toBe('edit-artifact');
+        expect(document.revertRecipe?.kind).toBe('revert-artifact');
+        expect(document.backup).toBe('20260101T000000.000Z-article.md');
+        // The digest is fresh, so the day carries no stale marker.
+        const digest = await projectDay(ctx(project), DAY);
+        if ('notFound' in digest) throw new Error('day not projected');
+        expect(digest.safety.stale).toBeUndefined();
+    });
+
+    it('answers a script document with no backup and no revert recipe', async () => {
+        const { project } = seededDay();
+        const document = await dayArtifact(ctx(project), DAY, 'script');
+        if ('notFound' in document) throw new Error('day not projected');
+        expect(document.path).toBe(`24-script/${DAY}_08_script_voicescript.yaml`);
+        expect(document.revertRecipe).toBeNull();
+        expect(document.backup).toBeNull();
+    });
+
+    it('refuses a day that does not exist and an artifact outside the enum', async () => {
+        const { project } = seededDay();
+        expect(await dayArtifact(ctx(project), '29990101', 'article')).toEqual({
+            notFound: true,
+            lookedUp: join(project, '.works', 'kk-news-generate', '29990101'),
+        });
+        expect(isEditableArtifact('article')).toBe(true);
+        expect(isEditableArtifact('audio')).toBe(false);
+    });
+
+    it('answers no recipe when the draft does not exist yet', async () => {
+        const { project, dayDir } = seededDay();
+        writeFileSync(join(dayDir, '22-article', `${DAY}_06_article-write_body.md`), '');
+        const document = await dayArtifact(ctx(project), DAY, 'article');
+        if ('notFound' in document) throw new Error('day not projected');
+        expect(document.text).toBe('');
+        expect(document.sha256).toMatch(/^[0-9a-f]{64}$/);
     });
 });

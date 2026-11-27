@@ -649,7 +649,11 @@ async function diffPreviewOf(
  * caller can act on it (a base-sha race is a conflict, a frozen day is not).
  */
 export function editRefusalOf(output: string): string | null {
-    return /news\.edit\.[a-z.-]+/.exec(output)?.[0] ?? null;
+    // The verb prints `kk.news.edit.failed: <code>: <message>`, so the FIRST `news.edit.*` token is the
+    // envelope prefix, not the refusal. Skip it and report the specific code (a base-sha race must map
+    // to 409, which only the specific code can drive).
+    const matches = output.match(/news\.edit\.[a-z.-]+/g) ?? [];
+    return matches.find((code) => code !== 'news.edit.failed') ?? null;
 }
 
 /** The artifact's current sha when a confirmed edit's `baseSha` no longer matches; null otherwise. */
