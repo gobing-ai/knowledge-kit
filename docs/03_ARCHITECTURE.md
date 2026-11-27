@@ -717,6 +717,14 @@ console and the CLI cannot disagree — the parity is pinned by the committed E2
 convention. Per-run drill-down (Generation's node timeline, engine chain and artifacts) reuses the
 existing news evidence DTO; the day's `step-timing.json` adds the durations that DTO has no node for.
 
+`kk news edit` owns that write (G84): the plane only launches it, so the artifact bytes, the backup and
+the base-sha compare-and-swap live in one CLI verb and the console can offer the same command it copies.
+The projection re-arms itself from the files (`safety: stale` when the recorded draft digest moved or the
+article body is newer than `content.json`), which is why an edit cannot leave a passing verdict covering
+bytes that no longer exist. The same module pushes the digest (G85) when an operator configures
+`notify.digest`: the launch supervisor calls it after its terminal receipt, best-effort, so a webhook
+failure is one log line and never a launch outcome.
+
 The reader's single write route, `POST /api/actions/<kind>`, maps a recipe to an allowlisted argv and
 spawns it as a child process (no shell, inherited env only); it is off by default
 (`board.actions.enabled`) and gated by exact-origin + `X-KK-Action` → preview → single-use token bound
