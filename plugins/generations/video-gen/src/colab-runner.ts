@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import type { FileSystem } from '@gobing-ai/ts-runtime';
 import {
     appendLedger,
@@ -13,11 +13,7 @@ import type { RunProcess } from './process';
 /**
  * `google-colab-cli` batch runner (0451 R1/R2).
  *
- * argv frozen from the step-0 spike (`colab --help`, `colab run --help`, verified 2026-11-27):
- * `colab run SCRIPT --gpu <T4|L4|G4|H100|A100> --session NAME --keep --timeout SECONDS
- * --env KEY=VALUE …`. `run` releases the VM on its own, but `--keep` is what makes the CLI's own
- * transfer verb usable (`colab download REMOTE LOCAL --session NAME`), so the session is always
- * stopped in `finally` — success, failure or local kill (R1: no session may outlive a job).
+ * Create the session before inference so local media can be uploaded to the fresh VM.
  */
 
 /** Job kinds this runner can dispatch (0452 adds the avatar workers). */
@@ -29,7 +25,9 @@ export interface ColabJob {
     gpu: ColabGpu;
     /** Local path of the worker script that is uploaded and executed. */
     script: string;
-    /** Remote output file names the worker writes under `remoteDir`. */
+    /** Local media, ordered as stills for Wan or portrait then audio for a presenter. */
+    inputPaths: string[];
+    /** Local output file names. */
     outputNames: string[];
     /** Remote directory the worker writes into. */
     remoteDir: string;
@@ -79,19 +77,26 @@ export function sessionName(job: ColabJob): string {
     return `kk-video-${job.runDate}-${job.jobType}`;
 }
 
-/** The frozen `colab run` argv (R1). */
+/** Execute the local worker in the session where the media has been staged. */
 export function buildColabArgv(job: ColabJob, cacheDir: string = DEFAULT_COLAB_CACHE_DIR): string[] {
-    const env: Record<string, string> = { KK_COLAB_CACHE_DIR: cacheDir, ...(job.env ?? {}) };
+    const inputs = job.inputPaths.map((path, index) => `/content/kk-input-${index}${extname(path)}`);
+    const scriptArgs =
+        job.jobType === 'wan21-i2v'
+            ? ['--images', ...inputs, '--out-dir', job.remoteDir]
+            : ['--portrait', inputs[0], '--audio', inputs[1], '--out', join(job.remoteDir, 'presenter.mp4')];
+    const env = {
+        KK_COLAB_CACHE_DIR: cacheDir,
+        ...job.env,
+        KK_COLAB_ARGS: JSON.stringify(scriptArgs),
+    };
     const envFlags = Object.entries(env).flatMap(([key, value]) => ['--env', `${key}=${value}`]);
     return [
         process.env.KK_COLAB_BIN ?? 'colab',
-        'run',
+        'exec',
+        '--file',
         job.script,
-        '--gpu',
-        job.gpu,
         '--session',
         sessionName(job),
-        '--keep',
         // The CLI's own timeout is an inactivity timeout; it is seconds, and 0 means unlimited.
         '--timeout',
         String(Math.max(1, Math.round(job.timeoutMs / 1000))),
@@ -133,7 +138,7 @@ function bounded(text: string): string {
 }
 
 /**
- * Run one GPU job: budget check → `colab run` → download each output → stop the session → ledger.
+ * Run one GPU job: budget check → create → upload → execute → download → stop → ledger.
  * Every failure mode returns `ok:false` with a cause the caller turns into a fallback warning.
  */
 export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<ColabJobResult> {
@@ -150,14 +155,38 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
 
     const session = sessionName(job);
     const startedAt = now();
+    const deadline = startedAt + job.timeoutMs + (deps.killGraceMs ?? LOCAL_KILL_GRACE_MS);
+    const remaining = (): number => {
+        const timeoutMs = deadline - now();
+        if (timeoutMs <= 0) throw new Error('colab job timed out');
+        return timeoutMs;
+    };
     let outputs: string[] = [];
     let cache: 'drive' | 'local' = 'local';
     let error: string | undefined;
     let status: 'ok' | 'failed' | 'timeout' = 'failed';
 
     try {
+        const cli = process.env.KK_COLAB_BIN ?? 'colab';
+        const stage = async (argv: string[]): Promise<void> => {
+            const result = await deps.runProcess(argv, { timeoutMs: Math.min(120_000, remaining()) });
+            if (result.code !== 0) {
+                throw new Error(
+                    `colab ${argv[1]} failed (exit ${result.code}): ${bounded(result.stderr) || 'no stderr'}`,
+                );
+            }
+        };
+        await stage([cli, 'new', '--session', session, '--gpu', job.gpu]);
+        const requestedCache = job.env?.KK_COLAB_CACHE_DIR ?? cacheDir;
+        if (requestedCache === '/content/drive' || requestedCache.startsWith('/content/drive/')) {
+            // Colab's CLI brokers Drive credentials. An unavailable mount leaves the worker on its local cache.
+            await stage([cli, 'drivemount', '/content/drive', '--session', session]).catch(() => undefined);
+        }
+        for (const [index, path] of job.inputPaths.entries()) {
+            await stage([cli, 'upload', path, `/content/kk-input-${index}${extname(path)}`, '--session', session]);
+        }
         const result = await deps.runProcess(buildColabArgv(job, cacheDir), {
-            timeoutMs: job.timeoutMs + (deps.killGraceMs ?? LOCAL_KILL_GRACE_MS),
+            timeoutMs: remaining(),
         });
         if (result.code !== 0) {
             error = `colab run failed (exit ${result.code}): ${bounded(result.stderr) || 'no stderr'}`;
@@ -168,11 +197,12 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
             } else {
                 cache = worker.cache;
                 const downloaded: string[] = [];
-                for (const name of job.outputNames) {
+                for (const [index, name] of job.outputNames.entries()) {
                     const localPath = join(deps.outputDir, name);
+                    const remoteName = job.jobType === 'wan21-i2v' ? `clip-${index}.mp4` : 'presenter.mp4';
                     const download = await deps.runProcess(
-                        buildDownloadArgv(session, join(job.remoteDir, name), localPath),
-                        { timeoutMs: 120_000 },
+                        buildDownloadArgv(session, join(job.remoteDir, remoteName), localPath),
+                        { timeoutMs: Math.min(120_000, remaining()) },
                     );
                     if (download.code !== 0) {
                         error = `colab download of ${name} failed (exit ${download.code}): ${bounded(download.stderr) || 'no stderr'}`;
@@ -193,8 +223,17 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
         error = `colab run threw: ${thrown instanceof Error ? thrown.message : String(thrown)}`;
         status = /timeout/i.test(error) ? 'timeout' : 'failed';
     } finally {
-        // Teardown is unconditional: a kept session must never outlive the job (R1).
-        await deps.runProcess(buildStopArgv(session), { timeoutMs: 60_000 }).catch(() => undefined);
+        let stopError: string | undefined;
+        try {
+            const stopped = await deps.runProcess(buildStopArgv(session), { timeoutMs: 60_000 });
+            if (stopped.code !== 0) stopError = bounded(stopped.stderr) || `exit ${stopped.code}`;
+        } catch (thrown: unknown) {
+            stopError = thrown instanceof Error ? thrown.message : String(thrown);
+        }
+        if (stopError !== undefined) {
+            error = `${error === undefined ? '' : `${error}. `}colab could not stop session ${session}: ${stopError}`;
+            if (status === 'ok') status = 'failed';
+        }
     }
 
     const durationSec = Number(((now() - startedAt) / 1000).toFixed(2));

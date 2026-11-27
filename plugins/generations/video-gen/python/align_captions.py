@@ -3,7 +3,8 @@
 Runs `faster-whisper` locally (CPU int8) over the sliced teaser and writes a JSON track the Remotion
 shell consumes:
 
-    {"model": "small", "language": "zh", "words": [{"word": "...", "startSec": 0.12, "endSec": 0.36}]}
+    {"model": "small", "language": "zh", "words": [{"word": "...", "startSec": 0.12, "endSec": 0.36}],
+     "waveform": [0.15, 0.42]}
 
 An empty track or an unreadable input is a hard error: rendering a video with no captions would ship
 a silent-looking reel to three channels.
@@ -58,6 +59,8 @@ def load_audio(audio: Path) -> "np.ndarray":
                 "-y",
                 "-loglevel",
                 "error",
+                "-protocol_whitelist",
+                "file,pipe",
                 "-i",
                 str(audio),
                 "-ac",
@@ -75,11 +78,15 @@ def load_audio(audio: Path) -> "np.ndarray":
 
 def transcribe(audio: Path, model_name: str, language: str | None) -> dict:
     # Imported late so `--help` and argument errors never pay the model-stack import.
+    import numpy as np
     from faster_whisper import WhisperModel
 
+    samples = load_audio(audio)
+    peaks = [float(np.max(np.abs(window), initial=0)) for window in np.array_split(samples, 48)]
+    peak = max(peaks) or 1
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
     segments, info = model.transcribe(
-        load_audio(audio),
+        samples,
         language=language,
         word_timestamps=True,
         vad_filter=True,
@@ -88,13 +95,19 @@ def transcribe(audio: Path, model_name: str, language: str | None) -> dict:
     words: list[dict] = []
     for segment in segments:
         for word in segment.words or []:
-            text = (word.word or "").strip()
-            if not text:
+            text = word.word or ""
+            # Whisper's leading spaces separate English words while keeping CJK tokens contiguous.
+            if not text.strip():
                 continue
             words.append(
                 {"word": text, "startSec": round(float(word.start), 3), "endSec": round(float(word.end), 3)}
             )
-    return {"model": model_name, "language": getattr(info, "language", None) or "", "words": words}
+    return {
+        "model": model_name,
+        "language": getattr(info, "language", None) or "",
+        "words": words,
+        "waveform": [round(value / peak, 3) for value in peaks],
+    }
 
 
 def main(argv: list[str]) -> int:

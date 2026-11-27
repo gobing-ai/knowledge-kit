@@ -110,17 +110,25 @@ export async function resolveVideoInputs(
     const prepAudio = (await exists(fs, prepPath))
         ? nonEmptyString(metadataOf(await readJson(fs, prepPath))?.audioFile)
         : undefined;
-    const voiceAudio = (await exists(fs, voicePath))
-        ? nonEmptyString(metadataOf(await readJson(fs, voicePath))?.audioPath)
-        : undefined;
+    const voice = (await exists(fs, voicePath)) ? metadataOf(await readJson(fs, voicePath)) : null;
+    const voiceAudio = nonEmptyString(voice?.mp3Path) ?? nonEmptyString(voice?.audioPath);
     const audioRaw = prepAudio ?? voiceAudio;
     if (audioRaw === undefined) {
         throw new Error(
-            `video-gen: no episode audio recorded in ${prepPath} (metadata.audioFile) or ${voicePath} (metadata.audioPath)`,
+            `video-gen: no episode audio recorded in ${prepPath} (metadata.audioFile) or ${voicePath} (metadata.mp3Path/audioPath)`,
         );
     }
     const audioPath = resolveFrom(workDir, audioRaw);
-    if (!(await exists(fs, audioPath))) {
+    try {
+        const audio = await fs.stat(audioPath);
+        if (
+            audio === null ||
+            !audio.isFile() ||
+            (await Bun.file(audioPath).slice(0, 1).arrayBuffer()).byteLength === 0
+        ) {
+            throw new Error('no readable audio bytes');
+        }
+    } catch {
         throw new Error(`video-gen: episode audio ${audioPath} is missing or unreadable`);
     }
 

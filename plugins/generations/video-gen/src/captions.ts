@@ -21,6 +21,7 @@ export function resolveAlignCommand(pluginRoot: string): string[] {
         '--project',
         pluginRoot,
         '--locked',
+        '--offline',
         '--no-dev',
         'python',
         join(pluginRoot, 'python', 'align_captions.py'),
@@ -70,12 +71,13 @@ export async function transcribeWords(args: {
     runProcess: RunProcess;
     model?: string;
     language?: string;
-}): Promise<WordTimestamp[]> {
+}): Promise<{ words: WordTimestamp[]; waveform: number[] | undefined }> {
     const argv = [...resolveAlignCommand(args.pluginRoot), '--audio', args.audioPath, '--out', args.outputPath];
     const result = await args.runProcess(argv, {
         timeoutMs: ALIGN_TIMEOUT_MS,
         env: {
             ...process.env,
+            HF_HUB_OFFLINE: '1',
             KK_CAPTION_MODEL: args.model ?? DEFAULT_ALIGN_MODEL,
             ...(args.language === undefined ? {} : { KK_CAPTION_LANGUAGE: args.language }),
         },
@@ -93,5 +95,13 @@ export async function transcribeWords(args: {
             `video-gen: caption worker wrote no readable JSON at ${args.outputPath}: ${error instanceof Error ? error.message : String(error)}`,
         );
     }
-    return parseWordsPayload(payload);
+    const words = parseWordsPayload(payload);
+    const bars = asRecord(payload)?.waveform;
+    const waveform =
+        Array.isArray(bars) &&
+        bars.length > 0 &&
+        bars.every((bar): bar is number => typeof bar === 'number' && bar >= 0 && bar <= 1)
+            ? bars
+            : undefined;
+    return { words, waveform };
 }

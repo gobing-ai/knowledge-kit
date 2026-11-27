@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveVideoInputs } from '../src/inputs';
 import { runtimeRunProcess } from '../src/process';
@@ -82,6 +82,11 @@ describe('resolveVideoInputs', () => {
     it('falls back to the voice content audio when publish-prep carries none', async () => {
         const run = makeFixtureRun({ withPrepContent: false, audioInVoiceContent: true });
         expect((await resolveVideoInputs(run.workDir, run.runDate)).audioPath).toBe(run.audioPath);
+        writeFileSync(
+            join(run.workDir, '30-audio', `${run.runDate}_11_generate_content.json`),
+            JSON.stringify({ metadata: { mp3Path: run.audioPath } }),
+        );
+        expect((await resolveVideoInputs(run.workDir, run.runDate)).audioPath).toBe(run.audioPath);
     });
 
     it('fails closed on missing audio, a missing audio file, a missing cover and a bad plan', async () => {
@@ -96,6 +101,21 @@ describe('resolveVideoInputs', () => {
         await expect(resolveVideoInputs(unreadable.workDir, unreadable.runDate)).rejects.toThrow(
             /missing or unreadable/,
         );
+        writeFileSync(
+            join(unreadable.workDir, '31-publish', `${unreadable.runDate}_13_publish-prep_content.json`),
+            JSON.stringify({ metadata: { audioFile: unreadable.workDir } }),
+        );
+        await expect(resolveVideoInputs(unreadable.workDir, unreadable.runDate)).rejects.toThrow(
+            /missing or unreadable/,
+        );
+
+        const locked = makeFixtureRun();
+        chmodSync(locked.audioPath, 0o000);
+        try {
+            await expect(resolveVideoInputs(locked.workDir, locked.runDate)).rejects.toThrow(/missing or unreadable/);
+        } finally {
+            chmodSync(locked.audioPath, 0o600);
+        }
 
         const noCover = makeFixtureRun({ withCover: false });
         await expect(resolveVideoInputs(noCover.workDir, noCover.runDate)).rejects.toThrow(/cover artwork not found/);

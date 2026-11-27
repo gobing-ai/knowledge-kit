@@ -105,13 +105,25 @@ plugins/generations/video-gen/
    - `hybrid-pip` → `editorial` slides for background + `musetalk` host clip for corner PiP bubble (fail-closed if avatar render fails).
 5. **Remotion render (`render.ts`):** Renders `1080×1920`, `30fps`, `h264`/`aac` MP4 with `SafeZoneFrame` keeping bottom 25% (480px) and right 15% (162px) clear of platform UI buttons/captions.
 
+Provision the local runtime once from the `video-gen` plugin directory before scheduling its first render:
+
+```sh
+uv sync --locked --no-dev
+uv run --locked --no-dev python -c "from faster_whisper.utils import download_model; download_model('small')"
+bun -e 'import { ensureBrowser } from "@remotion/renderer"; await ensureBrowser();'
+```
+
+Generation uses the provisioned artifacts offline. A missing browser or model fails the video step with a provisioning error.
+
 ## 4. Colab GPU batch runner (`colab-runner.ts`)
 
-Wraps `google-colab-cli` (`colab new` / `upload` / `exec` / `download` / `stop` or `colab run --gpu <T4|L4|A100>`):
+Uses `colab new --gpu <T4|L4|A100>`, uploads source media, executes the worker with VM-local paths, then downloads the clips and stops the session. The installed CLI's `colab run` starts execution on a fresh VM before the input media can be uploaded.
 
-- **Google Drive model-weight caching (R6):** Passes `KK_COLAB_CACHE_DIR` (default `/content/drive/MyDrive/kk-video-cache`) so worker scripts mount Drive and export `HF_HOME` and model checkpoint directories there. Cold downloads happen once; daily runs reuse cached weights.
-- **Bounded timeout & teardown:** Every job carries a hard `timeoutMs` (default 10 min for Wan2.1/MuseTalk, 15 min for EchoMimicV2). On completion, error, or timeout, `finally` invokes `colab stop -s <session>` to guarantee zero idle GPU burn.
+- **Google Drive model-weight caching (R6):** For the default Drive path, the runner attempts a bounded `colab drivemount` before executing the worker. Workers use a writable `KK_COLAB_CACHE_DIR/hf` and report a VM-local cache when Drive is unavailable.
+- **Bounded timeout & teardown:** Session creation, transfer, and execution share the job deadline (default 10 min for Wan2.1/MuseTalk, 15 min for EchoMimicV2, plus 60 seconds of grace). The runner gives `colab stop -s <session>` a separate timeout and reports a cleanup failure with the session name.
 - **CCU budget ledger:** Appends `{ timestamp, gpu, durationSec, estimatedCcu, jobType, status }` to `<works_dir>/colab-ccu-ledger.jsonl` (using conservative hourly burn factors: T4 ≈ 2 CCU/hr, L4 ≈ 3 CCU/hr, A100 ≈ 7 CCU/hr). Before launching a job, sums the rolling 30-day total against `maxMonthlyCcu` (default `180`, leaving headroom under Google AI Pro's ~200 CCU/month).
+
+Avatar workers expect the upstream checkouts and their checkpoints under `$HF_HOME/musetalk-repo` and `$HF_HOME/echomimic-v2-repo`, with each model's dependencies available in the worker environment. MuseTalk uses its image-and-audio inference CLI. EchoMimicV2 uses accelerated inference with the trusted upstream pose sequence repeated forward and backward to cover the teaser.
 
 ## 5. Three-channel video publishing
 

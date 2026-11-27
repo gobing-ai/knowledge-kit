@@ -150,7 +150,7 @@ describe('wan21 success path through main()', () => {
         const run = makeFixtureRun();
         const clips: string[] = [];
         const h = harness((argv) => {
-            if (argv[1] === 'run') {
+            if (argv[1] === 'exec') {
                 return {
                     code: 0,
                     stdout: `${'KK_COLAB_RESULT '}{"cache":"drive","outputs":["/content/kk-video/clip-0.mp4"]}`,

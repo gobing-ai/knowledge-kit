@@ -84,14 +84,12 @@ export async function renderReel(
 }
 
 /**
- * Map a renderer failure to an operator-actionable message. Remotion downloads its Chrome Headless
- * Shell on first use, so a fresh unattended install fails inside the renderer with a browser error;
- * naming the one-time install step turns a mystery cron failure into an instruction.
+ * Point a browser-cache failure at the one-time local provisioning command.
  */
 export function describeRenderFailure(error: unknown): string {
     const message = error instanceof Error ? error.message : String(error);
     if (/chrome|chromium|browser/i.test(message)) {
-        return `Remotion's headless browser is not installed on this machine — run \`npx remotion browser ensure\` once, then re-run (${message})`;
+        return `Remotion browser setup failed. From the video-gen directory, run: bun -e 'import { ensureBrowser } from "@remotion/renderer"; await ensureBrowser();' (${message})`;
     }
     return message;
 }

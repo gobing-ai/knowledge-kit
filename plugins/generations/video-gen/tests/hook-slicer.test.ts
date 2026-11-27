@@ -36,6 +36,7 @@ describe('ffprobe duration', () => {
         expect(parseProbeDuration('52.512000\n')).toBeCloseTo(52.512);
         expect(buildProbeArgv('/tmp/a.wav')[0]).toBe('ffprobe');
         expect(buildProbeArgv('/tmp/a.wav')).toContain('/tmp/a.wav');
+        expect(buildProbeArgv('/tmp/a.wav')).toContain('file,pipe');
     });
 
     it('rejects an unusable duration instead of defaulting', () => {
@@ -59,6 +60,7 @@ describe('teaser slice', () => {
     it('cuts the window with fades and 44.1kHz stereo PCM', () => {
         const argv = buildSliceArgv('/tmp/a.wav', '/tmp/hook.wav', { startSec: 5, endSec: 55 });
         expect(argv[0]).toBe('ffmpeg');
+        expect(argv[argv.indexOf('-protocol_whitelist') + 1]).toBe('file,pipe');
         expect(argv[argv.indexOf('-ss') + 1]).toBe('5');
         expect(argv[argv.indexOf('-t') + 1]).toBe('50');
         expect(argv[argv.indexOf('-ar') + 1]).toBe('44100');

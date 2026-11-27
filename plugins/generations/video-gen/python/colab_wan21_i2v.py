@@ -1,6 +1,6 @@
 """Wan2.1 I2V motion-loop worker (Colab GPU).
 
-Runs on the rented VM under `colab run`. It turns each input still into a 3-5s 9:16 vertical
+Runs on the rented VM. It turns each input still into a 3-5s 9:16 vertical
 motion loop with `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`, writes the MP4s into `--out-dir`, and
 prints one machine-readable line the local runner parses:
 
@@ -25,12 +25,15 @@ from pathlib import Path
 RESULT_MARKER = "KK_COLAB_RESULT "
 DEFAULT_MODEL = "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
 CLIP_SECONDS = 4
-ASPECT = (1080, 1920)
+MODEL_WIDTH = 432
 
 
 def choose_cache() -> str:
     """Point HF_HOME at the Drive cache when it is writable; report which one we got."""
     cache_root = os.environ.get("KK_COLAB_CACHE_DIR", "").strip()
+    drive = Path("/content/drive")
+    if cache_root and Path(cache_root).is_relative_to(drive) and not drive.is_mount():
+        return "local"
     if cache_root:
         hf_home = Path(cache_root) / "hf"
         try:
@@ -55,21 +58,31 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def render_clip(image: Path, out_path: Path, model_id: str, seconds: int, steps: int) -> None:
-    """One image → one vertical motion loop, re-encoded to H.264/AAC-free MP4."""
+def load_pipeline(model_id: str):
     import torch
-    from diffusers import DiffusionPipeline
+    from diffusers import AutoencoderKLWan, WanImageToVideoPipeline
+    from transformers import CLIPVisionModel
+
+    image_encoder = CLIPVisionModel.from_pretrained(model_id, subfolder="image_encoder", torch_dtype=torch.float32)
+    vae = AutoencoderKLWan.from_pretrained(model_id, subfolder="vae", torch_dtype=torch.float32)
+    pipe = WanImageToVideoPipeline.from_pretrained(
+        model_id, vae=vae, image_encoder=image_encoder, torch_dtype=torch.bfloat16
+    )
+    pipe.enable_model_cpu_offload()
+    return pipe
+
+
+def render_clip(pipe, image: Path, out_path: Path, seconds: int, steps: int) -> None:
+    """One image → one vertical motion loop."""
     from diffusers.utils import export_to_video, load_image
+    from PIL import ImageOps
 
-    pipe = DiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.bfloat16)
-    pipe.to("cuda")
-    if hasattr(pipe, "enable_model_cpu_offload"):
-        pipe.enable_model_cpu_offload()
-
-    width, height = ASPECT
-    frames = max(16, seconds * 8)  # Wan2.1 I2V works in latent chunks; 8 fps keeps the loop short.
+    stride = pipe.vae_scale_factor_spatial * pipe.transformer.config.patch_size[1]
+    scale = MODEL_WIDTH // (9 * stride) * stride
+    width, height = 9 * scale, 16 * scale
+    frames = seconds * 8 + 1
     result = pipe(
-        image=load_image(str(image)),
+        image=ImageOps.fit(load_image(str(image)), (width, height)),
         prompt="subtle cinematic camera push, crisp product lighting, vertical short-form look",
         num_inference_steps=steps,
         num_frames=frames,
@@ -98,13 +111,14 @@ def main(argv: list[str]) -> int:
         return 1
 
     cache = choose_cache()
+    pipe = load_pipeline(args.model)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[str] = []
     for index, image in enumerate(images):
         out_path = out_dir / f"clip-{index}.mp4"
         try:
-            render_clip(image, out_path, args.model, args.seconds, args.steps)
+            render_clip(pipe, image, out_path, args.seconds, args.steps)
         except Exception as error:  # noqa: BLE001 - the local runner turns this into a fallback
             print(f"wan21: rendering {image.name} failed: {error}", file=sys.stderr)
             return 1
@@ -115,4 +129,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    remote_args = os.environ.get("KK_COLAB_ARGS")
+    raise SystemExit(main(json.loads(remote_args) if remote_args is not None else sys.argv[1:]))

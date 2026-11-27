@@ -15,16 +15,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 RESULT_MARKER = "KK_COLAB_RESULT "
-DEFAULT_REPO = "TMElyralab/MuseTalk"
 
 
 def choose_cache() -> str:
     """Point HF_HOME at the Drive cache when writable; report which one we landed on."""
     cache_root = os.environ.get("KK_COLAB_CACHE_DIR", "").strip()
+    drive = Path("/content/drive")
+    if cache_root and Path(cache_root).is_relative_to(drive) and not drive.is_mount():
+        return "local"
     if cache_root:
         hf_home = Path(cache_root) / "hf"
         try:
@@ -44,8 +48,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--portrait", required=True, help="host portrait image")
     parser.add_argument("--audio", required=True, help="spoken audio to lip-sync to")
     parser.add_argument("--out", default="/content/kk-video/presenter.mp4")
-    parser.add_argument("--repo", default=os.environ.get("KK_MUSETALK_REPO", DEFAULT_REPO))
+    parser.add_argument("--repo", default=os.environ.get("KK_MUSETALK_REPO"), help="prepared MuseTalk checkout")
     return parser.parse_args(argv)
+
+
+def render_presenter(repo: Path, portrait: Path, audio: Path, out_path: Path) -> None:
+    if not (repo / "scripts" / "inference.py").is_file():
+        raise FileNotFoundError(f"prepared MuseTalk checkout not found at {repo} (set KK_MUSETALK_REPO)")
+    with tempfile.TemporaryDirectory(prefix="kk-musetalk-", dir=out_path.parent) as work_dir:
+        scratch = Path(work_dir)
+        config = scratch / "inference.json"
+        config.write_text(json.dumps({"presenter": {
+            "video_path": str(portrait), "audio_path": str(audio), "result_name": out_path.name,
+        }}), encoding="utf-8")
+        result_dir = scratch / "results"
+        subprocess.run([
+            sys.executable, "-m", "scripts.inference",
+            "--inference_config", str(config),
+            "--result_dir", str(result_dir),
+            "--unet_model_path", "models/musetalkV15/unet.pth",
+            "--unet_config", "models/musetalkV15/musetalk.json",
+            "--version", "v15", "--use_float16",
+        ], cwd=repo, check=True)
+        (result_dir / "v15" / out_path.name).replace(out_path)
 
 
 def main(argv: list[str]) -> int:
@@ -64,14 +89,11 @@ def main(argv: list[str]) -> int:
         return 1
 
     cache = choose_cache()
-    out_path = Path(args.out)
+    out_path = Path(args.out).resolve()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        # MuseTalk ships a realtime inference entry point; the repo is cloned/cached under HF_HOME.
-        sys.path.insert(0, str(Path(os.environ.get("HF_HOME", "/root")) / "musetalk-repo"))
-        from scripts.realtime_inference import run_lip_sync  # type: ignore[import-not-found]
-
-        run_lip_sync(portrait_path=str(portrait), audio_path=str(audio), video_out=str(out_path))
+        repo = Path(args.repo) if args.repo else Path(os.environ.get("HF_HOME", "/root")) / "musetalk-repo"
+        render_presenter(repo, portrait.resolve(), audio.resolve(), out_path)
     except Exception as error:  # noqa: BLE001 - the runner turns this into a hard failure
         print(f"musetalk: synthesis failed: {error}", file=sys.stderr)
         return 1
@@ -84,4 +106,5 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    remote_args = os.environ.get("KK_COLAB_ARGS")
+    raise SystemExit(main(json.loads(remote_args) if remote_args is not None else sys.argv[1:]))

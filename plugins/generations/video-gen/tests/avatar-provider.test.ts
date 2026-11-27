@@ -58,7 +58,7 @@ function harness(colab: (argv: string[]) => { code: number; stdout: string; stde
 }
 
 const colabOk = (argv: string[]) => {
-    if (argv[1] === 'run')
+    if (argv[1] === 'exec')
         return { code: 0, stdout: `${RESULT}{"cache":"drive","outputs":["/content/kk-video/p.mp4"]}`, stderr: '' };
     if (argv[1] === 'download') {
         writeFileSync(argv[3] as string, 'PRESENTER');
@@ -112,7 +112,7 @@ describe('avatar request ladder (R4/R5)', () => {
         const h = harness(colabOk);
         const first = argvFor(fixtureRequest(run, { visualMode: 'avatar', hostPortraitPath: missingPortrait }));
         expect(await main(first.argv, { runProcess: h.runProcess, render: h.render, now: () => NOW })).toBe(1);
-        expect(colabCalls(h.calls)).toHaveLength(0);
+        expect(h.calls).toHaveLength(0);
 
         // T4 + echomimic-v2: the provider refuses before the runner is called.
         const provider = createEchomimicV2Provider({
@@ -123,6 +123,7 @@ describe('avatar request ladder (R4/R5)', () => {
             runDate: '20261126',
             script: '/p/python/colab_echomimic_v2.py',
             remoteDir: '/content/kk-video',
+            audioPath: '/local/hook.wav',
             portraitPath: portrait(),
             gpu: 'T4',
         });
@@ -145,10 +146,10 @@ describe('avatar render (AC1)', () => {
         expect(h.compositions).toEqual(['AvatarReel']);
 
         // MuseTalk defaults: T4 and a 600s CLI timeout.
-        const runCall = colabCalls(h.calls).find((call) => call[1] === 'run');
-        expect(runCall?.[runCall.indexOf('--gpu') + 1]).toBe('T4');
+        const runCall = colabCalls(h.calls).find((call) => call[1] === 'exec');
+        expect(colabCalls(h.calls).find((call) => call[1] === 'new')).toContain('T4');
         expect(runCall?.[runCall.indexOf('--timeout') + 1]).toBe('600');
-        expect(runCall?.join(' ')).toContain('KK_HOST_PORTRAIT=');
+        expect(runCall?.join(' ')).toContain('"--audio","/content/kk-input-1.wav"');
         expect(existsSync(join(run.workDir, OUTPUT_DIR_NAME, `${run.runDate}_video.mp4`))).toBe(true);
     });
 
@@ -178,7 +179,7 @@ describe('avatar render (AC1)', () => {
     it('a missing presenter clip on disk is a failure, not a fallback', async () => {
         const run = makeFixtureRun();
         const h = harness((argv) => {
-            if (argv[1] === 'run') {
+            if (argv[1] === 'exec') {
                 return {
                     code: 0,
                     stdout: `${RESULT}{"cache":"drive","outputs":["/content/kk-video/p.mp4"]}`,
@@ -207,6 +208,7 @@ describe('provider seams (R2)', () => {
                 runDate: '20261126',
                 script: '/p/python/worker.py',
                 remoteDir: '/content/kk-video',
+                audioPath: '/local/hook.wav',
                 portraitPath: '/tmp/host.png',
                 exists: async () => true,
             });

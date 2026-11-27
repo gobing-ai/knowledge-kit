@@ -1,14 +1,15 @@
-import { useCurrentFrame } from 'remotion';
+import { useCurrentFrame, useVideoConfig } from 'remotion';
 import type { WaveformBar as WaveformBarModel } from '../props';
 
 /** Deterministic bar strip: heights come from the props, the frame only shifts which bar leads. */
 export const WaveformBar = ({ waveform }: { waveform: WaveformBarModel[] }) => {
     const frame = useCurrentFrame();
-    const offset = frame % Math.max(waveform.length, 1);
+    const { durationInFrames } = useVideoConfig();
+    const active = Math.floor((frame * waveform.length) / durationInFrames);
     return (
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 96, justifyContent: 'center' }}>
             {waveform.map((bar, position) => {
-                const lead = (position + offset) % waveform.length === 0;
+                const lead = position === active;
                 return (
                     <div
                         key={bar.id}

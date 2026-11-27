@@ -29,6 +29,7 @@ function job(overrides: Partial<ColabJob> = {}): ColabJob {
         jobType: 'wan21-i2v',
         gpu: 'A100',
         script: '/plugins/video-gen/python/colab_wan21_i2v.py',
+        inputPaths: ['/local/cover.png'],
         outputNames: ['clip-0.mp4'],
         remoteDir: '/content/kk-video',
         runDate: '20261126',
@@ -42,7 +43,7 @@ function scratch(): { runProcess: RunProcess; calls: { argv: string[]; timeoutMs
     const calls: { argv: string[]; timeoutMs?: number }[] = [];
     const runProcess: RunProcess = async (argv, options) => {
         calls.push({ argv, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
-        if (argv[1] === 'run') {
+        if (argv[1] === 'exec') {
             return {
                 code: 0,
                 stdout: `booting\n${WORKER_RESULT_MARKER}{"cache":"drive","outputs":["/content/kk-video/clip-0.mp4"]}\n`,
@@ -67,13 +68,11 @@ const deps = (harness: ReturnType<typeof scratch>, now?: () => number) => ({
 });
 
 describe('frozen argv (step-0 spike)', () => {
-    it('runs the worker with --gpu/--session/--keep/--timeout and the cache env', () => {
+    it('runs the worker in the selected session with a timeout and cache env', () => {
         const argv = buildColabArgv(job());
-        expect(argv.slice(0, 2)).toEqual([process.env.KK_COLAB_BIN ?? 'colab', 'run']);
-        expect(argv[2]).toBe('/plugins/video-gen/python/colab_wan21_i2v.py');
-        expect(argv[argv.indexOf('--gpu') + 1]).toBe('A100');
+        expect(argv.slice(0, 2)).toEqual([process.env.KK_COLAB_BIN ?? 'colab', 'exec']);
+        expect(argv[argv.indexOf('--file') + 1]).toBe('/plugins/video-gen/python/colab_wan21_i2v.py');
         expect(argv[argv.indexOf('--session') + 1]).toBe('kk-video-20261126-wan21-i2v');
-        expect(argv).toContain('--keep');
         // A 600 000 ms job is 600 s; the CLI default (30 s) must never be inherited.
         expect(argv[argv.indexOf('--timeout') + 1]).toBe('600');
         expect(argv.join(' ')).toContain(`--env KK_COLAB_CACHE_DIR=${DEFAULT_COLAB_CACHE_DIR}`);
@@ -120,32 +119,74 @@ describe('runColabJob', () => {
         expect(result.estimatedCcu).toBe(0);
 
         const programs = harness.calls.map((call) => call.argv[1]);
-        expect(programs).toEqual(['run', 'download', 'stop']);
+        expect(programs).toEqual(['new', 'drivemount', 'upload', 'exec', 'download', 'stop']);
         // The local kill allowance rides the seam's deadline (R1).
-        expect(harness.calls[0]?.timeoutMs).toBe(600_000 + LOCAL_KILL_GRACE_MS);
+        expect(harness.calls[3]?.timeoutMs).toBe(600_000 + LOCAL_KILL_GRACE_MS);
 
         const ledger = await fs.readFile(join(harness.outputs(), 'works', 'colab-ccu-ledger.jsonl'));
         expect(JSON.parse(ledger.trim())).toMatchObject({ gpu: 'A100', jobType: 'wan21-i2v', status: 'ok' });
+    });
+
+    it('uploads input media before executing the worker with VM-local arguments', async () => {
+        const harness = scratch();
+        const input = '/local/news cover.png';
+        const result = await runColabJob(job({ inputPaths: [input] }), deps(harness));
+        expect(result.ok).toBe(true);
+        const [create, mount, upload, execute, download, stop] = harness.calls.map((call) => call.argv);
+        expect(create?.slice(1)).toEqual(['new', '--session', sessionName(job()), '--gpu', 'A100']);
+        expect(mount?.slice(1)).toEqual(['drivemount', '/content/drive', '--session', sessionName(job())]);
+        expect(upload?.slice(1, 4)).toEqual(['upload', input, '/content/kk-input-0.png']);
+        expect(execute).toContain(
+            'KK_COLAB_ARGS=["--images","/content/kk-input-0.png","--out-dir","/content/kk-video"]',
+        );
+        expect(download?.[2]).toBe('/content/kk-video/clip-0.mp4');
+        expect(stop?.[1]).toBe('stop');
     });
 
     it('stops the session after a failed run and reports the cause', async () => {
         const harness = scratch();
         const runProcess: RunProcess = async (argv, options) => {
             harness.calls.push({ argv, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
-            if (argv[1] === 'run') return { code: 1, stdout: '', stderr: 'CUDA out of memory' };
+            if (argv[1] === 'exec') return { code: 1, stdout: '', stderr: 'CUDA out of memory' };
             return { code: 0, stdout: '', stderr: '' };
         };
         const result = await runColabJob(job(), { ...deps(harness), runProcess });
         expect(result.ok).toBe(false);
         expect(result.error).toContain('CUDA out of memory');
-        expect(harness.calls.map((call) => call.argv[1])).toEqual(['run', 'stop']);
+        expect(harness.calls.map((call) => call.argv[1])).toEqual(['new', 'drivemount', 'upload', 'exec', 'stop']);
+    });
+
+    it('stops a session when input upload fails and never executes the worker', async () => {
+        const harness = scratch();
+        const runProcess: RunProcess = async (argv, options) => {
+            if (argv[1] === 'upload') {
+                harness.calls.push({ argv });
+                return { code: 1, stdout: '', stderr: 'transfer failed' };
+            }
+            return harness.runProcess(argv, options);
+        };
+        const result = await runColabJob(job(), { ...deps(harness), runProcess });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('transfer failed');
+        expect(harness.calls.map((call) => call.argv[1])).toEqual(['new', 'drivemount', 'upload', 'stop']);
+    });
+
+    it('reports a teardown refusal even when inference and download succeed', async () => {
+        const harness = scratch();
+        const runProcess: RunProcess = async (argv, options) =>
+            argv[1] === 'stop'
+                ? { code: 1, stdout: '', stderr: 'session stop refused' }
+                : harness.runProcess(argv, options);
+        const result = await runColabJob(job(), { ...deps(harness), runProcess });
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('session stop refused');
     });
 
     it('stops the session when the run times out, and records the timeout status', async () => {
         const harness = scratch();
         const runProcess: RunProcess = async (argv, options) => {
             harness.calls.push({ argv, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
-            if (argv[1] === 'run') throw new Error('timeout: process group killed after 660000ms');
+            if (argv[1] === 'exec') throw new Error('timeout: process group killed after 660000ms');
             return { code: 0, stdout: '', stderr: '' };
         };
         const result = await runColabJob(job(), { ...deps(harness), runProcess });
@@ -191,7 +232,7 @@ describe('runColabJob', () => {
         const broken = scratch();
         const brokenRun: RunProcess = async (argv, options) => {
             broken.calls.push({ argv, ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
-            if (argv[1] === 'run') {
+            if (argv[1] === 'exec') {
                 return { code: 0, stdout: `${WORKER_RESULT_MARKER}{"cache":"drive"}`, stderr: '' };
             }
             if (argv[1] === 'download') return { code: 1, stdout: '', stderr: 'no such file' };

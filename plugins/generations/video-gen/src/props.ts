@@ -48,6 +48,7 @@ export interface EditorialReelProps {
 export function buildEditorialProps(args: {
     layer: VisualLayer;
     captions: CaptionChunk[];
+    waveform?: number[] | undefined;
     headline: string;
     audioName: string;
     durationSec: number;
@@ -74,7 +75,10 @@ export function buildEditorialProps(args: {
         cta: PODCAST_CTA,
         audioSrc: args.audioName,
         durationSec: args.durationSec,
-        waveform: buildWaveform(args.captions).map((height, position) => ({ id: `bar-${position}`, height })),
+        waveform: (args.waveform ?? buildWaveform(args.captions)).map((height, position) => ({
+            id: `bar-${position}`,
+            height,
+        })),
         width: args.width,
         height: args.height,
         fps: args.fps,
@@ -111,6 +115,7 @@ export interface HybridPipReelProps extends EditorialReelProps {
 export function buildAvatarProps(args: {
     layer: VisualLayer;
     captions: CaptionChunk[];
+    waveform?: number[] | undefined;
     headline: string;
     audioName: string;
     durationSec: number;
@@ -127,7 +132,10 @@ export function buildAvatarProps(args: {
         cta: PODCAST_CTA,
         audioSrc: args.audioName,
         durationSec: args.durationSec,
-        waveform: buildWaveform(args.captions).map((height, position) => ({ id: `bar-${position}`, height })),
+        waveform: (args.waveform ?? buildWaveform(args.captions)).map((height, position) => ({
+            id: `bar-${position}`,
+            height,
+        })),
         width: args.width,
         height: args.height,
         fps: args.fps,
@@ -139,6 +147,7 @@ export function buildHybridPipProps(args: {
     layer: VisualLayer;
     presenterLayer: VisualLayer;
     captions: CaptionChunk[];
+    waveform?: number[] | undefined;
     headline: string;
     audioName: string;
     durationSec: number;
@@ -149,6 +158,7 @@ export function buildHybridPipProps(args: {
     const editorial = buildEditorialProps({
         layer: args.layer,
         captions: args.captions,
+        waveform: args.waveform,
         headline: args.headline,
         audioName: args.audioName,
         durationSec: args.durationSec,

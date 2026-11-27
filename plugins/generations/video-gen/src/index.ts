@@ -106,6 +106,21 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
         }
         const outPath = resolveOutputOutPath(values);
         const request = parseVideoGenRequestInput(JSON.parse(await fs.readFile(values.in)) as unknown);
+        const portraitPath = request.visualMode === 'editorial' ? undefined : request.hostPortraitPath;
+        if (portraitPath !== undefined) {
+            try {
+                const portrait = await fs.stat(portraitPath);
+                if (
+                    portrait === null ||
+                    !portrait.isFile() ||
+                    (await Bun.file(portraitPath).slice(0, 1).arrayBuffer()).byteLength === 0
+                ) {
+                    throw new Error('no readable portrait bytes');
+                }
+            } catch {
+                throw new Error(`video-gen: host portrait ${portraitPath} is missing or unreadable`);
+            }
+        }
         const inputs = await resolveVideoInputs(request.workDir, request.runDate, fs);
 
         const audioDurationSec = await probeAudioDuration(inputs.audioPath, runProcess);
@@ -119,7 +134,7 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
         const videoPath = join(outputDir, `${request.runDate}_video.mp4`);
 
         await sliceHookAudio({ audioPath: inputs.audioPath, outputPath: hookPath, window, runProcess });
-        const words = await transcribeWords({
+        const { words, waveform } = await transcribeWords({
             pluginRoot,
             audioPath: hookPath,
             outputPath: wordsPath,
@@ -141,14 +156,9 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
         };
         const runJob = (job: ColabJob) => runColabJob(job, colabDeps);
 
-        if (request.visualMode !== 'editorial') {
+        if (portraitPath !== undefined) {
             // 0452: avatar modes have NO fallback — a missing presenter is a broken video, so a
             // failure exits nonzero (the daily node's `onError: continue` keeps the episode alive).
-            const portraitPath = request.hostPortraitPath as string;
-            const portrait = await fs.stat(portraitPath);
-            if (portrait === null || !portrait.isFile() || portrait.size <= 0) {
-                throw new Error(`video-gen: host portrait ${portraitPath} is missing or unreadable`);
-            }
             const avatar = resolveAvatarProvider(request.provider ?? 'musetalk', {
                 runJob,
                 outputDir,
@@ -160,6 +170,7 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
                 ),
                 remoteDir: '/content/kk-video',
                 portraitPath,
+                audioPath: hookPath,
                 exists: async (path: string) => (await fs.exists(path)) === true,
                 ...(request.colab?.gpu === undefined ? {} : { gpu: request.colab.gpu }),
                 ...(request.colab?.timeoutMs === undefined ? {} : { timeoutMs: request.colab.timeoutMs }),
@@ -181,6 +192,7 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
             });
             const shared = {
                 captions,
+                waveform,
                 headline,
                 audioName: stagedEditorial.audioName,
                 durationSec: window.durationSec,
@@ -258,6 +270,7 @@ export async function main(argv: string[] = process.argv.slice(2), deps?: Partia
                     ? { kind: 'stills', images: staged.imageNames }
                     : { kind: 'clips', clips: staged.imageNames },
             captions,
+            waveform,
             headline: inputs.plan.headline ?? inputs.plan.items[0]?.lead ?? request.runDate,
             audioName: staged.audioName,
             durationSec: window.durationSec,

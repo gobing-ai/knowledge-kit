@@ -89,6 +89,7 @@ export function createWan21Provider(options: Wan21ProviderOptions): VisualProvid
                 jobType: 'wan21-i2v',
                 gpu,
                 script: options.script,
+                inputPaths: ctx.images,
                 outputNames,
                 remoteDir: options.remoteDir,
                 runDate: options.runDate,
@@ -171,6 +172,7 @@ export async function prepareVisualLayer(args: PrepareLayerArgs): Promise<Prepar
 export interface AvatarProviderOptions extends Wan21ProviderOptions {
     /** Absolute path of the operator's (or consented) portrait. */
     portraitPath: string;
+    audioPath: string;
 }
 
 /** GPU defaults and deadlines from design §4 / 0452 refine. */
@@ -198,11 +200,12 @@ function createAvatarProvider(jobType: 'musetalk' | 'echomimic-v2', options: Ava
                 jobType,
                 gpu,
                 script: options.script,
+                inputPaths: [options.portraitPath, options.audioPath],
                 outputNames: [outputName],
                 remoteDir: options.remoteDir,
                 runDate: options.runDate,
                 timeoutMs,
-                env: { ...(options.env ?? {}), KK_HOST_PORTRAIT: options.portraitPath },
+                env: options.env ?? {},
             });
             if (!result.ok) throw new Error(result.error ?? `${jobType} job failed`);
             const [clip] = result.outputs;

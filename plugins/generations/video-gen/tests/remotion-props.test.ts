@@ -218,11 +218,9 @@ describe('editorial props', () => {
 
 describe('render failure mapping', () => {
     it('names the one-time browser install for a cold-start renderer failure', () => {
-        expect(describeRenderFailure(new Error('Could not find Chrome (ver. 158)'))).toContain(
-            'npx remotion browser ensure',
-        );
+        expect(describeRenderFailure(new Error('Could not find Chrome (ver. 158)'))).toContain('await ensureBrowser()');
         expect(describeRenderFailure(new Error('Unable to download the Chrome Headless Shell'))).toContain(
-            'npx remotion browser ensure',
+            'await ensureBrowser()',
         );
     });
 

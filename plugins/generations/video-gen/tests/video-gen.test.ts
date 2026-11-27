@@ -15,6 +15,7 @@ import { docListInput, fixtureRequest, makeFixtureRun } from './fixtures';
  */
 
 const WORDS = {
+    waveform: [0.2, 0.7, 0.1],
     words: [
         { word: 'OpenAI', startSec: 0, endSec: 0.4 },
         { word: '发布', startSec: 0.4, endSec: 0.9 },
@@ -100,6 +101,7 @@ describe('video-gen happy path', () => {
         const renderArgs = h.renderCalls[0];
         expect(renderArgs?.props.images).toEqual(['still-0.png', 'still-1.png']);
         expect(renderArgs?.props.durationSec).toBe(52.5);
+        expect(renderArgs?.props.waveform.map((bar) => bar.height)).toEqual(WORDS.waveform);
 
         const outputDir = join(run.workDir, OUTPUT_DIR_NAME);
         for (const name of ['_hook.wav', '_words.json', '_video.mp4']) {

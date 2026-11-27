@@ -26,7 +26,15 @@ const WORDS = {
 describe('align worker command', () => {
     it('runs the locked uv project worker', () => {
         const argv = resolveAlignCommand('/plugins/video-gen');
-        expect(argv.slice(0, 6)).toEqual(['uv', 'run', '--project', '/plugins/video-gen', '--locked', '--no-dev']);
+        expect(argv.slice(0, 7)).toEqual([
+            'uv',
+            'run',
+            '--project',
+            '/plugins/video-gen',
+            '--locked',
+            '--offline',
+            '--no-dev',
+        ]);
         expect(argv[argv.length - 1]).toBe('/plugins/video-gen/python/align_captions.py');
     });
 });
@@ -56,10 +64,10 @@ describe('transcribeWords', () => {
         const seen: { argv: string[]; env?: Record<string, string | undefined>; timeoutMs?: number }[] = [];
         const runProcess: RunProcess = async (argv, options) => {
             seen.push({ argv, env: options?.env, timeoutMs: options?.timeoutMs });
-            writeFileSync(outputPath, JSON.stringify(WORDS));
+            writeFileSync(outputPath, JSON.stringify({ ...WORDS, waveform: [0.2, 0.7, 0.1] }));
             return { code: 0, stdout: '', stderr: '' };
         };
-        const words = await transcribeWords({
+        const track = await transcribeWords({
             pluginRoot: '/plugins/video-gen',
             audioPath,
             outputPath,
@@ -67,7 +75,8 @@ describe('transcribeWords', () => {
             model: 'tiny',
             language: 'zh',
         });
-        expect(words.map((word) => word.word)).toEqual(['OpenAI', '发布']);
+        expect(track.words.map((word) => word.word)).toEqual(['OpenAI', '发布']);
+        expect(track.waveform).toEqual([0.2, 0.7, 0.1]);
         expect(seen[0]?.env?.KK_CAPTION_MODEL).toBe('tiny');
         expect(seen[0]?.env?.KK_CAPTION_LANGUAGE).toBe('zh');
         expect(seen[0]?.timeoutMs).toBe(ALIGN_TIMEOUT_MS);
