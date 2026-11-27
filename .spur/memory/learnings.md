@@ -2900,3 +2900,21 @@ Artifact written: `/Users/robin/xprojects/knowledge-kit-run-0427-427a/.spur/run/
 - **Corpus writes stay in the worktree.** Task/feature/doc updates land on the branch; the invoking
   tree shows pre-run statuses until the landing merge (expected, not a bug).
 
+
+## 2026-11-27 — merging a worktree batch (post-merge lessons)
+
+- **A worktree batch's per-task gates are `DEFERRED`, so the merged tree's full gate is where the
+  cross-task defects surface.** Three of them were invisible per task: a dead run-scoped citation in a
+  done task (`no-dead-run-scoped-citation`), the frozen A22 leaf inventory missing the new verb, and a
+  new command module with 14% coverage because its behavioural test spawns the binary instead of
+  importing it. Budget one full gate cycle on the merged tree and expect it to fail once.
+- **A behavioural test that shells out contributes no coverage.** `bun test` measures the parent
+  process, so a CLI-spawning suite leaves the module near-zero; the per-file threshold then fails the
+  full gate for code that is well tested. Pair every spawn-based E2E with an in-process pass that
+  imports the module.
+- **`spur workflow persist-out` fails `database is locked` while another job owns the project DB**
+  (`spur history import`/`analyze`). It is transient: wait for the other writer rather than killing it,
+  and treat "landing is blocked by a DB lock" as a scheduling fact, not a defect.
+- **Landing an evidence-producing E2E dirties the tree on every gate run** unless the suite writes to a
+  scratch dir by default (`KK_UPDATE_BOARD_EVIDENCE=1` to refresh the committed bytes). Both board E2Es
+  follow that rule now.
