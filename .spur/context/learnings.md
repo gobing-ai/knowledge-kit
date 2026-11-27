@@ -748,3 +748,19 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
 - **The light gate runs changed-scope tests only.** `apps/cli/tests/kk-news-generate-dag.test.ts` (workflow
   shape) never ran during the batch and failed on the new 26th node in the full suite; changing
   `plugins/kk/workflows/**` should be treated as touching `apps/cli/tests/kk-news-generate-dag.test.ts`.
+
+## 2026-11-27 (follow-up) — the deferred gate is a debt, and changed-scope selection has blind spots
+
+- **A task gate in a worktree batch writes `DEFERRED`, i.e. "the integrated full gate is owed".**
+  Nothing collects that debt. Pay it once on the merged tree *before* the batch FF-merges
+  (`docs/99_PROJECT_CONSTITUTION.md` §5.1). On D9 all five tasks landed `DEFERRED`; the news-DAG shape
+  suite sat outside every changed scope and only failed after the merge.
+- **`lightScope()` only maps `<ws>/src/x.ts → <ws>/tests/x.test.ts`.** A YAML/JSON corpus change
+  (workflow, preset, plugin manifest) selects **no test**, and `scripts/test-changed.ts` cannot help —
+  it receives already-selected test paths, not the changed files. The engine's one project-specific map
+  is the hardcoded `plugins/sp/**` block. Tracked as spur task **1474** (`builder.scopeTestMap`).
+- **A PARTIAL review on a first-pass-green gate dead-ends the pipeline.** The deferred tier writes
+  `<wbs>-test-gate.findings` only on FAIL while the remediate hop reads it unconditionally, so the run
+  ends `failed-check`. Workaround until spur lands the fix: write the findings file yourself before
+  re-entering. Tracked as spur task **1473** (writer consistency + `file.read.into-var missing:'empty'`
+  + review-lane anchors).
