@@ -1581,12 +1581,14 @@ re-render). The destination is never caller-supplied — the enum plus the day r
 or stdin (`-`), is capped at 256 KiB, and is written through a same-directory temp file + rename after
 the previous bytes are backed up to `<day>/edits/<ts>-<artifact>.<ext>`; the verb prints
 `{artifact, path, backup, sha256, reverted}` and exit 1 with a closed code on any refusal:
-`news.edit.artifact.unknown`, `news.edit.source.unreadable`, `news.edit.body.too-large`,
+`news.edit.artifact.unknown`, `news.edit.day.invalid`, `news.edit.source.unreadable`,
+`news.edit.body.empty`, `news.edit.body.too-large`,
 `news.edit.base-sha.mismatch` (carrying `current=<sha>`), `news.edit.script.invalid` (a `segments`
 array of at least two entries, each with non-empty `text`), `news.edit.frozen` (the day's bundle
 carries `contentType`), `news.edit.lock.held` (`ops-console:<day>` held by anything other than this
 invocation — the plane passes its holder to the child as `KK_LOCK_HOLDER`) and
-`news.edit.no-backup`. `--revert` restores the newest backup and backs up the bytes it replaces, so a
+`news.edit.no-backup`. Both edits and reverts hold the same per-day lock from the freshness and
+freeze checks through the write. `--revert` restores the newest backup and backs up the bytes it replaces, so a
 revert is itself revertible. The plane exposes the two matching kinds — `edit-artifact`
 `{day, artifact, baseSha}` (preview returns the unified diff, execute writes the body to the child's
 stdin) and `revert-artifact` `{day, artifact}` — with the token binding
@@ -1599,17 +1601,17 @@ verdict whose digest no longer matches the draft (mirroring `safety-artifact-che
 **`kk news digest --push` (G85, task 0446 — `docs/design/daily-voice-ops-console.md` §11).** One generic
 webhook, configured as `notify.digest: {enabled (default false), url_env (default
 `KK_DIGEST_WEBHOOK_URL`), body (markdown|json), min_status (ok|attention|failed)}`. The body is the
-digest renderer's own output prefixed with `Status: <status> · attention: <n>`; the digest emits no
-Board link, so the prefix carries no hardcoded host. Order: render → enabled → URL variable → scheme
+digest renderer's own output prefixed with `Status: <status> · attention: <n>` and the Board's
+relative day link. JSON carries `status`, `attentionCount`, and `boardPath` up front. Order: render → enabled → URL variable → scheme
 (`https`, or plaintext only for a loopback host, so a local stub works and a token never crosses the
 wire unencrypted) → `min_status` floor (`ok < attention < failed`, `running`/`unknown` never clear
-any floor) → receipt read → sha256 of the exact bytes → skip-if-equal → POST with
-`AbortSignal.timeout(10_000)` and no in-run retry → atomic receipt write. `<day>/notify-receipt.<trigger>.json`
+any floor) → per-trigger lock → receipt read → sha256 of the exact bytes → skip-if-equal → POST with
+`AbortSignal.timeout(10_000)`, redirects refused, and no in-run retry → atomic receipt write. `<day>/notify-receipt.<trigger>.json`
 records `{ts, trigger, digestStatus, digestSha256, httpStatus, error, errorCode, update}`; an unchanged
 digest writes nothing and reports the earlier receipt, a changed one posts with `update: true`.
 `--trigger` defaults to `generate` (the receipt is per trigger, so a window push never suppresses the
 next one). Refusal/outcome codes are closed: `notify.digest.disabled` (exit 2), `url-env.unset`,
-`url.not-https`, `http` (carries the status), `timeout`, and `min-status.skipped` (exit 0). Only the
+`url.not-https`, `http` (carries the status), `timeout`, `lock.held`, and `min-status.skipped` (exit 0). Only the
 target host is ever printed — never the URL, never the value, never a token inside it — and `--dry-run`
 prints the body plus the host, sends nothing and writes no receipt. The launch supervisor calls the
 same module after writing its terminal receipt for every `kk-news-generate` launch (trigger `generate`)

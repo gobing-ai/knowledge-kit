@@ -109,6 +109,26 @@ async function digestOf(fixture: Fixture) {
 const NOTIFY: DigestNotifyConfig = { ...DEFAULT_DIGEST_NOTIFY, enabled: true, urlEnv: 'KK_DIGEST_WEBHOOK_URL' };
 
 describe('the push (R1/R3, AC1/AC4)', () => {
+    it('posts an unchanged digest at most once across concurrent callers', async () => {
+        const hook = stub({ delayMs: 100 });
+        const fixture = dayDir();
+        const options = {
+            fs: fixture.fs,
+            digest: await digestOf(fixture),
+            workDir: fixture.workDir,
+            trigger: 'generate' as const,
+            notify: NOTIFY,
+            env: { KK_DIGEST_WEBHOOK_URL: hook.url },
+            fetch: globalThis.fetch,
+            now: () => '2026-11-25T05:10:00.000Z',
+            configFile: join(fixture.project, 'config.yaml'),
+        };
+        writeFileSync(options.configFile, `store:\n  db_path: ${join(fixture.project, 'kk.db')}\n`);
+        const results = await Promise.all([pushDigest(options), pushDigest(options)]);
+        expect(hook.bodies).toHaveLength(1);
+        expect(results.map((result) => result.code).sort()).toEqual(['notify.digest.sent', 'notify.digest.unchanged']);
+    });
+
     it('posts the renderer output to the webhook and records one receipt', async () => {
         const hook = stub();
         const fixture = dayDir();
@@ -127,6 +147,9 @@ describe('the push (R1/R3, AC1/AC4)', () => {
         expect(outcome.exitCode).toBe(0);
         expect(hook.bodies).toHaveLength(1);
         expect(hook.bodies[0]).toBe(digestPushBody(digest, 'markdown'));
+        expect(hook.bodies[0]).toStartWith(
+            `Status: ${digest.status} · attention: ${digest.attention.length}\n\n[Board](/board/modules/kk-daily-ai-voice2#day=${digest.day})`,
+        );
         expect(hook.headers[0]).toContain('text/markdown');
         const receipt = JSON.parse(readFileSync(receiptPath(fixture.workDir, 'generate'), 'utf-8')) as DigestReceipt;
         expect(receipt).toMatchObject({
@@ -153,7 +176,11 @@ describe('the push (R1/R3, AC1/AC4)', () => {
             fetch: (url, init) => fetch(url, init),
             now: () => '2026-11-25T05:10:00.000Z',
         });
-        expect(JSON.parse(hook.bodies[0] ?? '{}')).toEqual(JSON.parse(JSON.stringify(digest)));
+        expect(JSON.parse(hook.bodies[0] ?? '{}')).toEqual({
+            ...JSON.parse(JSON.stringify(digest)),
+            attentionCount: digest.attention.length,
+            boardPath: `/board/modules/kk-daily-ai-voice2#day=${digest.day}`,
+        });
         expect(hook.headers[0]).toContain('application/json');
     });
 
@@ -326,6 +353,29 @@ describe('config and refusals (R2/R4, AC2)', () => {
         // URL's path — where a token lives — never appears.
         expect(line).toContain(`host=127.0.0.1:`);
         expect(line).not.toContain('/hook');
+    });
+
+    it('keeps a URL fragment echoed by a fetch error out of the receipt', async () => {
+        const fixture = dayDir();
+        const digest = await digestOf(fixture);
+        let redirect: RequestInit['redirect'];
+        const outcome = await pushDigest({
+            fs: fixture.fs,
+            digest,
+            workDir: fixture.workDir,
+            trigger: 'generate',
+            notify: NOTIFY,
+            env: { KK_DIGEST_WEBHOOK_URL: `https://example.test/hook/${TOKEN}` },
+            fetch: async (_url, request) => {
+                redirect = request.redirect;
+                throw new Error(`transport failed on /hook/${TOKEN}`);
+            },
+            now: () => '2026-11-25T05:10:00.000Z',
+        });
+        const receipt = readFileSync(receiptPath(fixture.workDir, 'generate'), 'utf-8');
+        expect(outcome.code).toBe('notify.digest.http');
+        expect(redirect).toBe('error');
+        expect(receipt).not.toContain(TOKEN);
     });
 
     it('skips a digest below the configured floor with exit 0', async () => {

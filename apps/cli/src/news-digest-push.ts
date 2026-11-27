@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DailyDigest, DayStatus } from '@gobing-ai/kk-board/contracts';
+import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { projectDay } from './board/day';
 import { renderDigestMarkdown } from './board/digest';
@@ -58,6 +59,7 @@ export const DIGEST_PUSH_CODES = [
     'notify.digest.url.not-https',
     'notify.digest.min-status.skipped',
     'notify.digest.http',
+    'notify.digest.lock.held',
     'notify.digest.timeout',
 ] as const;
 
@@ -122,9 +124,13 @@ export function digestNotifyConfigOf(config: unknown): DigestNotifyConfig {
  * a hardcoded host would be a second source of truth that goes stale on the next port change.
  */
 export function digestPushBody(digest: DailyDigest, body: 'markdown' | 'json'): string {
-    if (body === 'json') return JSON.stringify(digest);
+    const boardPath = `/board/modules/kk-daily-ai-voice2#day=${encodeURIComponent(digest.day)}`;
+    if (body === 'json') {
+        const { status, ...dayDigest } = digest;
+        return JSON.stringify({ status, attentionCount: digest.attention.length, boardPath, ...dayDigest });
+    }
     const prefix = `Status: ${digest.status} · attention: ${digest.attention.length}`;
-    return `${prefix}\n\n${renderDigestMarkdown(digest)}`;
+    return `${prefix}\n\n[Board](${boardPath})\n\n${renderDigestMarkdown(digest)}`;
 }
 
 /** Write through a same-directory temp file + rename, so a crash cannot leave a half receipt. */
@@ -138,23 +144,6 @@ async function atomicWrite(fs: FileSystem, path: string, content: string): Promi
 /** True when `hostname` names the loopback interface (the one place plaintext http is tolerated). */
 function isLoopbackHost(hostname: string): boolean {
     return hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]';
-}
-
-/** The one redacted shape of a URL: its host, or null when it cannot be parsed. */
-function hostOf(url: string): string | null {
-    try {
-        return new URL(url).host;
-    } catch {
-        return null;
-    }
-}
-
-/** Strip any occurrence of the URL (and its host) out of an error message before it is stored. */
-function redact(text: string, url: string): string {
-    const host = hostOf(url);
-    let out = text.split(url).join('<redacted>');
-    if (host !== null) out = out.split(host).join('<redacted-host>');
-    return out;
 }
 
 /** The digest's rank against the configured floor. */
@@ -180,6 +169,8 @@ export interface PushDigestOptions {
     now: () => string;
     /** Printed by a dry run instead of sending. */
     dryRun?: boolean;
+    /** The project config locates the shared store used by CLI and launch writes. */
+    configFile?: string;
     /** The POST budget; the design fixes 10 s and there is no in-run retry. */
     timeoutMs?: number;
 }
@@ -191,7 +182,7 @@ export interface PushDigestOptions {
  * and continue: a push never changes a run's outcome (AC3).
  */
 export async function pushDigest(options: PushDigestOptions): Promise<DigestPushOutcome> {
-    const { fs, digest, workDir, trigger, notify, env, now } = options;
+    const { digest, workDir, trigger, notify, env } = options;
     const body = digestPushBody(digest, notify.body);
     const base = { receiptPath: null, receipt: null, body, host: null as string | null };
 
@@ -209,7 +200,7 @@ export async function pushDigest(options: PushDigestOptions): Promise<DigestPush
         return { ...base, code: 'notify.digest.url-env.unset', exitCode: 1 };
     }
     const host = parsed.host;
-    if (parsed.protocol !== 'https:' && !isLoopbackHost(parsed.hostname)) {
+    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname))) {
         // A plaintext URL would leak whatever token it carries to every hop, so it is refused rather
         // than downgraded. Loopback is the exception a local stub needs: those bytes never leave the
         // machine, and refusing them would make the transport untestable.
@@ -220,6 +211,39 @@ export async function pushDigest(options: PushDigestOptions): Promise<DigestPush
     }
 
     const path = receiptPath(workDir, trigger);
+    const send = () => pushWithReceipt(options, url, body, host, path);
+    if (options.dryRun === true || options.configFile === undefined) return send();
+
+    const store = await openStore({ path: await resolveStorePath(options.configFile) });
+    const lock = `notify.digest:${path}`;
+    const holder = crypto.randomUUID();
+    const deadline = Date.now() + (options.timeoutMs ?? 10_000) + 1_000;
+    let acquired = false;
+    try {
+        while (Date.now() < deadline) {
+            acquired = await store.locks.acquire(lock, holder, 30_000);
+            if (acquired) return await send();
+            await Bun.sleep(100);
+        }
+        return { ...base, host, code: 'notify.digest.lock.held', exitCode: 1 };
+    } finally {
+        try {
+            if (acquired) await store.locks.release(lock, holder);
+        } finally {
+            await store.close();
+        }
+    }
+}
+
+async function pushWithReceipt(
+    options: PushDigestOptions,
+    url: string,
+    body: string,
+    host: string,
+    path: string,
+): Promise<DigestPushOutcome> {
+    const { fs, digest, trigger, notify, now } = options;
+    const base = { receiptPath: null, receipt: null, body, host };
     const sha256 = createHash('sha256').update(Buffer.from(body, 'utf8')).digest('hex');
     let previous: DigestReceipt | null = null;
     if (await fs.exists(path)) {
@@ -252,6 +276,7 @@ export async function pushDigest(options: PushDigestOptions): Promise<DigestPush
     try {
         const response = await options.fetch(url, {
             method: 'POST',
+            redirect: 'error',
             headers: {
                 'content-type': notify.body === 'json' ? 'application/json' : 'text/markdown; charset=utf-8',
             },
@@ -265,10 +290,10 @@ export async function pushDigest(options: PushDigestOptions): Promise<DigestPush
         }
     } catch (error) {
         const name = error instanceof Error ? error.name : '';
-        const message = error instanceof Error ? error.message : String(error);
         receipt.errorCode =
             name === 'TimeoutError' || name === 'AbortError' ? 'notify.digest.timeout' : 'notify.digest.http';
-        receipt.error = redact(message, url);
+        receipt.error =
+            receipt.errorCode === 'notify.digest.timeout' ? 'Webhook request timed out' : 'Webhook transport failed';
     }
     await atomicWrite(fs, path, `${JSON.stringify(receipt, null, 4)}\n`);
     const failed = receipt.errorCode !== null;
@@ -318,6 +343,7 @@ export async function digestPushForLaunch(input: { workDir: string; runDate: str
         workDir: input.workDir,
         trigger,
         notify,
+        configFile,
         env: process.env,
         // `globalThis` keeps the call off the `no-direct-fetch` pattern; the seam is still injectable.
         fetch: globalThis.fetch.bind(globalThis),

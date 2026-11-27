@@ -565,6 +565,10 @@ async function digestAction(options: DigestOptions): Promise<void> {
             consoleOutput.write(JSON.stringify({ day, notFound: true, lookedUp: digest.lookedUp }));
         fail(1, 'kk.content.digest.missing', `no kk-news-generate day directory at ${digest.lookedUp}`);
     }
+    if (options.push === true && options.dryRun === true) {
+        await pushAction(join(ctx.worksDir ?? '', 'kk-news-generate', day), day, options);
+        return;
+    }
     consoleOutput.write(options.json === true ? JSON.stringify(digest) : renderDigestMarkdown(digest));
     if (options.push === true) await pushAction(join(ctx.worksDir ?? '', 'kk-news-generate', day), day, options);
 }
@@ -598,13 +602,14 @@ async function pushAction(workDir: string, day: string, options: DigestOptions):
         workDir,
         trigger: trigger as DigestTrigger,
         notify,
+        configFile,
         env: process.env,
         // Through `globalThis` so the command module never spells a bare fetch call (`no-direct-fetch`).
         fetch: globalThis.fetch.bind(globalThis),
         now: () => new Date().toISOString(),
         ...(options.dryRun === true ? { dryRun: true } : {}),
     });
-    if (options.dryRun === true && outcome.code !== 'notify.digest.disabled') {
+    if (options.dryRun === true && outcome.exitCode === 0) {
         consoleOutput.write(outcome.body);
         consoleOutput.write(`dry run — host=${outcome.host ?? 'unknown'} (nothing sent)`);
         return;
