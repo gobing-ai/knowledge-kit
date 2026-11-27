@@ -1,15 +1,17 @@
 ---
 schema_version: 1
 name: Migrate KK Board modules to Spur native /api/modules/:id/* backend and retire kk board serve
-status: wip
+status: done
 template: feature-impl
 created_at: 2026-11-26T18:16:34.458Z
-updated_at: "2026-11-27T21:38:36.466Z"
+updated_at: "2026-11-27T21:54:36.779Z"
 
 priority: P1
 ac_numbering: task-local
 ac_altitude: task-local
 estimate_hours: 6
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0447. Migrate KK Board modules to Spur native /api/modules/:id/* backend and retire kk board serve
@@ -32,12 +34,12 @@ Once Spur ships native module backend handlers (`spur-new` task `1455`: optional
 
 ### Requirements
 
-- [ ] R1. Prerequisite gate: verify installed `@gobing-ai/spur` ships `bootstrap.modules[].api` and `/api/modules/:id/*` (`spur-new` task `1455`) before cutting over.
-- [ ] R2. Refactor `apps/cli/src/board/reader.ts` from a standalone `Bun.serve()` HTTP server into a pure Web-Fetch handler (`createBoardHandler` + default export `{ fetch(request, ctx) }` conforming to `BoardModuleApiHandler`), preserving every existing domain route (`/api/health`, `/api/days`, `/api/days/:day`, `/api/actions/:kind`, `/api/workflows/kk-collect/store/*`, `/api/workflows/:wf/runs/:id/{config,evidence,results,artifacts/:aid}`) and deriving `boardGet`'s Spur loopback origin from `new URL(request.url).origin` (with injectable `boardOrigin`/`fetchImpl` for tests).
-- [ ] R3. Extend `scripts/build-board.ts` to emit the Bun-targeted ESM backend bundle `apps/cli/dist/board/api.js` (and `apps/board/dist/api.js`, `target: 'bun'`, `format: 'esm'`) alongside the three browser bundles, and configure `api: apps/cli/dist/board/api.js` on all three modules (`kk-collect`, `kk-daily-ai-voice2`, `kk-itc`) in `.spur/config.yaml`.
-- [ ] R4. Update `apps/board/src/shared/api.ts` and the three module entrypoints (`apps/board/src/{collect,daily-voice,itc}/index.tsx`) to call same-origin `<origin><boardBasePath>/api/modules/<id>/...` (supporting both direct `/board/...` and gateway `/<project>/board/...` paths); remove `DEFAULT_READER_ORIGIN`, `readerOriginFrom`, `kkApi` query-param handling, `aggregateReaderOrigin`, CORS/Origin boilerplate in `reader.ts`, and the `"The reader is not answering. Start it with kk board serve..."` offline prompt.
-- [ ] R5. Retire the `kk board serve` subcommand from `apps/cli/src/commands/board.ts` (and `DEFAULT_BOARD_PORT`), keeping `kk board capture` intact until Spur native run metadata supersedes it; update `apps/cli/tests/main.test.ts` and `apps/cli/tests/commands/board.test.ts`.
-- [ ] R6. Update unit and E2E suites (`apps/cli/tests/board/*.test.ts`, `apps/board/tests/shared/api.test.ts`, `apps/board/tests/shared/run-selection.test.ts`, `apps/board/tests/installed-board.test.ts`, `apps/board/scripts/verify-collect-live.ts`) to run directly through `createBoardHandler` / `spur self serve` with no `kk board serve` process, and update `docs/00_ADR.md` (ADR-035 amendment), `docs/03_ARCHITECTURE.md`, and `docs/04_DESIGN.md` in the same commit.
+- [x] R1. Prerequisite gate: verify installed `@gobing-ai/spur` ships `bootstrap.modules[].api` and `/api/modules/:id/*` (`spur-new` task `1455`) before cutting over.
+- [x] R2. Refactor `apps/cli/src/board/reader.ts` from a standalone `Bun.serve()` HTTP server into a pure Web-Fetch handler (`createBoardHandler` + default export `{ fetch(request, ctx) }` conforming to `BoardModuleApiHandler`), preserving every existing domain route (`/api/health`, `/api/days`, `/api/days/:day`, `/api/actions/:kind`, `/api/workflows/kk-collect/store/*`, `/api/workflows/:wf/runs/:id/{config,evidence,results,artifacts/:aid}`) and deriving `boardGet`'s Spur loopback origin from `new URL(request.url).origin` (with injectable `boardOrigin`/`fetchImpl` for tests).
+- [x] R3. Extend `scripts/build-board.ts` to emit the Bun-targeted ESM backend bundle `apps/cli/dist/board/api.js` (and `apps/board/dist/api.js`, `target: 'bun'`, `format: 'esm'`) alongside the three browser bundles, and configure `api: apps/cli/dist/board/api.js` on all three modules (`kk-collect`, `kk-daily-ai-voice2`, `kk-itc`) in `.spur/config.yaml`.
+- [x] R4. Update `apps/board/src/shared/api.ts` and the three module entrypoints (`apps/board/src/{collect,daily-voice,itc}/index.tsx`) to call same-origin `<origin><boardBasePath>/api/modules/<id>/...` (supporting both direct `/board/...` and gateway `/<project>/board/...` paths); remove `DEFAULT_READER_ORIGIN`, `readerOriginFrom`, `kkApi` query-param handling, `aggregateReaderOrigin`, CORS/Origin boilerplate in `reader.ts`, and the `"The reader is not answering. Start it with kk board serve..."` offline prompt.
+- [x] R5. Retire the `kk board serve` subcommand from `apps/cli/src/commands/board.ts` (and `DEFAULT_BOARD_PORT`), keeping `kk board capture` intact until Spur native run metadata supersedes it; update `apps/cli/tests/main.test.ts` and `apps/cli/tests/commands/board.test.ts`.
+- [x] R6. Update unit and E2E suites (`apps/cli/tests/board/*.test.ts`, `apps/board/tests/shared/api.test.ts`, `apps/board/tests/shared/run-selection.test.ts`, `apps/board/tests/installed-board.test.ts`, `apps/board/scripts/verify-collect-live.ts`) to run directly through `createBoardHandler` / `spur self serve` with no `kk board serve` process, and update `docs/00_ADR.md` (ADR-035 amendment), `docs/03_ARCHITECTURE.md`, and `docs/04_DESIGN.md` in the same commit.
 
 ### Acceptance Criteria
 
@@ -140,11 +142,38 @@ Replace the standalone `kk board serve` loopback server (`127.0.0.1:4340`) with 
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 | MET | Installed Spur schema and declaration confirmed by .spur/run/0447-contract.log. `node_modules/@gobing-ai/spur/schemas/spur-config.schema.json:189` and `node_modules/@gobing-ai/spur/board/index.d.ts:62`. |
+| R2 | MET | `apps/cli/src/board/reader.ts:165` handles module-relative routes and resolves the local Spur origin. The focused Board suites passed 365 tests. Mounted console and editor actions passed in .spur/run/0447-board-e2e.log. |
+| R3 | MET | `scripts/build-board.ts:118` emits the Bun ESM backend. `.spur/config.yaml:28` registers it on all three modules. `scripts/tests/board-package.test.ts:84` checks both output roots and the package suite checks the tarball. |
+| R4 | MET | `apps/board/src/shared/api.ts:176` keeps the gateway prefix. `apps/board/tests/shared/api.test.ts:29` tests prefixed reads, actions and native run URLs. The installed LAN case exercises the direct mount. |
+| R5 | MET | The built CLI help in .spur/run/0447-contract.log lists capture. `apps/cli/tests/commands/board.test.ts:63` checks the retired verb and the suite exercises capture with a real workspace. |
+| R6 | MET | The 42 installed Board and Daily Voice Chromium tests passed. ADR-035, architecture and command design are synced. Format and build passed in .spur/run/0447-gate-serial.log. The standard Spur check of the committed tree passed 6,261 tests and 63 rules in .spur/run/run_e520da99-1081-475d-811d-8d9e2d95ef9a-feature-verification.log:415. |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — Prerequisite Spur contract is verified before cutover | MET | command | Schema assertion and declaration inspection in .spur/run/0447-contract.log. `node_modules/@gobing-ai/spur/schemas/spur-config.schema.json:189` and `node_modules/@gobing-ai/spur/board/index.d.ts:62`. |
+| AC2 — Pure Web-Fetch handler serves all KK Board routes without `Bun.serve` | MET | test | `apps/cli/tests/board/reader-handler.test.ts:40` proves in-process health and route dispatch. 365 focused tests and 42 mounted Chromium tests passed in .spur/run/0447-focused.log and .spur/run/0447-board-e2e.log. |
+| AC3 — Build script emits `api.js` and `.spur/config.yaml` wires all three modules | MET | test | `scripts/tests/board-package.test.ts:84` checks emitted bundles. `apps/board/tests/installed-board.test.ts:813` probes health for all three module mounts from an installed tarball. |
+| AC4 — Browser modules use same-origin `/api/modules/<id>/*` on both direct and gateway URLs | MET | test | `apps/board/tests/shared/api.test.ts:29` checks prefixed URLs. The adjoining client tests exercise direct run and module paths. |
+| AC5 — `kk board serve` is retired while `kk board capture` remains functional | MET | test | Built help in .spur/run/0447-contract.log and capture/refusal tests in `apps/cli/tests/commands/board.test.ts:63`. |
+| AC6 — Installed-board E2E passes with `spur self serve` alone and docs are synced | MET | test | The installed, Daily Voice and editor Chromium tests passed in .spur/run/0447-board-e2e.log. `docs/00_ADR.md:1441` documents the native mount. Format and build passed in .spur/run/0447-gate-serial.log. The standard Spur check of the committed tree passed 6,261 tests and 63 rules in .spur/run/run_e520da99-1081-475d-811d-8d9e2d95ef9a-feature-verification.log:415. |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -164,4 +193,6 @@ Replace the standalone `kk board serve` loopback server (`127.0.0.1:4340`) with 
 
 - 2026-11-26T18:46:53.152Z backlog → todo (system)
 - 2026-11-27T21:31:13.703Z todo → wip (system)
+- 2026-11-27T21:51:10.127Z wip → testing (system)
+- 2026-11-27T21:54:36.662Z testing → done (system)
 
