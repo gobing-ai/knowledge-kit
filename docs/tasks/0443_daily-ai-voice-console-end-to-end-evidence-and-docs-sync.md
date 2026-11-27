@@ -4,7 +4,7 @@ name: Daily AI Voice console end-to-end evidence and docs sync
 status: done
 template: feature-impl
 created_at: 2026-11-26T00:29:45.939Z
-updated_at: "2026-11-27T08:47:33.218Z"
+updated_at: "2026-11-27T19:46:48.579Z"
 feature_id: G83
 priority: P2
 tags:
@@ -130,7 +130,7 @@ Design: docs/design/daily-voice-ops-console.md §7.
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Surface docs and end-to-end evidence ship with the change | MET | test | the E2E above (12/12 pass, 59 expectations; gate receipt `.spur/run/0443-check-receipt.json`: 6/6 checks PASS) together with the four doc edits cited in R4 |
+| AC1 — Surface docs and end-to-end evidence ship with the change | MET | test | the E2E above (12/12 pass, 59 expectations; the batch's light gate reported 6/6 checks PASS) together with the four doc edits cited in R4 |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
