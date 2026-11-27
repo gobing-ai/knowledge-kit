@@ -19,8 +19,7 @@
  * 6. a request from the wrong origin, without the `x-kk-action` header, or with a stale token is
  *    accepted — the envelope's refusals are the security claim.
  *
- * Every artifact lands under `apps/board/tests/artifacts/daily-voice-console/`, so the evidence a
- * reviewer reads is the same bytes the run produced.
+ * Use KK_UPDATE_BOARD_EVIDENCE=1 to refresh the checked-in artifacts.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
@@ -48,7 +47,7 @@ import { spurPackageRootOf } from '../../../scripts/spur-env';
 const REPO = resolve(import.meta.dir, '../../..');
 const CLI_ENTRY = join(REPO, 'apps/cli/src/index.ts');
 const FIXTURE = join(REPO, 'apps/board/tests/fixtures/daily-voice-days');
-const ARTIFACTS = join(REPO, 'apps/board/tests/artifacts/daily-voice-console');
+let artifacts: string;
 const MODULE_ID = 'kk-daily-ai-voice2';
 const DAYS = [
     '20261115',
@@ -361,8 +360,11 @@ function runFixtureDays(): void {
 /** Build the whole fixture: module bundle, project, day runs, servers, browser. */
 async function setup(): Promise<void> {
     spur = resolveSpur();
-    rmSync(ARTIFACTS, { recursive: true, force: true });
-    mkdirSync(ARTIFACTS, { recursive: true });
+    artifacts =
+        process.env.KK_UPDATE_BOARD_EVIDENCE === '1'
+            ? join(REPO, 'apps/board/tests/artifacts/daily-voice-console')
+            : realTempDir('kk-console-evidence-');
+    mkdirSync(artifacts, { recursive: true });
     // 1. The module assets the Board serves must be this checkout's source, not a stale bundle.
     await withBuildLock(() => shell('bun', ['scripts/build-board.ts'], REPO));
     if (!existsSync(join(REPO, 'apps/cli/dist/board/daily-voice/index.js'))) {
@@ -468,7 +470,7 @@ async function openTab(tab: 'generation' | 'publishing' | 'history' | 'actions')
 /** Commit one render under the artifacts directory. */
 async function shot(name: string): Promise<void> {
     if (page === null) throw new Error('browser page not ready');
-    await page.screenshot({ path: join(ARTIFACTS, `${name}.png`), fullPage: true });
+    await page.screenshot({ path: join(artifacts, `${name}.png`), fullPage: true });
 }
 
 /** One day's digest as the reader answers it. */
@@ -586,7 +588,7 @@ describe('the digest is one projection (R3)', () => {
                 }),
             ) as DailyDigest;
             expect(fromCli).toEqual(fromReader);
-            writeFileSync(join(ARTIFACTS, 'digest.json'), `${JSON.stringify(fromReader, null, 4)}\n`);
+            writeFileSync(join(artifacts, 'digest.json'), `${JSON.stringify(fromReader, null, 4)}\n`);
         },
         TEST_TIMEOUT,
     );
@@ -658,7 +660,7 @@ describe('the guarded action plane (R2/R11)', () => {
             }
             const recorded = readFileSync(stubArgvLog, 'utf-8').trim().split('\n').filter(Boolean);
             expect(recorded).toContain(`news publish --run-date ${ACTION_DAY} --window overseas-rss --dummy`);
-            writeFileSync(join(ARTIFACTS, 'argv.log'), `${recorded.join('\n')}\n`);
+            writeFileSync(join(artifacts, 'argv.log'), `${recorded.join('\n')}\n`);
 
             // And the launch is audited on the day it names.
             const audit = readFileSync(auditPath, 'utf-8').trim().split('\n');
@@ -706,11 +708,11 @@ describe('the guarded action plane (R2/R11)', () => {
 describe('the committed evidence', () => {
     it('carries the five renders, the argv log and the digest', () => {
         for (const name of ['today', 'generation', 'publishing', 'history', 'action']) {
-            const path = join(ARTIFACTS, `${name}.png`);
+            const path = join(artifacts, `${name}.png`);
             expect(existsSync(path)).toBe(true);
             expect(statSync(path).size).toBeGreaterThan(5_000);
         }
-        expect(existsSync(join(ARTIFACTS, 'argv.log'))).toBe(true);
-        expect(existsSync(join(ARTIFACTS, 'digest.json'))).toBe(true);
+        expect(existsSync(join(artifacts, 'argv.log'))).toBe(true);
+        expect(existsSync(join(artifacts, 'digest.json'))).toBe(true);
     });
 });

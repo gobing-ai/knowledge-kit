@@ -182,7 +182,9 @@ Exact override flags per `rerender-step` verb are fixed in the implementing task
 
 As built: `apps/board/tests/daily-voice-console.e2e.test.ts` (`bun test apps/board/tests/
 daily-voice-console.e2e.test.ts`), fixture at `apps/board/tests/fixtures/daily-voice-days/`,
-artifacts committed under `apps/board/tests/artifacts/daily-voice-console/`. Two notes the run
+artifacts committed under `apps/board/tests/artifacts/daily-voice-console/`. Both browser suites
+write to scratch by default. Set `KK_UPDATE_BOARD_EVIDENCE=1` when refreshing the committed
+console and editor evidence. Two notes the run
 settled: the fixture's capture records carry `__PROJECT_ROOT__`/`__WORKS_ROOT__` placeholders
 (a capture record names an absolute workspace path, so a committed one cannot be literal), and the
 day routes carry `board.actions.enabled` into the digest — without it the console renders
@@ -281,5 +283,5 @@ possible, and those bytes never leave the machine — every other plaintext URL 
 cannot cross the wire unencrypted), and both the digest body and the receipt sha256 come from the
 renderer's own bytes, so a second formatter can never drift. Evidence:
 `apps/cli/tests/news-digest-push.test.ts` (loopback `Bun.serve` stub: body equality, skip-on-unchanged,
-`update: true`, 500 and timeout paths, redaction) and `apps/cli/tests/launch.test.ts` (the hook on
+`update: true`, concurrent sends, 500 and timeout paths, credential-safe errors) and `apps/cli/tests/launch.test.ts` (the hook on
 done/failed both workflows, and a throwing push leaving the receipt byte-identical).

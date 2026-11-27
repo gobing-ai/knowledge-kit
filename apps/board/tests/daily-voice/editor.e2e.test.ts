@@ -4,7 +4,7 @@
  * One committed test over a fixture day: the reader runs with `board.actions.enabled`, a `kk` shim on
  * PATH resolves to this checkout's CLI, and Chromium drives load → edit → preview diff → confirm →
  * refetch → revert. Renders and the resulting `actions.jsonl` are committed under
- * `docs/tasks/evidence/0445/20261125/`, so the evidence a reviewer reads is the bytes the run wrote.
+ * `docs/tasks/evidence/0445/20261125/` when KK_UPDATE_BOARD_EVIDENCE=1 is set.
  *
  * The shim is the real verb rather than a fake: the fixture day lives in a throwaway project, so the
  * write cannot reach an operator's `~/.config/kk` or their `.works`, and running the real verb is what
@@ -45,7 +45,7 @@ import { spurPackageRootOf } from '../../../../scripts/spur-env';
 const REPO = resolve(import.meta.dir, '../../../..');
 const CLI_ENTRY = join(REPO, 'apps/cli/src/index.ts');
 const FIXTURE = join(REPO, 'apps/board/tests/daily-voice/fixtures/day-20261125');
-const EVIDENCE = join(REPO, 'docs/tasks/evidence/0445/20261125');
+let evidence: string;
 const MODULE_ID = 'kk-daily-ai-voice2';
 const DAY = '20261125';
 /** A browser navigation plus a real verb launch does not fit bun's 5 s default per test. */
@@ -184,8 +184,11 @@ function writeKkShim(): string {
 /** Build the fixture: module bundle, project with the fixture day, configs, servers, browser. */
 async function setup(): Promise<void> {
     spur = resolveSpur();
-    rmSync(EVIDENCE, { recursive: true, force: true });
-    mkdirSync(EVIDENCE, { recursive: true });
+    evidence =
+        process.env.KK_UPDATE_BOARD_EVIDENCE === '1'
+            ? join(REPO, 'docs/tasks/evidence/0445/20261125')
+            : realTempDir('kk-editor-evidence-');
+    mkdirSync(evidence, { recursive: true });
     await withBuildLock(() => shell('bun', ['scripts/build-board.ts'], REPO));
 
     project = realTempDir('kk-editor-project-');
@@ -305,7 +308,7 @@ async function openGeneration(): Promise<void> {
 /** Commit one render under the evidence directory. */
 async function shot(name: string): Promise<void> {
     if (page === null) throw new Error('browser page not ready');
-    await page.screenshot({ path: join(EVIDENCE, `${name}.png`), fullPage: true });
+    await page.screenshot({ path: join(evidence, `${name}.png`), fullPage: true });
 }
 
 /** One reader request carrying the Board origin, exactly as the browser sends it. */
@@ -434,7 +437,7 @@ describe('the editor (R1–R4, AC4/AC6)', () => {
             expect(audit).toContain('"kind":"edit-artifact"');
             expect(audit).toContain('"kind":"revert-artifact"');
             expect(audit).not.toContain('Edited by the operator.');
-            writeFileSync(join(EVIDENCE, 'actions.jsonl'), audit);
+            writeFileSync(join(evidence, 'actions.jsonl'), audit);
         },
         TEST_TIMEOUT,
     );
