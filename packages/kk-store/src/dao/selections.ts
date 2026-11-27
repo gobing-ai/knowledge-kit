@@ -99,8 +99,15 @@ export class SelectionsDao extends EntityDao<typeof selections, typeof selection
     ): Promise<number> {
         if (itemIds !== undefined && itemIds.length === 0) return 0;
         const params: unknown[] = [status, status === 'published' ? now : null, now, runId, topic];
+        // Promoting explicit `itemIds` (an aired plan) to `published` also rescues rows recycled to
+        // `dropped` when an earlier failed generate attempt was later resumed and aired; whole-run
+        // promotion (`itemIds === undefined`) and releasing to `dropped` touch only `selected` rows.
+        const allowedFrom =
+            status === 'published' && itemIds !== undefined
+                ? `status IN ('selected', 'dropped')`
+                : `status = 'selected'`;
         let sql = `UPDATE selections SET status = ?, published_at = ?, updated_at = ?
-            WHERE run_id = ? AND topic = ? AND status = 'selected'`;
+            WHERE run_id = ? AND topic = ? AND ${allowedFrom}`;
         if (itemIds !== undefined) {
             sql += ` AND item_id IN (${itemIds.map(() => '?').join(', ')})`;
             params.push(...itemIds);
