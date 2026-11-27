@@ -355,3 +355,9 @@ Batch: sequential task-pipeline v9 runs, all three → done, each verdict PASS /
   - Fix: the measured aria trigger leads the list, and both clicks use `.filter({ visible: true })` (H1 hidden duplicate, proven by the real-DOM fixture `linkedin-pub-dom-runner.ts`).
   - Fixture gotcha: an empty contenteditable has zero height, so Playwright's click waits forever. Give it `min-height` plus `<p><br></p>`.
   - `*-dom.test.ts` runs only in `bun run test:heavy` (`scripts/test-suites.ts:34`), not `bun run test`.
+
+- 2026-11-27 — D9 batch `runall-d9-4d35` (0448 → 0452) landed on `main` as `f95253b0` (+ `b8c51873`
+  DAG-shape fix). All five tasks `done`, feature D9 `active` (`spur feature check D9 --strict` green).
+  Evidence per task is in `docs/tasks/0448…0452_*.md` (`## Solution` / `## Testing` / `## Review`) and the
+  run records under `.spur/memory/runs/`. Remaining operator checks: one real Colab run (wan21 / musetalk —
+  CCU-spending, needs auth) and one real draft upload with the synthetic-media flag.

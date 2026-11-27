@@ -717,3 +717,34 @@ the same text with one hedge adverb restored in the WeChat row → `{"ok":false,
   child means a crash leaves an unclosed row (evidence) instead of a run with no trace.
 - **Work-item receipts are files, not prose**: `spur workflow continue <run>` wants
   `--answer-text <path-to>.spur/run/<run>/receipts/<state>.json`, never a sentence.
+
+## 2026-11-27 — D9 short-form video + three-channel promotion (batch `runall-d9-4d35`)
+
+- **`kk executor run` validates a generator's `--in` against `DocListSchema`.** A plugin-local request
+  object is rejected before the plugin starts (`apps/cli/src/invoke.ts`, `kindContract` in
+  `packages/kk-core/src/kinds.ts`). The video request therefore rides in `Doc[0].metadata`, and the
+  request writer is a `kk stage` (`daily-video-request`) rather than an inline `printf`.
+- **Bun cannot inline `@remotion/bundler`.** It pulls `@remotion/studio`, whose effect/whisper/web-renderer
+  imports are optional peers. `scripts/bundle-plugins.ts` keeps `remotion`/`@remotion/*`/`react`/`react-dom`
+  external (the `playwright` pattern) and `apps/cli/package.json` declares them, so an installed plugin
+  resolves its own renderer.
+- **A plugin's heavy dynamic import is invisible to fast-tier coverage** only when nothing in the fast
+  graph imports it. Keeping every branch in `.ts` (layout/props/render) and the `.tsx` declarative is what
+  keeps 90%/90% per file reachable with a real browser absent.
+- **faster-whisper's path-based `transcribe()` dies on PyAV ≥ 19** (`av.open(..., metadata_errors=…)` was
+  removed). Decode to 16 kHz mono float32 with `ffmpeg` and pass the array; the plugin already needs ffmpeg.
+- **`colab run` is the whole runner surface**: `--gpu/--session/--keep/--timeout/--env`, with
+  `colab download REMOTE LOCAL --session` as the only verified transfer verb. `--timeout` is an
+  *inactivity* timeout (default 30 s), so the job deadline must be passed explicitly and the local seam
+  needs its own kill. Teardown belongs in `finally` because `--keep` is what makes the download possible.
+- **The CCU ledger must live under the works root, not the run dir.** A per-run ledger resets the rolling
+  30-day window daily and silently disables the cap (`resolveLedgerPath`).
+- **Bind a request field to one switch, not two.** `privacyStatus` read from `options` *and* `metadata`
+  let a payload flip a private-first default; `provider` needed an editorial/avatar agreement check for the
+  same reason. Any safety default deserves exactly one documented input path.
+- **`--answer-text` takes a receipt FILE path**, and a review-lane `remediate` hop also needs
+  `.spur/run/<wbs>-test-gate.findings` to exist — a green gate never writes it, so a PARTIAL review on a
+  first-pass-green gate dead-ends the run. Prepare the findings file (or route straight back to review).
+- **The light gate runs changed-scope tests only.** `apps/cli/tests/kk-news-generate-dag.test.ts` (workflow
+  shape) never ran during the batch and failed on the new 26th node in the full suite; changing
+  `plugins/kk/workflows/**` should be treated as touching `apps/cli/tests/kk-news-generate-dag.test.ts`.
