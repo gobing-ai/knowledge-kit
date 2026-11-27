@@ -1,0 +1,17 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261123-1",
+    "planDigest": "a29f0470fa3d3a57a1f9f6c38c5e2726b2832d0f9d7cbdf026a3467cd9b350f1",
+    "payloadDigest": "6e7cda52fbb05d2c24c1ef7d3837ec3daac27ab7d34b6b1d56b952b7e49597c4",
+    "plugin": "video",
+    "profile": "default",
+    "mode": "live",
+    "attemptId": "video.shipinhao-1",
+    "status": "succeeded",
+    "effect": "none",
+    "target": "video.shipinhao",
+    "window": "cn-peak",
+    "dummy": true,
+    "startedAt": "2026-11-23T09:00:00.000Z",
+    "finishedAt": "2026-11-23T09:00:05.000Z"
+}

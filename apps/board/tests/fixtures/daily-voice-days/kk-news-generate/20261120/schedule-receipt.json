@@ -1,0 +1,9 @@
+{
+    "schemaVersion": 1,
+    "runId": "kk-news-generate-20261120-1",
+    "workflow": "kk-news-generate",
+    "status": "no-content",
+    "exitCode": 0,
+    "startedAt": "2026-11-20T04:30:00.000Z",
+    "finishedAt": "2026-11-20T05:05:00.000Z"
+}

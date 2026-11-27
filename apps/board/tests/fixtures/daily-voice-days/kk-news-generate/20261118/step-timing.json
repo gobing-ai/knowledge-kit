@@ -1,0 +1,7 @@
+{"step":"prepare","startedAt":"2026-11-18T04:30:00.000Z","endedAt":"2026-11-18T04:30:11.000Z"}
+{"step":"collect","startedAt":"2026-11-18T04:30:11.000Z","endedAt":"2026-11-18T04:36:00.000Z"}
+{"step":"curate","startedAt":"2026-11-18T04:36:00.000Z","endedAt":"2026-11-18T04:40:30.000Z"}
+{"step":"plan","startedAt":"2026-11-18T04:40:30.000Z","endedAt":"2026-11-18T04:41:00.000Z"}
+{"step":"qc-content","startedAt":"2026-11-18T04:41:00.000Z","endedAt":"2026-11-18T04:42:00.000Z"}
+{"step":"generate","startedAt":"2026-11-18T04:42:00.000Z","endedAt":"2026-11-18T04:50:00.000Z"}
+{"step":"voice","startedAt":"2026-11-18T04:50:00.000Z"}

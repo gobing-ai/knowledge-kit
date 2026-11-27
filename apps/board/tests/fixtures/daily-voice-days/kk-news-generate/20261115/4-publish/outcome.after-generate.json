@@ -1,0 +1,27 @@
+{
+    "schemaVersion": 1,
+    "window": "after-generate",
+    "runDate": "20261115",
+    "status": "full",
+    "published": 2,
+    "targets": 2,
+    "excluded": [],
+    "rows": [
+        {
+            "id": "podcast.xiaoyuzhou",
+            "tier": 1,
+            "required": true,
+            "status": "succeeded",
+            "effect": "confirmed",
+            "dummy": false
+        },
+        {
+            "id": "social.x",
+            "tier": 2,
+            "required": true,
+            "status": "succeeded",
+            "effect": "unknown",
+            "dummy": false
+        }
+    ]
+}

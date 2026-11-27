@@ -22,11 +22,23 @@ const NODE_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** A publish channel id (`<plugin>.<operation>`), as a publish plan row records it. */
 const CHANNEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
+/** A content digest, as `kk news edit --base-sha` takes it. */
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 /** The engines `kk news generate-voice --engine` accepts (its `--help` enum, frozen here). */
 export const VOICE_ENGINES = ['voxcpm', 'gemini', 'omnivoice', 'voicebox', 'vibe-voice'] as const;
 
 /** The steps `rerender-step` can re-render, each with its own verb. */
 export const RERENDER_STEPS = ['voice', 'cards', 'render'] as const;
+
+/** The drafts `edit-artifact` / `revert-artifact` may touch (G84, task 0444 — design §10). */
+export const EDIT_ARTIFACTS = ['article', 'script'] as const;
+
+/** One editable artifact id. */
+export type EditableArtifactId = (typeof EDIT_ARTIFACTS)[number];
+
+/** The edit body cap: checked by the plane before hashing and by the verb before writing. */
+export const EDIT_BODY_CAP_BYTES = 256 * 1024;
 
 /** The publish windows the matrix plans (the frozen `PublishWindowSchema` vocabulary). */
 const PUBLISH_WINDOWS: readonly string[] = PublishWindowSchema.options;
@@ -39,6 +51,8 @@ export const ACTION_KINDS: readonly ActionKind[] = [
     'rerender-step',
     'cancel-run',
     'store-release',
+    'edit-artifact',
+    'revert-artifact',
 ];
 
 /** The keys each kind accepts; anything else is refused rather than ignored. */
@@ -49,6 +63,8 @@ const ALLOWED_KEYS: Record<ActionKind, readonly string[]> = {
     'rerender-step': ['day', 'dayDir', 'step', 'engine'],
     'cancel-run': ['runId'],
     'store-release': ['runId'],
+    'edit-artifact': ['day', 'artifact', 'baseSha'],
+    'revert-artifact': ['day', 'artifact'],
 };
 
 /** A refused action parameter: the offending key, named, with nothing of its value echoed. */
@@ -68,6 +84,13 @@ export interface ResolvedAction {
     argv: string[];
     dryRunArgv?: string[];
     live: boolean;
+    /**
+     * True for the two edit kinds: their confirmation binds the request body as well as the argv
+     * (G84), and their preview is a server-computed diff rather than a dry-run command.
+     */
+    bodyBound?: boolean;
+    /** True only for `edit-artifact`: the new text arrives on the child's stdin. */
+    stdinBody?: boolean;
 }
 
 function allow(kind: ActionKind, params: Record<string, string>): void {
@@ -182,7 +205,51 @@ export function resolveArgv(kind: ActionKind, params: Record<string, string>): R
             const runId = match(params, 'runId', RUN_ID_PATTERN, 'a run id');
             return { argv: ['kk', 'store', 'release', '--run', runId], live: false };
         }
+        case 'edit-artifact': {
+            const day = match(params, 'day', DAY_PATTERN, 'a YYYYMMDD day');
+            const artifact = oneOf(params, 'artifact', EDIT_ARTIFACTS);
+            const baseSha = match(params, 'baseSha', SHA256_PATTERN, 'a sha256 hex digest');
+            // `--from-file -` binds the body to stdin: the plane writes it to the child and never
+            // through argv, so the audited argv carries no draft text.
+            return {
+                argv: [
+                    'kk',
+                    'news',
+                    'edit',
+                    '--run-date',
+                    day,
+                    '--artifact',
+                    artifact,
+                    '--from-file',
+                    '-',
+                    '--base-sha',
+                    baseSha,
+                ],
+                live: false,
+                bodyBound: true,
+                stdinBody: true,
+            };
+        }
+        case 'revert-artifact': {
+            const day = match(params, 'day', DAY_PATTERN, 'a YYYYMMDD day');
+            const artifact = oneOf(params, 'artifact', EDIT_ARTIFACTS);
+            return {
+                argv: ['kk', 'news', 'edit', '--run-date', day, '--artifact', artifact, '--revert'],
+                live: false,
+                bodyBound: true,
+            };
+        }
     }
+}
+
+/**
+ * The day-relative path of one editable artifact — the single derivation both the verb and the
+ * plane's diff preview use, so a preview can never describe a different file than the write.
+ */
+export function editArtifactRelative(day: string, artifact: string): string {
+    return artifact === 'article'
+        ? `22-article/${day}_06_article-write_body.md`
+        : `24-script/${day}_08_script_voicescript.yaml`;
 }
 
 /**

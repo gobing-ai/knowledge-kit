@@ -1,0 +1,28 @@
+{
+    "schemaVersion": 1,
+    "window": "cn-peak",
+    "bundleRunId": "kk-news-generate-20261125-1-bundle",
+    "parentRunId": "kk-news-generate-20261125-1",
+    "presetName": "daily-ai-voice",
+    "presetDigest": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "runDate": "20261125",
+    "excluded": [],
+    "rows": [
+        {
+            "id": "video.bilibili",
+            "plugin": "video",
+            "operation": "clip",
+            "variant": "zh",
+            "tier": 1,
+            "window": "cn-peak",
+            "mode": "dummy",
+            "required": true,
+            "approval": "none",
+            "status": "planned",
+            "transport": "fanout",
+            "profile": "default",
+            "payloadPath": "4-publish/payloads/video.bilibili.json",
+            "payloadDigest": "7b90d0dabcc5403f7a4ff4b4aa371503572155edfbd83a54fd3d6ec8db516225"
+        }
+    ]
+}

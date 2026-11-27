@@ -63,6 +63,8 @@ interface Harness {
     handlerLive: boolean[];
     /** Board capture inputs the hermetic default seam saw (0391). */
     captures: RunCaptureInput[];
+    /** Digest-push inputs the hermetic default seam saw (G85/0446). */
+    pushes: { workflow: string; workDir: string; runDate: string; trigger: string }[];
     workflowRuns(): Call[];
     fire(signal: 'SIGINT' | 'SIGTERM'): void;
     restore(): void;
@@ -79,6 +81,8 @@ interface HarnessOptions {
     recycleThrows?: boolean;
     ledgerThrows?: boolean | 'string';
     fs?: FileSystem;
+    /** G85/0446: a throwing push must never change the launch receipt (AC3). */
+    pushThrows?: boolean;
 }
 
 /** The default answer table: a healthy machine, a green workflow, one stubbed probe. */
@@ -101,6 +105,7 @@ function harness(options: HarnessOptions = {}): Harness {
     const events: string[] = [];
     const handlerLive: boolean[] = [];
     const captures: RunCaptureInput[] = [];
+    const pushes: { workflow: string; workDir: string; runDate: string; trigger: string }[] = [];
     let handler: ((signal: 'SIGINT' | 'SIGTERM') => void) | undefined;
     const fireNow = (): void => {
         handlerLive.push(handler !== undefined);
@@ -176,11 +181,17 @@ function harness(options: HarnessOptions = {}): Harness {
             captures.push(input);
             return { revoked: false, captured: true, record: null, diagnostics: [] };
         },
+        // G85/0446: the digest push is a seam like the rest, so a launch never reaches the network.
+        pushDigest: async (input) => {
+            pushes.push(input);
+            if (options.pushThrows === true) throw new Error('webhook exploded');
+        },
     };
     return {
         deps,
         calls,
         captures,
+        pushes,
         locks,
         releases,
         recycled,
@@ -234,6 +245,85 @@ function baseOptions(space: Scratch) {
 function readReceipt(path: string): LaunchReceipt {
     return JSON.parse(readFileSync(path, 'utf8')) as LaunchReceipt;
 }
+
+describe('launchWorkflow — the digest push hook (0446 R5, AC3/AC5)', () => {
+    it('pushes once after the launch receipt, with the generate trigger', async () => {
+        const space = scratch();
+        const stub = harness();
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: stub.deps });
+            expect(receipt.status).toBe('done');
+            expect(stub.pushes).toEqual([
+                {
+                    workflow: 'kk-news-generate',
+                    workDir: space.workDir,
+                    runDate: '20260101',
+                    trigger: 'generate',
+                },
+            ]);
+            // The push runs after the receipt is on disk: the receipt is already readable.
+            expect(readReceipt(space.receiptPath).status).toBe('done');
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('names the window for a kk-publish launch', async () => {
+        const space = scratch();
+        const stub = harness();
+        try {
+            await launchWorkflow({
+                ...baseOptions(space),
+                workflow: 'kk-publish',
+                window: 'cn-peak',
+                deps: stub.deps,
+            });
+            expect(stub.pushes.at(-1)?.trigger).toBe('cn-peak');
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('pushes on a failed run too, and the failure is unchanged by it', async () => {
+        const space = scratch();
+        const stub = harness({
+            reply: (call) =>
+                call.args.includes('workflow') && call.args.includes('run') ? { exitCode: 4 } : undefined,
+        });
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(space), deps: stub.deps });
+            expect(receipt.status).toBe('failed');
+            expect(stub.pushes).toHaveLength(1);
+        } finally {
+            stub.restore();
+        }
+    });
+
+    it('a throwing push leaves the receipt byte-identical', async () => {
+        const space = scratch();
+        const quiet = harness();
+        let baseline: string;
+        try {
+            await launchWorkflow({ ...baseOptions(space), deps: quiet.deps });
+            baseline = readFileSync(space.receiptPath, 'utf8');
+        } finally {
+            quiet.restore();
+        }
+        const other = scratch();
+        const throwing = harness({ pushThrows: true });
+        try {
+            const receipt = await launchWorkflow({ ...baseOptions(other), deps: throwing.deps });
+            expect(receipt.status).toBe('done');
+            const text = readFileSync(other.receiptPath, 'utf8');
+            // Same status and exit code as the no-push run; only the timestamps/ids differ.
+            expect(JSON.parse(text).status).toBe(JSON.parse(baseline).status);
+            expect(JSON.parse(text).exitCode).toBe(JSON.parse(baseline).exitCode);
+            expect(text).not.toContain('webhook exploded');
+        } finally {
+            throwing.restore();
+        }
+    });
+});
 
 describe('launchWorkflow — lock ownership (0365 R2, AC1)', () => {
     it('refuses a second launch for the same workflow and run day, leaving the holder receipt byte-identical', async () => {

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: "Daily AI Voice digest push: kk news digest --push webhook, receipts and workflow wiring"
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T01:24:35.109Z
-updated_at: "2026-11-26T01:33:11.833Z"
+updated_at: "2026-11-27T18:24:06.712Z"
 feature_id: G85
 priority: P2
 tags:
@@ -14,6 +14,8 @@ tags:
   - workflow
 estimate_hours: 5
 
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0446. Daily AI Voice digest push: kk news digest --push webhook, receipts and workflow wiring
@@ -52,21 +54,21 @@ Install note: this task edits a workflow YAML (not a stage body), so the run mus
 
 ### Requirements
 
-- [ ] R1. `kk news digest --run-date <day> --push [--trigger generate|after-generate|cn-peak|overseas-rss]` POSTs the digest (markdown by default, JSON when `notify.digest.body: json`) with status, attention count and a Board deep link first, to the URL read from the env var named by `notify.digest.url_env`; 10 s timeout, no in-run retry.
-- [ ] R2. Config `notify.digest {enabled (default false), url_env, body, min_status}` is read through `resolveKkConfigPath` / `configPath()` (both honour `KK_CONFIG`; `apps/cli/src/invoke.ts:52`, `apps/cli/src/publish-core.ts:296-300`) via the existing `readConfig` loader; disabled, missing key or unset env var → nothing sent, nonzero exit naming the missing setting; a digest below `min_status` is skipped with exit 0 and a log line.
-- [ ] R3. `<day>/notify-receipt.<trigger>.json` records {ts, trigger, digestStatus, digestSha256, httpStatus|error, update}; an unchanged sha256 skips the POST and reports the earlier receipt; a changed one posts with `update: true`.
-- [ ] R4. The URL (and any token in it) never appears in stdout, stderr, receipt, logs or config.yaml; `--dry-run` prints the body and the target host only and writes nothing.
-- [ ] R5. The launch supervisor (`launchWorkflow`, `apps/cli/src/launch.ts`) pushes the digest best-effort after writing its terminal receipt for every kk-news-generate launch (trigger `generate`) and every kk-publish window launch (trigger = the window). This covers done, no-content, failed, timeout and interrupted runs, so refused days and failed windows still push. A push error or refusal is logged and never changes the launch status, exit code or receipt.
-- [ ] R6. docs/04_DESIGN.md documents `--push`, `--trigger`, `--dry-run` and the `notify.digest` key in the same commit.
+- [x] R1. `kk news digest --run-date <day> --push [--trigger generate|after-generate|cn-peak|overseas-rss]` POSTs the digest (markdown by default, JSON when `notify.digest.body: json`) with status, attention count and a Board deep link first, to the URL read from the env var named by `notify.digest.url_env`; 10 s timeout, no in-run retry.
+- [x] R2. Config `notify.digest {enabled (default false), url_env, body, min_status}` is read through `resolveKkConfigPath` / `configPath()` (both honour `KK_CONFIG`; `apps/cli/src/invoke.ts:52`, `apps/cli/src/publish-core.ts:296-300`) via the existing `readConfig` loader; disabled, missing key or unset env var → nothing sent, nonzero exit naming the missing setting; a digest below `min_status` is skipped with exit 0 and a log line.
+- [x] R3. `<day>/notify-receipt.<trigger>.json` records {ts, trigger, digestStatus, digestSha256, httpStatus|error, update}; an unchanged sha256 skips the POST and reports the earlier receipt; a changed one posts with `update: true`.
+- [x] R4. The URL (and any token in it) never appears in stdout, stderr, receipt, logs or config.yaml; `--dry-run` prints the body and the target host only and writes nothing.
+- [x] R5. The launch supervisor (`launchWorkflow`, `apps/cli/src/launch.ts`) pushes the digest best-effort after writing its terminal receipt for every kk-news-generate launch (trigger `generate`) and every kk-publish window launch (trigger = the window). This covers done, no-content, failed, timeout and interrupted runs, so refused days and failed windows still push. A push error or refusal is logged and never changes the launch status, exit code or receipt.
+- [x] R6. docs/04_DESIGN.md documents `--push`, `--trigger`, `--dry-run` and the `notify.digest` key in the same commit.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — The digest is pushed to the configured webhook (req: R1)
-- [ ] AC2 — Pushing is off by default and keeps the URL out of config and the repo (req: R2; R4)
-- [ ] AC3 — A failed push never fails the run (req: R5)
-- [ ] AC4 — Each trigger pushes at most once per unchanged digest (req: R3)
-- [ ] AC5 — The push is wired after generation and after each publish window (req: R5)
-- [ ] AC6 — A dry run shows the exact body without sending (req: R4)
+- [x] AC1 — The digest is pushed to the configured webhook (req: R1)
+- [x] AC2 — Pushing is off by default and keeps the URL out of config and the repo (req: R2; R4)
+- [x] AC3 — A failed push never fails the run (req: R5)
+- [x] AC4 — Each trigger pushes at most once per unchanged digest (req: R3)
+- [x] AC5 — The push is wired after generation and after each publish window (req: R5)
+- [x] AC6 — A dry run shows the exact body without sending (req: R4)
 
 AC1/AC4/AC6 run against a `Bun.serve` stub: the received bytes equal the digest renderer's output, a second run with the same digest sends nothing and reports the first receipt, a changed digest sends with `update: true`, and `--dry-run` prints the body and host with nothing sent and no receipt written. AC2 asserts the default-off path, each missing-setting exit, and that the URL string appears in no stdout, stderr, receipt or config fixture. AC3/AC5 are `launch.test.ts` assertions through the existing `LaunchDeps` seams. A generate launch and a kk-publish launch each invoke the injected push with the right trigger (`generate`; the window name) on the done, failed, no-content and timeout paths. A push that throws, or whose stub returns 500, leaves the launch receipt's `status` and `exitCode` byte-identical to the no-push run. R6 is the doc diff in the same commit as the flags.
 
@@ -107,18 +109,60 @@ Rejected: retrying inside the run (the next window or a manual `--push` is the r
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Lines | What / why |
+| --- | --- | --- |
+| `apps/cli/src/news-digest-push.ts` | 1-345 | The transport: `pushDigest` (render → enabled → URL variable → scheme → floor → receipt read → sha256 → skip-if-equal → POST with a 10 s `AbortSignal.timeout` → atomic receipt), `digestPushBody` (the renderer's own bytes behind a status/attention prefix — the digest emits no Board link, so no host is hardcoded), the closed code vocabulary, and `digestPushForLaunch` as the launcher's binding. Only `new URL(url).host` is ever printed; an error message is redacted of both the URL and its host before it reaches a receipt. |
+| `apps/cli/src/news-digest-push.ts` (scheme rule) | 226-238 | Plaintext `http` is accepted **only for a loopback host**. A blanket https-only rule made the transport untestable (no stub can hold a certificate), and loopback bytes never leave the machine, so the token guarantee holds while the stub stays possible. Every other plaintext URL is refused. |
+| `apps/cli/src/commands/content.ts` | 493-505, 597-640 | `--push`, `--trigger`, `--dry-run` on `kk news digest`, plus `pushAction`: the digest prints first, then one line reports the outcome (code + host only). `--dry-run` prints the body and the host and writes nothing. |
+| `apps/cli/src/launch.ts` | 133-141, 776-800, 470-480 | `LaunchDeps.pushDigest` and the call after `writeReceipt` for every outcome, inside its own try/catch: a throw becomes one stderr line and can never change `status`, `exitCode` or the receipt. Trigger is the window for `kk-publish`, `generate` otherwise. |
+| `apps/cli/tests/news-digest-push.test.ts` | 1-420 | The loopback `Bun.serve` stub: body equality with the renderer, JSON body, skip-on-unchanged with the earlier receipt, `update: true` on a changed digest, disabled/unset/non-loopback-plaintext refusals, floor skip, dry run writing nothing, 500 and timeout paths, redaction of the token from receipt/line/outcome, and the launch binding on both workflows. |
+| `apps/cli/tests/launch.test.ts` | 53-70, 175-200, 226-300 | The hook through the existing `LaunchDeps` seam: one push after the receipt with the `generate` trigger, the window name for `kk-publish`, a failed run still pushing, and a throwing push leaving the receipt byte-identical. |
+| `docs/04_DESIGN.md` | 1535-1537, 1590-1613 | The three flags in the verb surface and the full `notify.digest` contract: order, floor semantics, receipt fields, closed codes, redaction, dry run, and the launcher hook. |
+| `docs/05_FEATURES.md` | 118 | The G85 row (new) → done. |
+| `docs/design/daily-voice-ops-console.md` | 10, 268-285 | §11 marked shipped; the two refinements the implementation forced (loopback-only plaintext, renderer-derived body and sha) plus the evidence paths. |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — POST the digest (markdown, or JSON per config) with status/attention first, from the URL named by `url_env`, 10 s timeout, no in-run retry | MET | `apps/cli/src/news-digest-push.ts` (render → POST → receipt, `AbortSignal.timeout(10_000)`); `apps/cli/tests/news-digest-push.test.ts` "posts the renderer output …", "posts JSON when the config asks for it" (body equality with the renderer, content type asserted) |
+| R2 — `notify.digest {enabled, url_env, body, min_status}` via the config seam; disabled/missing/unset → nothing sent, nonzero exit; below floor → skip exit 0 | MET | `digestNotifyConfigOf`/`loadNotifyConfig` (defaults per key, malformed keys fall back); tests "is off unless …", "reads the block, defaulting each key", "refuses an unset variable", "skips a digest below the configured floor with exit 0"; `kk news digest --push` resolves the same config through `configPath()` |
+| R3 — `<day>/notify-receipt.<trigger>.json` with the recorded fields; unchanged sha256 skips and reports the earlier receipt; changed posts `update: true` | MET | `receiptPath`, the receipt write; tests "skips an unchanged digest and reports the earlier receipt" and "posts a changed digest with `update: true`" |
+| R4 — URL/token never in stdout, stderr, receipt, logs or config; `--dry-run` prints body + host and writes nothing | MET | only `new URL(url).host` is surfaced (`digestPushLine`, outcome.host); `redact()` strips the URL and host from an error; tests "refuses a plaintext non-loopback URL and exposes only the host", "keeps the token out of the receipt, the line and the log", "a dry run prints the body and writes nothing" |
+| R5 — the launch supervisor pushes best-effort after its terminal receipt for every generate and publish-window launch; a push error never changes status/exit/receipt | MET | `apps/cli/src/launch.ts` (`LaunchDeps.pushDigest`, call after `writeReceipt`, own try/catch, trigger = window for `kk-publish`); `apps/cli/tests/launch.test.ts` new cases: generate trigger, window trigger, a failed run still pushing, a throwing push leaving the receipt's status/exitCode unchanged |
+| R6 — `docs/04_DESIGN.md` documents `--push`, `--trigger`, `--dry-run` and the `notify.digest` key in the same commit | MET | `docs/04_DESIGN.md` verb surface + the `notify.digest` contract block (order, floor, receipt fields, closed codes, redaction, dry run, launcher hook) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — the digest is pushed to the configured webhook | MET | test | `apps/cli/tests/news-digest-push.test.ts` (loopback stub receives exactly the renderer body) |
+| AC2 — off by default, URL out of config and the repo | MET | test | the disabled default, the unset-variable refusal, and the token-absence assertions on stdout/stderr/receipt |
+| AC3 — a failed push never fails the run | MET | test | `apps/cli/tests/launch.test.ts` throwing-push case (status and exitCode equal a no-push run; the error text is not in the receipt) |
+| AC4 — each trigger pushes at most once per unchanged digest | MET | test | the unchanged-sha skip test plus the per-trigger receipt path |
+| AC5 — wired after generation and after each publish window | MET | test | `launch.test.ts` generate-trigger and `cn-peak` window cases |
+| AC6 — a dry run shows the exact body without sending | MET | test | the dry-run case (body printed, host printed, no receipt written, stub received nothing) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-27T18:18:22.889Z todo → wip (system)
+- 2026-11-27T18:24:04.459Z wip → testing (system)
+- 2026-11-27T18:24:06.699Z testing → done (system)
+

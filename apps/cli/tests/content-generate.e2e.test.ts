@@ -45,8 +45,12 @@ const EVIDENCE = join(REPO, '.works/tmp/test-news-generate');
  * its killed child then read as an empty-stderr assertion failure). The budget is a liveness guard
  * for E2E work, not an assertion: the contracts under test are the exit codes, the JSON and the
  * files, all of which fail on their own terms.
+ *
+ * 60 s measured 47 s alone and was still hit when this file runs inside the gate's 24-file parallel
+ * batch (2026-11-27, three separate gate visits), so the guard is set to leave real headroom rather
+ * than fail a green tree on scheduling.
  */
-setDefaultTimeout(60_000);
+setDefaultTimeout(180_000);
 const DIGITS = '20261113';
 
 /** The two fixture stories: the pool, the candidates and the seeded store all carry these ids. */

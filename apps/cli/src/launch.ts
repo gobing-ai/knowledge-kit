@@ -37,6 +37,7 @@ import { captureRun, isSafeRunId, isSafeStamp, parseSetting } from './board/capt
 import { allowlistedKeys, WORKFLOW_NAMES } from './board/manifest';
 import { syncLedger } from './commands/ledger';
 import { resolveKkConfigPath } from './invoke';
+import { digestPushForLaunch } from './news-digest-push';
 import { consoleOutput } from './output';
 import { findPackageRoot } from './package-root';
 import { resolveBundlePath } from './publish-matrix';
@@ -131,6 +132,12 @@ export interface LaunchDeps {
      * (the `kk daily prepare` posture). Callers only exercise it for Board workflows.
      */
     capture?: (input: RunCaptureInput) => Promise<CaptureOutcome>;
+    /**
+     * The digest push (G85/0446): called after the launch's own terminal receipt is written, for
+     * every outcome, so a refused day and a failed window still report. Optional so legacy call
+     * sites and tests stay hermetic; the default wires the real `pushDigest`.
+     */
+    pushDigest?: (input: { workflow: string; workDir: string; runDate: string; trigger: string }) => Promise<void>;
 }
 
 /** One supervised launch: the resolved run plus the posture flags of the launching verb. */
@@ -467,6 +474,9 @@ export function createLaunchDeps(): LaunchDeps {
                 restore();
             }
         },
+        // The digest push (G85/0446 R5) runs for every kk-news-generate and kk-publish launch, after
+        // the launch receipt, and reports through stderr only.
+        pushDigest: (input) => digestPushForLaunch(input),
     };
 }
 
@@ -773,6 +783,20 @@ export async function launchWorkflow(options: LaunchWorkflowOptions): Promise<La
                 : { reason: [failureReason, ...notes].filter((part) => part !== undefined).join('; ') }),
         };
         await writeReceipt(deps.fs, receiptPath, receipt);
+        // The push is best-effort and strictly after the launch receipt: it must never change the
+        // launch's status, exit code or receipt (AC3). A refusal is one line on stderr.
+        if (deps.pushDigest !== undefined) {
+            try {
+                await deps.pushDigest({
+                    workflow: options.workflow,
+                    workDir: options.workDir,
+                    runDate: options.run,
+                    trigger: options.workflow === PUBLISH_WORKFLOW ? (options.window ?? 'generate') : 'generate',
+                });
+            } catch (error) {
+                consoleOutput.error(`kk.news.digest.push: ${errorText(error)}`);
+            }
+        }
         return receipt;
     } finally {
         // The signal handler outlives cleanup; it is dropped only once the terminal receipt is out.

@@ -704,16 +704,29 @@ its artifact-backed episode funnel. IT Content stays artifacts-only. Detail:
 [collect-store-views.md](design/collect-store-views.md) and
 [workflow-board-modules.md](design/workflow-board-modules.md) §9.
 
-**Daily AI Voice ops console (G83, ADR-035 amendment 2026-11-25 — design).** The Daily module is
-day-centric: `apps/cli/src/board/day.ts` `projectDay(worksRoot, day)` joins the day's
-`kk-news-generate` run(s), the `kk-publish` runs bound to that `work_dir` (grouped by window) and the
-safety verdict into one `DailyDigest`, read from the same run evidence the per-run routes already
-authorize. Three consumers share it: `GET /api/days/<day>`, `GET /api/days?from&until` (History) and
-`kk news digest`. Per-run drill-down reuses the existing news evidence DTO. The reader's single write
-route, `POST /api/actions/<kind>`, maps a recipe to an allowlisted argv and spawns it as a child
-process; it is off by default and gated by preview → single-use token → `kk lock` single-flight →
-`actions.jsonl` audit. It supersedes the 2026-10-22 supply-context panel, which was voice2-bound.
-Detail: [daily-voice-ops-console.md](design/daily-voice-ops-console.md).
+**Daily AI Voice ops console (G83, ADR-035 amendment 2026-11-25 — shipped).** The Daily module is
+day-centric: `apps/cli/src/board/day.ts` `projectDay(ctx, day)` joins the day directory's own evidence
+into one `DailyDigest` — the day's captured `kk-news-generate` attempts (`.works/.board/runs/*.json`
+whose `workspacePath` is that directory), the per-window publish files
+`4-publish/{plan,receipts,outcome}.*` plus `4-publish/schedule-receipt.<window>.json`, and the
+`4-safety-variants/*` verdict. The day directory is authoritative: kk-publish Spur runs are **not**
+joined (the window's own artifacts and receipt are), and a plan with no launch receipt reads `unknown`
+with reason `no-launch-receipt` rather than success or a silent skip. Three consumers share the one
+projection: `GET /api/days/<day>`, `GET /api/days?from&until` (History) and `kk news digest`, so the
+console and the CLI cannot disagree — the parity is pinned by the committed E2E rather than by
+convention. Per-run drill-down (Generation's node timeline, engine chain and artifacts) reuses the
+existing news evidence DTO; the day's `step-timing.json` adds the durations that DTO has no node for.
+
+The reader's single write route, `POST /api/actions/<kind>`, maps a recipe to an allowlisted argv and
+spawns it as a child process (no shell, inherited env only); it is off by default
+(`board.actions.enabled`) and gated by exact-origin + `X-KK-Action` → preview → single-use token bound
+to the argv hash → `kk lock` single-flight `ops-console:<day>` → an append-only `actions.jsonl` line
+written before the child exists. The plane and the digest share `resolveArgv`, so a copied recipe and
+a clicked launch are byte-identical. It supersedes the 2026-10-22 supply-context panel, which was
+voice2-bound. Verification: `apps/board/tests/daily-voice-console.e2e.test.ts` over a committed
+eleven-day fixture, with the renders and the digest committed under
+`apps/board/tests/artifacts/daily-voice-console/`. Detail:
+[daily-voice-ops-console.md](design/daily-voice-ops-console.md).
 
 ## Repository workflow discovery
 

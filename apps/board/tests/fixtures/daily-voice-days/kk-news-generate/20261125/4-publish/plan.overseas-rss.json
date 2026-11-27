@@ -1,0 +1,28 @@
+{
+    "schemaVersion": 1,
+    "window": "overseas-rss",
+    "bundleRunId": "kk-news-generate-20261125-1-bundle",
+    "parentRunId": "kk-news-generate-20261125-1",
+    "presetName": "daily-ai-voice",
+    "presetDigest": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "runDate": "20261125",
+    "excluded": [],
+    "rows": [
+        {
+            "id": "podcast.spotify",
+            "plugin": "podcast",
+            "operation": "episode",
+            "variant": "zh",
+            "tier": 2,
+            "window": "overseas-rss",
+            "mode": "dummy",
+            "required": true,
+            "approval": "none",
+            "status": "planned",
+            "transport": "fanout",
+            "profile": "default",
+            "payloadPath": "4-publish/payloads/podcast.spotify.json",
+            "payloadDigest": "2e8a1698dbe6fa5890d64bdeaeb1a49d1e379a3c830fb15f2b74fb6bbd10055e"
+        }
+    ]
+}

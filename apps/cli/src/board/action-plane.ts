@@ -4,7 +4,17 @@ import type { ActionKind, DailyActionLine } from '@gobing-ai/kk-board/contracts'
 import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
 import { type FileSystem, NodeProcessExecutor } from '@gobing-ai/ts-runtime';
 import { resolveKkConfigPath } from '../invoke';
-import { ACTION_KINDS, ActionParamError, DAY_PATTERN, type ResolvedAction, resolveArgv } from './actions';
+import {
+    ACTION_KINDS,
+    ActionParamError,
+    DAY_PATTERN,
+    EDIT_ARTIFACTS,
+    EDIT_BODY_CAP_BYTES,
+    editArtifactRelative,
+    type ResolvedAction,
+    resolveArgv,
+} from './actions';
+import { unifiedDiff } from './text-diff';
 
 /**
  * The guarded action plane (G83, task 0442 — docs/design/daily-voice-ops-console.md §6).
@@ -44,6 +54,7 @@ export const ACTION_REFUSALS = {
     'actions.token.invalid': 409,
     'actions.confirm.missing': 400,
     'actions.lock.held': 409,
+    'actions.artifact.stale': 409,
 } as const;
 
 /** One refusal code from the closed set. */
@@ -57,10 +68,31 @@ export interface ActionChild {
     stdout(): string;
 }
 
+/**
+ * What the plane needs to reason about an edit artifact without owning the write (G84).
+ *
+ * The verb still owns the bytes: the plane only reads them to render the preview diff and to refuse
+ * a stale confirmation before a child exists.
+ */
+export interface ArtifactSeam {
+    /** The artifact's current text, or null when it does not exist yet. */
+    read: (kind: ActionKind, params: Record<string, string>) => Promise<{ path: string; text: string | null }>;
+    /** The newest backup text for `revert-artifact`, or null when there is none. */
+    newestBackup: (params: Record<string, string>) => Promise<string | null>;
+}
+
+/** The environment a launched child receives: the holder identity, never request data. */
+export interface ActionChildEnv {
+    /** The `ops-console:<day>` holder this process owns, so the verb can prove it is the holder. */
+    KK_LOCK_HOLDER?: string;
+}
+
 /** Everything the plane touches outside its own state; injected so the matrix is unit-testable. */
 export interface ActionPlaneDeps {
-    /** Spawn one argv array — never a shell string, never request data in the environment. */
-    spawn: (argv: string[]) => ActionChild;
+    /** Spawn one argv array — never a shell string, no request data in the environment. */
+    spawn: (argv: string[], env: ActionChildEnv, stdin: string | null) => ActionChild;
+    /** The edit-artifact seam; omitted by callers that never offer the two edit kinds. */
+    artifacts?: ArtifactSeam;
     /** The clock (injectable so token expiry is testable). */
     now: () => number;
     /** 16 random bytes as hex, for the token. */
@@ -73,6 +105,8 @@ export interface ActionPlaneDeps {
     preview: (argv: string[]) => Promise<string>;
     /** Resolved per request so a reader that starts before its config is read still answers. */
     enabled: () => boolean;
+    /** The `ops-console:<day>` holder this process owns, handed to an edit child as proof. */
+    lockHolder?: () => string;
     /** The exact Board origin this reader serves. */
     boardOrigin: string;
 }
@@ -109,6 +143,18 @@ export function argvHashOf(kind: ActionKind, argv: readonly string[]): string {
         .digest('hex');
 }
 
+/**
+ * The hash a body-bound kind's token binds (G84): the argv hash plus the body digest, so a
+ * confirmation authorizes exactly the bytes that were previewed. The body itself never leaves this
+ * function — only its hash reaches a token record or an audit line.
+ */
+export function bodyBoundHashOf(kind: ActionKind, argv: readonly string[], body: string): string {
+    const bodyHash = createHash('sha256').update(Buffer.from(body, 'utf8')).digest('hex');
+    return createHash('sha256')
+        .update(`${argvHashOf(kind, argv)}\0${bodyHash}`)
+        .digest('hex');
+}
+
 /** True when `host` names a loopback address (the reader's DNS-rebinding guard). */
 function isLoopbackHost(host: string | null): boolean {
     if (host === null) return false;
@@ -127,6 +173,14 @@ function paramsOf(body: unknown): Record<string, string> | null {
         params[key] = value;
     }
     return params;
+}
+
+/** The request's draft body for a body-bound kind (absent reads as ''), capped before hashing. */
+function bodyTextOf(body: unknown): { text: string; tooLarge: boolean } {
+    if (typeof body !== 'object' || body === null) return { text: '', tooLarge: false };
+    const raw = (body as Record<string, unknown>).body;
+    if (typeof raw !== 'string') return { text: '', tooLarge: false };
+    return { text: raw, tooLarge: Buffer.byteLength(raw, 'utf8') > EDIT_BODY_CAP_BYTES };
 }
 
 /** The optional token and typed confirmation a request may carry. */
@@ -189,6 +243,8 @@ const REFUSAL_MESSAGES: Record<ActionRefusal, string> = {
     'actions.token.invalid': 'The confirmation token is unknown, already used or expired. Request a new preview.',
     'actions.confirm.missing': 'A live action needs typedConfirm set to the day.',
     'actions.lock.held': 'Another action is running for this day; wait for it or cancel it.',
+    'actions.artifact.stale':
+        'The artifact changed since the preview; its current sha256 is in `currentSha` and nothing was launched.',
 };
 
 /**
@@ -273,6 +329,18 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
             });
             return refusal('actions.params.invalid');
         }
+        const bodyText = bodyTextOf(input.body);
+        if (bodyText.tooLarge) {
+            await audit({
+                ...base,
+                argv: [],
+                tokenHash: null,
+                runId: null,
+                exit: null,
+                refusal: 'actions.params.invalid',
+            });
+            return refusal('actions.params.invalid');
+        }
         let resolved: ResolvedAction;
         try {
             resolved = resolveArgv(kind, params);
@@ -289,13 +357,22 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
             return refusal('actions.params.invalid');
         }
         const { token, typedConfirm } = tokenAndConfirm(input.body);
-        const hash = argvHashOf(kind, resolved.argv);
+        const hash =
+            resolved.bodyBound === true
+                ? bodyBoundHashOf(kind, resolved.argv, bodyText.text)
+                : argvHashOf(kind, resolved.argv);
         const scope = scopeOf(kind, params);
 
         if (token === null) {
-            // Preview: resolve the dry run (when the kind has one), then mint the confirmation.
+            // Preview: the dry-run output (when the kind has one), or the diff an edit would make,
+            // then mint the confirmation bound to exactly what was shown.
             let dryRun: string | null = null;
-            if (resolved.dryRunArgv !== undefined) {
+            if (resolved.bodyBound === true) {
+                dryRun =
+                    deps.artifacts === undefined
+                        ? null
+                        : await diffPreviewOf(deps.artifacts, kind, params, bodyText.text);
+            } else if (resolved.dryRunArgv !== undefined) {
                 dryRun = await deps.preview(resolved.dryRunArgv);
             }
             const minted = deps.randomHex();
@@ -349,6 +426,30 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
             return refusal('actions.token.invalid');
         }
         tokens.delete(token);
+        // A confirmed edit whose artifact moved is a conflict, not a launch: the current sha comes
+        // back so the operator can re-preview without guessing (R6, AC6).
+        if (resolved.bodyBound === true && deps.artifacts !== undefined) {
+            const stale = await staleEditSha(deps.artifacts, kind, params);
+            if (stale !== null) {
+                await audit({
+                    ...base,
+                    day: scope.day,
+                    argv: resolved.argv,
+                    tokenHash: hash,
+                    runId: null,
+                    exit: null,
+                    refusal: 'actions.artifact.stale',
+                });
+                return {
+                    status: 409,
+                    body: {
+                        code: 'actions.artifact.stale',
+                        message: REFUSAL_MESSAGES['actions.artifact.stale'],
+                        currentSha: stale,
+                    },
+                };
+            }
+        }
         const lock = await deps.acquireLock(scope.lock);
         if (lock === null) {
             await audit({
@@ -374,8 +475,12 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
             exit: null,
             result: 'launched',
         });
-        const child = deps.spawn(resolved.argv);
-        void child.exit.then(async (code) => {
+        const child = deps.spawn(
+            resolved.argv,
+            deps.lockHolder === undefined ? {} : { KK_LOCK_HOLDER: deps.lockHolder() },
+            resolved.stdinBody === true ? bodyText.text : null,
+        );
+        const settle = async (code: number): Promise<void> => {
             const runId = runIdOf(child.stdout());
             await audit({
                 ts: new Date(deps.now()).toISOString(),
@@ -389,7 +494,27 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
                 result: 'exited',
             });
             await lock.release();
-        });
+        };
+
+        // An edit is a sub-second verb whose outcome the operator must see: it is awaited and its
+        // own refusal code is relayed, because a 202 would hide `news.edit.frozen`,
+        // `news.edit.script.invalid` and a base-sha race that only the verb can detect. A launch
+        // that starts a workflow keeps the fire-and-forget 202 below.
+        if (resolved.bodyBound === true) {
+            const code = await child.exit;
+            await settle(code);
+            if (code === 0) return { status: 200, body: { saved: true, argv: resolved.argv, exit: code } };
+            const refusal = editRefusalOf(child.stdout());
+            return {
+                status: refusal === 'news.edit.base-sha.mismatch' ? 409 : 422,
+                body: {
+                    code: refusal ?? 'news.edit.failed',
+                    message: `kk news edit exited ${code}${refusal === null ? '' : ` (${refusal})`}.`,
+                },
+            };
+        }
+
+        void child.exit.then(settle);
         return { status: 202, body: { launched: true, argv: resolved.argv, live: resolved.live } };
     }
 
@@ -413,16 +538,132 @@ export async function actionsEnabledFromConfig(fs: FileSystem): Promise<boolean>
     }
 }
 
-/** One argv array as a child the plane can follow: no shell, inherited environment only. */
-export function spawnArgv(executor: NodeProcessExecutor, argv: string[], cwd: string): ActionChild {
+/**
+ * One argv array as a child the plane can follow: no shell, no request data in the environment.
+ *
+ * The only environment entry is the lock-holder identity (a UUID this process minted), and the only
+ * stdin is an edit body the operator previewed — never a command line.
+ */
+export function spawnArgv(
+    executor: NodeProcessExecutor,
+    argv: string[],
+    cwd: string,
+    env: ActionChildEnv = {},
+    stdin: string | null = null,
+): ActionChild {
     const [command, ...args] = argv;
     if (command === undefined) throw new Error('an action argv cannot be empty');
     let captured = '';
-    const run = executor.run({ command, args, cwd, timeout: null }).then((result) => {
+    if (stdin !== null) {
+        // A body rides the child's stdin: the executor's buffered run has no stdin, so the streaming
+        // handle is the one that can carry it (and it is still an argv spawn, never a shell string).
+        const pipe = executor.runStreaming({ command, args, cwd, env: { ...env } });
+        pipe.writeStdin(stdin);
+        pipe.endStdin();
+        const exit = pipe.exited.then(async (code) => {
+            const [out, err] = await Promise.all([
+                pipe.stdout === null ? Promise.resolve('') : new Response(pipe.stdout).text(),
+                pipe.stderr === null ? Promise.resolve('') : new Response(pipe.stderr).text(),
+            ]);
+            captured = `${out}${err}`;
+            return code ?? 1;
+        });
+        return { exit, stdout: () => captured };
+    }
+    const run = executor.run({ command, args, cwd, timeout: null, env: { ...env } }).then((result) => {
         captured = `${result.stdout}${result.stderr}`;
         return result.exitCode ?? 1;
     });
     return { exit: run, stdout: () => captured };
+}
+
+/** The day directory the plane edits inside — the same `.works` root its audit lines use. */
+export function planeDayDir(projectPath: string, day: string): string {
+    return join(projectPath, '.works', 'kk-news-generate', day);
+}
+
+/**
+ * The production artifact seam: read the allowlisted draft and its newest backup.
+ *
+ * Only the two closed artifacts resolve, and only inside the day directory the audit path uses.
+ */
+export function planeArtifacts(projectPath: string, fs: FileSystem): ArtifactSeam {
+    const artifactOf = (params: Record<string, string>): { day: string; relative: string; path: string } | null => {
+        const day = params.day ?? '';
+        const artifact = params.artifact ?? '';
+        if (!DAY_PATTERN.test(day)) return null;
+        if (!(EDIT_ARTIFACTS as readonly string[]).includes(artifact)) return null;
+        const dayDir = planeDayDir(projectPath, day);
+        return {
+            day,
+            relative: editArtifactRelative(day, artifact),
+            path: join(dayDir, editArtifactRelative(day, artifact)),
+        };
+    };
+    return {
+        read: async (_kind, params) => {
+            const target = artifactOf(params);
+            if (target === null) return { path: '', text: null };
+            const text = (await fs.exists(target.path)) ? await fs.readFile(target.path) : null;
+            return { path: target.relative, text };
+        },
+        newestBackup: async (params) => {
+            const target = artifactOf(params);
+            if (target === null) return null;
+            const dir = join(planeDayDir(projectPath, target.day), 'edits');
+            let names: string[];
+            try {
+                names = await fs.readDir(dir);
+            } catch {
+                return null;
+            }
+            const suffix = target.relative.endsWith('.md') ? '-article.md' : '-script.yaml';
+            const newest = names
+                .filter((name) => name.endsWith(suffix))
+                .sort()
+                .at(-1);
+            if (newest === undefined) return null;
+            return fs.readFile(join(dir, newest));
+        },
+    };
+}
+
+/** The unified diff an edit (or a revert) would make, for the preview answer. */
+async function diffPreviewOf(
+    seam: ArtifactSeam,
+    kind: ActionKind,
+    params: Record<string, string>,
+    body: string,
+): Promise<string | null> {
+    const current = await seam.read(kind, params);
+    const after = kind === 'revert-artifact' ? await seam.newestBackup(params) : body;
+    if (after === null) return null;
+    const label = current.path === '' ? (params.artifact ?? 'artifact') : current.path;
+    return unifiedDiff(current.text ?? '', after, label, label);
+}
+
+/**
+ * The verb's own closed refusal code, read from its output.
+ *
+ * The verb prints `kk.news.edit.failed: <code>: <message>` on stderr; the plane relays the code so a
+ * caller can act on it (a base-sha race is a conflict, a frozen day is not).
+ */
+export function editRefusalOf(output: string): string | null {
+    return /news\.edit\.[a-z.-]+/.exec(output)?.[0] ?? null;
+}
+
+/** The artifact's current sha when a confirmed edit's `baseSha` no longer matches; null otherwise. */
+async function staleEditSha(
+    seam: ArtifactSeam,
+    kind: ActionKind,
+    params: Record<string, string>,
+): Promise<string | null> {
+    if (kind !== 'edit-artifact') return null;
+    const expected = params.baseSha ?? '';
+    const current = await seam.read(kind, params);
+    if (current.text === null) return null;
+    const sha = createHash('sha256').update(Buffer.from(current.text, 'utf8')).digest('hex');
+    return sha === expected.toLowerCase() ? null : sha;
 }
 
 /**
@@ -468,12 +709,15 @@ async function productionPlane(input: {
     const store = input.store ?? (await openStore({ path: await resolveStorePath(resolveKkConfigPath()) }));
     const runsRoot = join(input.projectPath, '.works', 'kk-news-generate');
     const holder = `ops-console:${crypto.randomUUID()}`;
+    const artifacts = planeArtifacts(input.projectPath, input.fs);
     return createActionPlane({
         enabled: () => enabled,
         now: () => Date.now(),
         randomHex: () => Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex'),
         boardOrigin: input.boardOrigin,
-        spawn: (argv) => spawnArgv(input.executor, argv, input.projectPath),
+        spawn: (argv, env, stdin) => spawnArgv(input.executor, argv, input.projectPath, env, stdin),
+        artifacts,
+        lockHolder: () => holder,
         preview: async (argv) => {
             const [command, ...args] = argv;
             if (command === undefined) return '';

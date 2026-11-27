@@ -1,0 +1,19 @@
+{
+    "schemaVersion": 1,
+    "window": "cn-peak",
+    "runDate": "20261115",
+    "status": "dummy",
+    "published": 0,
+    "targets": 1,
+    "excluded": [],
+    "rows": [
+        {
+            "id": "video.shipinhao",
+            "tier": 1,
+            "required": true,
+            "status": "succeeded",
+            "effect": "none",
+            "dummy": true
+        }
+    ]
+}

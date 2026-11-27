@@ -54,6 +54,7 @@ function harness(overrides: Partial<Parameters<typeof createActionPlane>[0]> = {
     let lockHeld = false;
     const audit: DailyActionLine[] = [];
     const spawned: string[][] = [];
+    const spawnedEnv: Record<string, string>[] = [];
     const plane = createActionPlane({
         enabled: () => true,
         now: () => now,
@@ -64,8 +65,9 @@ function harness(overrides: Partial<Parameters<typeof createActionPlane>[0]> = {
             audit.push(line);
         },
         preview: async (argv) => `preview of ${argv.join(' ')}`,
-        spawn: (argv): ActionChild => {
+        spawn: (argv, env): ActionChild => {
             spawned.push(argv);
+            spawnedEnv.push(env as Record<string, string>);
             const stdout = JSON.stringify({ runId: 'kk-publish-20261125-9' });
             return { exit: Promise.resolve(0), stdout: () => stdout };
         },
@@ -227,7 +229,7 @@ describe('the refusal matrix (AC3, R5)', () => {
 
     it('refuses an unknown kind as 404', async () => {
         const h = harness();
-        const answer = await h.handle(request('edit-artifact', body({ day: '20261125' })));
+        const answer = await h.handle(request('delete-run', body({ day: '20261125' })));
         expect(answer.status).toBe(404);
         expect(answer.body.code).toBe('actions.kind.unknown');
     });

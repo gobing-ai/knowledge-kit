@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Daily AI Voice kk news edit verb, edit/revert action kinds and safety-stale projection
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T01:24:35.100Z
-updated_at: "2026-11-26T01:33:21.268Z"
+updated_at: "2026-11-27T17:04:14.228Z"
 feature_id: G84
 priority: P2
 tags:
@@ -14,6 +14,8 @@ tags:
   - action-plane
 estimate_hours: 8
 
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0444. Daily AI Voice kk news edit verb, edit/revert action kinds and safety-stale projection
@@ -51,21 +53,21 @@ Install note: R8 edits a stage body under `plugins/kk/scripts/`, so the AGENTS.m
 
 ### Requirements
 
-- [ ] R1. `kk news edit --run-date <day> --artifact article|script --from-file <path|-> --base-sha <hex>` replaces exactly the allowlisted file (article → `22-article/<day>_06_article-write_body.md`, script → `24-script/<day>_08_script_voicescript.yaml`) via a same-directory temp file + rename, backs up the prior bytes to `<day>/edits/<ts>-<artifact>.<ext>` before the rename, and prints the backup path and the new sha256.
-- [ ] R2. `kk news edit --run-date <day> --artifact <a> --revert` restores the newest backup (lexicographically greatest `<ts>` prefix under `<day>/edits/` for that artifact) and backs up the bytes it replaces, so the revert itself can be undone.
-- [ ] R3. The verb refuses (nonzero exit, reason naming the check as a closed code, no write, no backup) on: unknown artifact, a source path that is not readable or is a directory, base-sha mismatch, body > 256 KiB, script not valid YAML or without a `segments` array of at least 2 entries each with non-empty `text` (the shape `daily-stages.ts:1757-1760` requires), frozen bundle, `ops-console:<day>` lock held by another holder. No caller-supplied path is ever used as a destination: the target comes from the closed artifact enum and the day directory resolved from `--run-date`, so no input can escape the day directory or reach another file.
-- [ ] R4. Action kinds `edit-artifact` {day, artifact, baseSha} and `revert-artifact` {day, artifact} are added to the closed `ActionKind` union and `resolveArgv`; preview returns a server-computed unified diff; execute spawns the verb with `--from-file -` and the body on stdin; the token binds sha256(kind + argv + body); every preview, execute and refusal is audited in `actions.jsonl` under the existing envelope, and the body itself is never written to it (hash only).
-- [ ] R5. `projectDay()` reports safety `stale` when the recorded verdict's digest no longer matches the current bytes (recomputed over article `_06_article_content.json` + `_08_script_voicescript.yaml`, mirroring `safety-artifact-check.ts:199-207`), and also when the article body file is newer than `content.json` (a pending edit the digest cannot see yet); a new `artifact-edited` (warn) attention rule emits ordered recipes: article → rerender-step generate-render, generate-from-node safety; script → generate-from-node safety, rerender-step generate-voice. The script recipe needs no cache-removal line: section cache hashes key on segment text (`daily-stages.ts:1908`, `:1589-1601`), so `generate-voice` re-synthesizes edited segments.
-- [ ] R6. A confirmed edit carrying a stale base sha is refused as a 409 conflict from the plane, with the current sha in the response.
-- [ ] R7. `docs/04_DESIGN.md` documents `kk news edit` and the two action kinds in the same commit.
+- [x] R1. `kk news edit --run-date <day> --artifact article|script --from-file <path|-> --base-sha <hex>` replaces exactly the allowlisted file (article → `22-article/<day>_06_article-write_body.md`, script → `24-script/<day>_08_script_voicescript.yaml`) via a same-directory temp file + rename, backs up the prior bytes to `<day>/edits/<ts>-<artifact>.<ext>` before the rename, and prints the backup path and the new sha256.
+- [x] R2. `kk news edit --run-date <day> --artifact <a> --revert` restores the newest backup (lexicographically greatest `<ts>` prefix under `<day>/edits/` for that artifact) and backs up the bytes it replaces, so the revert itself can be undone.
+- [x] R3. The verb refuses (nonzero exit, reason naming the check as a closed code, no write, no backup) on: unknown artifact, a source path that is not readable or is a directory, base-sha mismatch, body > 256 KiB, script not valid YAML or without a `segments` array of at least 2 entries each with non-empty `text` (the shape `daily-stages.ts:1757-1760` requires), frozen bundle, `ops-console:<day>` lock held by another holder. No caller-supplied path is ever used as a destination: the target comes from the closed artifact enum and the day directory resolved from `--run-date`, so no input can escape the day directory or reach another file.
+- [x] R4. Action kinds `edit-artifact` {day, artifact, baseSha} and `revert-artifact` {day, artifact} are added to the closed `ActionKind` union and `resolveArgv`; preview returns a server-computed unified diff; execute spawns the verb with `--from-file -` and the body on stdin; the token binds sha256(kind + argv + body); every preview, execute and refusal is audited in `actions.jsonl` under the existing envelope, and the body itself is never written to it (hash only).
+- [x] R5. `projectDay()` reports safety `stale` when the recorded verdict's digest no longer matches the current bytes (recomputed over article `_06_article_content.json` + `_08_script_voicescript.yaml`, mirroring `safety-artifact-check.ts:199-207`), and also when the article body file is newer than `content.json` (a pending edit the digest cannot see yet); a new `artifact-edited` (warn) attention rule emits ordered recipes: article → rerender-step generate-render, generate-from-node safety; script → generate-from-node safety, rerender-step generate-voice. The script recipe needs no cache-removal line: section cache hashes key on segment text (`daily-stages.ts:1908`, `:1589-1601`), so `generate-voice` re-synthesizes edited segments.
+- [x] R6. A confirmed edit carrying a stale base sha is refused as a 409 conflict from the plane, with the current sha in the response.
+- [x] R7. `docs/04_DESIGN.md` documents `kk news edit` and the two action kinds in the same commit.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — The operator edits an allowlisted day artifact through the CLI verb (req: R1)
-- [ ] AC2 — Every edit can be reverted to the bytes it replaced (req: R2)
-- [ ] AC3 — Unsafe or stale edits are refused and change nothing (req: R3; R6)
-- [ ] AC5 — An edit re-arms the safety gate and names the re-render steps (req: R5)
-- [ ] AC6 — A concurrent change to the artifact is not overwritten (req: R3; R6)
+- [x] AC1 — The operator edits an allowlisted day artifact through the CLI verb (req: R1)
+- [x] AC2 — Every edit can be reverted to the bytes it replaced (req: R2)
+- [x] AC3 — Unsafe or stale edits are refused and change nothing (req: R3; R6)
+- [x] AC5 — An edit re-arms the safety gate and names the re-render steps (req: R5)
+- [x] AC6 — A concurrent change to the artifact is not overwritten (req: R3; R6)
 
 AC1/AC2/AC3 run against a fixture day directory with the real `kk` binary: the file bytes, the `edits/` backup and the printed `{backup, sha256}` are asserted, and each refusal case asserts an untouched artifact plus no `edits/` entry. AC5 is asserted twice — `projectDay()` returns `safety: stale` with the two recipes in run order for an edited script, and for an edited article body before the re-render (the mtime case) — and the `revision-valid` parity run in Plan pins the digest to the gate's own implementation. AC6 is the plane's 409 carrying the current sha, with the child never spawned. R7 (docs) and R4 (action kinds) are verified by the doc diff and the refusal-matrix tests, which cover both new kinds.
 
@@ -106,18 +108,64 @@ Rejected: a recipe that tells the operator to delete `30-audio/...` by hand (int
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+| File | Lines | What / why |
+| --- | --- | --- |
+| `apps/cli/src/commands/content-edit.ts` | 1-420 | `kk news edit`: the one write path for the two allowlisted drafts. Order is resolve day → artifact enum → read → 256 KiB cap → sha compare → script shape → frozen bundle → lock → backup → temp+rename. The target is derived from the enum and the day, never from an argument, so no input can escape the day directory. Refusals are closed codes (`news.edit.*`) with `current=<sha>` on a conflict; `--revert` restores the newest backup and backs up what it replaced, so a revert is revertible. |
+| `apps/cli/src/board/text-diff.ts` | 1-69 | The preview diff: prefix/suffix trim around the changed middle, one hunk, explicit `\ No newline at end of file`. No diff package is installed and this is the only caller, so it stays local rather than adding a dependency. |
+| `apps/cli/src/board/actions.ts` | 35-38, 205-243, 151-160 | The two kinds on the closed allowlist. `edit-artifact` carries `--from-file -` (the body never rides argv, so the audit holds no draft text); `revert-artifact` carries `--revert`. Params are validated here only (`baseSha` = 64 hex, artifact in the enum). |
+| `apps/cli/src/board/action-plane.ts` | 74-102, 151-160, 340-500, 554-640 | Body-aware confirmation: the token binds `sha256(kind + argv + sha256(body))`, so a confirmation authorizes exactly the previewed bytes; the body is capped before hashing and never reaches a token record or audit line. Preview returns the server-computed diff for both edit kinds. Execute refuses a moved artifact as `409 actions.artifact.stale` with the current sha **before** any child exists. The child gets the body on stdin and the plane's own holder as `KK_LOCK_HOLDER` — never in argv, never request data in the environment. |
+| `apps/cli/src/board/day.ts` | 303-420, 668-700 | `safetyStaleness()` mirrors `draftDigest` (`safety-artifact-check.ts:199-207`) and adds the article-mtime case, which a digest comparison cannot see (the digest hashes `_06_article_content.json`, not the body). A stale verdict is never a pass, and the new `artifact-edited` rule emits the ordered recipes: article → render then safety; script → safety then voice. |
+| `apps/board/src/contracts.ts` | 298-305, 320-329, 393-410 | `ActionKind` gains the two kinds, `AttentionKind` gains `artifact-edited`, and `DaySafety` gains optional `stale` / `staleReason` (additive, so an old digest still type-checks). |
+| `apps/cli/tests/content-edit.e2e.test.ts` | 1-300 | The verb against the real binary over a fixture day: bytes, backup, printed sha, revert-of-revert, the inclusive 256 KiB boundary, and every refusal asserting untouched bytes and no `edits/` entry. |
+| `apps/cli/tests/board/action-plane-edit.test.ts` | 1-320 | The plane's side: body cap, body-bound token, diff preview, `409` with the current sha and zero children, stdin + `KK_LOCK_HOLDER`, and no body in the audit. |
+| `apps/cli/tests/board/day-artifact-edit.test.ts` | 1-150 | The projection: fresh day, script edit (safety → voice), article-mtime case (render → safety), and the parity pin against `safety-artifact-check.ts revision-valid` in both directions. |
+| `apps/cli/tests/board/text-diff.test.ts` | 1-50 | Diff cases: unchanged → empty, empty sides, single-line change without neighbours, no trailing newline. |
+| `apps/cli/src/commands/content.ts` | 22-23, 579-583 | Registration for the news noun only (the artifact nouns never gain the verb). |
+| `docs/04_DESIGN.md` | 1533-1536, 1562-1587 | The verb's surface line plus the refusal codes, the plane's two kinds with the body-bound token and the `409`, and the projection's re-arm rule. |
+| `docs/design/daily-voice-ops-console.md` | 10, 210-215 | §10 marked shipped for the backend; the whole-document cache premise recorded as settled (per-section cache keys on segment text, so an edited segment re-synthesizes). |
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 — `kk news edit … --from-file <path|-> --base-sha <hex>` replaces exactly the allowlisted file via temp+rename, backs up the prior bytes, prints backup + new sha256 | MET | `apps/cli/src/commands/content-edit.ts:323-409` (order: day → enum → read → cap → sha → script shape → frozen → lock → backup → write); `apps/cli/tests/commands/content-edit.test.ts:102-152` asserts bytes, backup bytes, printed sha equals the file's sha, and both `--from-file -` and `--from-file <path>` |
+| R2 — `--revert` restores the newest backup and backs up the bytes it replaces | MET | `content-edit.ts:336-366`; `content-edit.test.ts:154-176` (two edits → revert → revert-of-revert returns to the second edit, three backups) |
+| R3 — closed refusals, nothing written, no destination from caller input | MET | codes at `content-edit.ts:43-52`, refusal path `:260-268`; `content-edit.test.ts:214-495` covers unknown artifact, unreadable source, stale sha (with `current=<sha>`), body > cap (and exactly-at-cap accepted), invalid YAML / one segment / empty text, frozen bundle, foreign lock; each asserts unchanged bytes and no `edits/` entry. Target derivation is the enum + `artifactPath()` (`:118-126`) |
+| R4 — kinds `edit-artifact` / `revert-artifact`, preview diff, verb spawn with stdin, body-bound token, audit hash only | MET | `apps/cli/src/board/actions.ts:205-243` (allowlist + argv); `action-plane.ts:74-102,151-160,355-395,420-500`; `action-plane-edit.test.ts:93-230` (diff preview, cap before hashing, body-bound token mismatch → 409, stdin + `KK_LOCK_HOLDER`, no body in the audit) |
+| R5 — `projectDay()` reports safety stale (digest mismatch **and** article body newer than content.json) and adds `artifact-edited` with the ordered recipes | MET | `apps/cli/src/board/day.ts:303-420` (mirror + mtime case), `:372-412` (recipes); `day-artifact-edit.test.ts:89-140` asserts fresh, script (safety → voice), article (render → safety) and the two-directional parity against `safety-artifact-check.ts revision-valid` |
+| R6 — a confirmed edit with a stale base sha is a 409 carrying the current sha | MET | `action-plane.ts:430-455` refuses before the lock and before the spawn; `action-plane-edit.test.ts:150-190` asserts 409, `currentSha` shape, zero children, and the refusal in the audit |
+| R7 — `docs/04_DESIGN.md` documents the verb and the two kinds in the same commit | MET | `docs/04_DESIGN.md:1533-1536` (surface lines) and `:1562-1587` (refusal codes, token formula, 409, projection re-arm) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 — the operator edits an allowlisted day artifact through the CLI verb | MET | test | `apps/cli/tests/commands/content-edit.test.ts:102-152` (real binary, real bytes/backup/sha) |
+| AC2 — every edit can be reverted to the bytes it replaced | MET | test | `content-edit.test.ts:154-176` |
+| AC3 — unsafe or stale edits are refused and change nothing | MET | test | `content-edit.test.ts:214-495` (each refusal: unchanged bytes, no backup) |
+| AC5 — an edit re-arms the safety gate and names the re-render steps | MET | test | `apps/cli/tests/board/day-artifact-edit.test.ts:89-140` (both cases, recipe order, gate parity) |
+| AC6 — a concurrent change is not overwritten | MET | test | `apps/cli/tests/board/action-plane-edit.test.ts:150-190` (409 + current sha, child never spawned); the verb's own `--base-sha` refusal backs the non-plane path |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
 <!-- Links to the parent feature, design docs, related tasks, or external references. -->
 
 ### History
+
+- 2026-11-27T16:52:06.252Z todo → wip (system)
+- 2026-11-27T17:04:12.921Z wip → testing (system)
+- 2026-11-27T17:04:14.222Z testing → done (system)
+

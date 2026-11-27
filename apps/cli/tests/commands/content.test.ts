@@ -34,6 +34,8 @@ describe('content command module', () => {
             // `digest` is the news-only day digest (G83, task 0439): the same DailyDigest the
             // Board's Today tab reads, rendered as markdown or JSON (04_DESIGN §1.14).
             'digest',
+            // `edit` is the G84 draft-edit verb (task 0444): news-only, like `digest`.
+            'edit',
             'generate',
             'generate-bundle',
             'generate-cards',

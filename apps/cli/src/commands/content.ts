@@ -3,6 +3,7 @@ import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { setDefaultOutputTargets } from '@gobing-ai/ts-utils';
 import { type Command, CommanderError } from 'commander';
+import { actionsEnabledFromConfig } from '../board/action-plane';
 import { isDayKey, listDays, projectDay } from '../board/day';
 import { renderDaysMarkdown, renderDigestMarkdown } from '../board/digest';
 import {
@@ -13,10 +14,18 @@ import {
     resolveRun,
 } from '../content-types';
 import { runItcStage } from '../itc-stage';
+import {
+    DIGEST_TRIGGERS,
+    type DigestTrigger,
+    digestNotifyConfigOf,
+    digestPushLine,
+    pushDigest,
+} from '../news-digest-push';
 import { consoleOutput } from '../output';
 import { resolveConfigPath } from '../publish-core';
 import { resolveBundlePath } from '../publish-matrix';
 import { gatePayload, progressPayload } from '../status-progress';
+import { registerContentEditCommand } from './content-edit';
 import { registerContentGenerateVerbs } from './content-generate';
 import { registerContentLaunchVerbs } from './content-launch';
 import { registerContentPublishVerbs } from './content-publish';
@@ -50,6 +59,9 @@ interface DigestOptions {
     days?: boolean;
     from?: string;
     until?: string;
+    push?: boolean;
+    trigger?: string;
+    dryRun?: boolean;
 }
 
 /** Config fields needed by the shared content commands. */
@@ -505,6 +517,9 @@ function configureDigest(command: Command): void {
         .option('--days', 'list recorded days instead of one digest')
         .option('--from <YYYYMMDD>', 'range start for --days')
         .option('--until <YYYYMMDD>', 'range end for --days')
+        .option('--push', 'push the digest to the configured webhook (notify.digest)')
+        .option('--trigger <trigger>', `which trigger the receipt belongs to: ${DIGEST_TRIGGERS.join('|')}`, 'generate')
+        .option('--dry-run', 'print the push body and target host without sending or writing a receipt')
         .action((options: DigestOptions) => digestAction(options));
 }
 
@@ -523,7 +538,14 @@ async function digestAction(options: DigestOptions): Promise<void> {
     } catch (error) {
         fail(2, 'kk.content.config', error instanceof Error ? error.message : String(error));
     }
-    const ctx = { projectPath: process.cwd(), fs, worksDir: resolveWorksDir(config, configFile) };
+    // The action switch rides the digest so this verb and the reader answer one object (R3): a
+    // renderer that guessed the plane's state would disagree with the console the moment it changed.
+    const ctx = {
+        projectPath: process.cwd(),
+        fs,
+        worksDir: resolveWorksDir(config, configFile),
+        actionsEnabled: await actionsEnabledFromConfig(fs),
+    };
     if (options.days === true) {
         const until = options.until ?? options.runDate ?? '';
         const from = options.from ?? '';
@@ -544,6 +566,53 @@ async function digestAction(options: DigestOptions): Promise<void> {
         fail(1, 'kk.content.digest.missing', `no kk-news-generate day directory at ${digest.lookedUp}`);
     }
     consoleOutput.write(options.json === true ? JSON.stringify(digest) : renderDigestMarkdown(digest));
+    if (options.push === true) await pushAction(join(ctx.worksDir ?? '', 'kk-news-generate', day), day, options);
+}
+
+/**
+ * `kk news digest --push` (G85, task 0446 — design §11).
+ *
+ * The push is deliberately separate from the render: the digest prints first, then one line reports
+ * the outcome (code + host only). A refusal exits nonzero, except the two that are not failures —
+ * disabled-by-config is the shipped default and reads as exit 2 only for a manual `--push`, while a
+ * below-floor skip is a normal no-op (exit 0).
+ */
+async function pushAction(workDir: string, day: string, options: DigestOptions): Promise<void> {
+    const trigger = options.trigger ?? 'generate';
+    if (!(DIGEST_TRIGGERS as readonly string[]).includes(trigger)) {
+        fail(2, 'kk.content.digest.push', `--trigger must be one of ${DIGEST_TRIGGERS.join('|')}, got '${trigger}'`);
+    }
+    const fs = createNodeFileSystem();
+    const configFile = configPath();
+    const config = await readConfig(configFile, fs);
+    const notify = digestNotifyConfigOf(config);
+    const digest = await projectDay(
+        { projectPath: process.cwd(), fs, worksDir: resolveWorksDir(config, configFile), actionsEnabled: false },
+        day,
+    );
+    if ('notFound' in digest)
+        fail(1, 'kk.content.digest.missing', `no kk-news-generate day directory at ${digest.lookedUp}`);
+    const outcome = await pushDigest({
+        fs,
+        digest,
+        workDir,
+        trigger: trigger as DigestTrigger,
+        notify,
+        env: process.env,
+        // Through `globalThis` so the command module never spells a bare fetch call (`no-direct-fetch`).
+        fetch: globalThis.fetch.bind(globalThis),
+        now: () => new Date().toISOString(),
+        ...(options.dryRun === true ? { dryRun: true } : {}),
+    });
+    if (options.dryRun === true && outcome.code !== 'notify.digest.disabled') {
+        consoleOutput.write(outcome.body);
+        consoleOutput.write(`dry run — host=${outcome.host ?? 'unknown'} (nothing sent)`);
+        return;
+    }
+    consoleOutput.error(`kk.news.digest.push: ${digestPushLine(outcome)}`);
+    if (outcome.exitCode !== 0) {
+        fail(outcome.exitCode, `kk.news.digest.push.${outcome.code}`, `digest push refused: ${outcome.code}`);
+    }
 }
 
 function configureStatus(command: Command, noun: string, defaultType: string): void {
@@ -566,6 +635,7 @@ export function registerContentVerbs(program: Command, noun: string, defaultType
     configureStatus(group.command('status').description('inspect a content run'), noun, defaultType);
     if (noun === 'news') {
         configureDigest(group.command('digest').description('render the day digest (G83)'));
+        registerContentEditCommand(group, noun, defaultType);
     }
     registerContentLaunchVerbs(group, noun, defaultType);
     registerContentPublishVerbs(group, defaultType);

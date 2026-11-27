@@ -1,0 +1,27 @@
+{
+    "schemaVersion": 1,
+    "window": "after-generate",
+    "runDate": "20261125",
+    "status": "partial",
+    "published": 1,
+    "targets": 2,
+    "excluded": [],
+    "rows": [
+        {
+            "id": "podcast.xiaoyuzhou",
+            "tier": 1,
+            "required": true,
+            "status": "succeeded",
+            "effect": "confirmed",
+            "dummy": false
+        },
+        {
+            "id": "video.shipinhao",
+            "tier": 1,
+            "required": true,
+            "status": "failed",
+            "effect": "none",
+            "dummy": false
+        }
+    ]
+}

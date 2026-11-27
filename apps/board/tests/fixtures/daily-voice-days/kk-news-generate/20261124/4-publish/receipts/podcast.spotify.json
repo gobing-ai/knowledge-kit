@@ -1,0 +1,17 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261124-1",
+    "planDigest": "d234fb344230ff588751ade3d19047986b22a4ac40e9da9de06f50f84079a779",
+    "payloadDigest": "1f711d15b399cc0b21dbc83dff8b0965d83b8060f4162584f6be990341b51ce5",
+    "plugin": "podcast",
+    "profile": "default",
+    "mode": "live",
+    "attemptId": "podcast.spotify-1",
+    "status": "succeeded",
+    "effect": "none",
+    "target": "podcast.spotify",
+    "window": "overseas-rss",
+    "dummy": true,
+    "startedAt": "2026-11-24T09:00:00.000Z",
+    "finishedAt": "2026-11-24T09:00:05.000Z"
+}

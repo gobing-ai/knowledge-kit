@@ -1,0 +1,20 @@
+{
+    "schemaVersion": 1,
+    "runId": "kk-news-generate-20261123-1-bundle",
+    "runDate": "20261123",
+    "parentRunId": null,
+    "episode": {
+        "title": "The GPU lease that expired"
+    },
+    "variants": {
+        "zh": {
+            "audio": "30-variants/zh/voice.mp3"
+        },
+        "en": {
+            "audio": "30-variants/en/voice.mp3"
+        }
+    },
+    "safety": {
+        "status": "pass"
+    }
+}

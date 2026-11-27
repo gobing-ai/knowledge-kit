@@ -1,0 +1,19 @@
+{
+    "schemaVersion": 1,
+    "window": "overseas-rss",
+    "runDate": "20261124",
+    "status": "dummy",
+    "published": 0,
+    "targets": 1,
+    "excluded": [],
+    "rows": [
+        {
+            "id": "podcast.spotify",
+            "tier": 2,
+            "required": true,
+            "status": "succeeded",
+            "effect": "none",
+            "dummy": true
+        }
+    ]
+}

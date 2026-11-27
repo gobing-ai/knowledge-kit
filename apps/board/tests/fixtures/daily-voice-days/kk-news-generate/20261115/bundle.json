@@ -1,0 +1,20 @@
+{
+    "schemaVersion": 1,
+    "runId": "kk-news-generate-20261115-1-bundle",
+    "runDate": "20261115",
+    "parentRunId": null,
+    "episode": {
+        "title": "Agents at the edge"
+    },
+    "variants": {
+        "zh": {
+            "audio": "30-variants/zh/voice.mp3"
+        },
+        "en": {
+            "audio": "30-variants/en/voice.mp3"
+        }
+    },
+    "safety": {
+        "status": "pass"
+    }
+}
