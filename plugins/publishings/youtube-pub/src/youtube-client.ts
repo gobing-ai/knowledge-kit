@@ -113,19 +113,12 @@ export function buildUploadBody(args: {
         status: {
             privacyStatus: args.privacyStatus,
             selfDeclaredMadeForKids: false,
-            // A 45–60s vertical clip is a Short by construction; declaring it keeps the upload honest.
-            madeForKids: false,
             embeddable: true,
             // Verified in the Data API v3 `videos` resource reference (2026-11-27):
             // `status.containsSyntheticMedia` is the disclosure flag for altered/synthetic content.
             ...(args.containsSyntheticMedia === true ? { containsSyntheticMedia: true } : {}),
         },
     };
-}
-
-/** The OAuth2 refresh-token response, minimally typed. */
-interface TokenResponse {
-    access_token?: unknown;
 }
 
 export class YouTubeClient {
@@ -208,17 +201,14 @@ export class YouTubeClient {
                 body: body.toString(),
                 signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
             });
-        } catch (error: unknown) {
-            return {
-                error: `youtube-pub token refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-            };
+        } catch {
+            return { error: 'youtube-pub token refresh failed (network error or timeout)' };
         }
         if (!response.ok) {
-            const detail = await readText(response);
-            return { error: `youtube-pub token refresh refused (HTTP ${response.status}): ${bounded(detail)}` };
+            return { error: `youtube-pub token refresh refused (HTTP ${response.status})` };
         }
-        const payload = (await readJson(response)) as TokenResponse;
-        const token = typeof payload.access_token === 'string' ? payload.access_token : '';
+        const payload = asRecord(await readJson(response));
+        const token = typeof payload?.access_token === 'string' ? payload.access_token : '';
         if (token === '') return { error: 'youtube-pub token refresh returned no access_token' };
         return token;
     }
@@ -255,11 +245,19 @@ export class YouTubeClient {
         if ('error' in loaded) return this.fail(loaded.error);
         const credentials = loaded.credentials;
 
+        const videoPath = shape.metadata.videoPath;
+        let bytes: ArrayBuffer;
+        try {
+            bytes = await Bun.file(videoPath).arrayBuffer();
+        } catch {
+            return this.fail(`youtube-pub cannot read the video at ${bounded(videoPath)}`);
+        }
+        if (bytes.byteLength === 0) return this.fail(`youtube-pub cannot read the video at ${bounded(videoPath)}`);
+
         const tags = shape.metadata.tags;
         const token = await this.accessToken(credentials);
         if (typeof token !== 'string') return this.fail(token.error, credentials);
 
-        const sizeBytes = (await this.fs.stat(shape.metadata.videoPath))?.size ?? 0;
         const body = buildUploadBody({
             title,
             description: shortsDescription(shape.body),
@@ -269,10 +267,10 @@ export class YouTubeClient {
             containsSyntheticMedia: shape.metadata.syntheticPresenter === true,
         });
 
-        const init = await this.initUpload(token, body, sizeBytes);
+        const init = await this.initUpload(token, body, bytes.byteLength);
         if ('error' in init) return this.fail(init.error, credentials);
 
-        const uploaded = await this.putBytes(init.location, shape.metadata.videoPath, sizeBytes);
+        const uploaded = await this.putBytes(init.location, bytes);
         if ('error' in uploaded) return this.fail(uploaded.error, credentials);
 
         const videoId = uploaded.videoId;
@@ -305,16 +303,14 @@ export class YouTubeClient {
                 body: JSON.stringify(body),
                 signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
             });
-        } catch (error: unknown) {
-            return {
-                error: `youtube-pub upload init failed: ${error instanceof Error ? error.message : String(error)}`,
-            };
+        } catch {
+            return { error: 'youtube-pub upload init failed (network error or timeout)' };
         }
         if (!response.ok) {
             const detail = await readText(response);
             const quota = response.status === 403 && /quota/i.test(detail);
             return {
-                error: `youtube-pub upload init refused (HTTP ${response.status}${quota ? ' quotaExceeded' : ''}): ${bounded(detail)}`,
+                error: `youtube-pub upload init refused (HTTP ${response.status}${quota ? ' quotaExceeded' : ''})`,
             };
         }
         const location = response.headers.get('location') ?? response.headers.get('Location') ?? '';
@@ -325,35 +321,20 @@ export class YouTubeClient {
     }
 
     /** PUT the MP4 bytes to the session URI and read the video id back. */
-    private async putBytes(
-        location: string,
-        videoPath: string,
-        sizeBytes: number,
-    ): Promise<{ videoId: string } | { error: string }> {
-        let bytes: ArrayBuffer;
-        try {
-            bytes = await Bun.file(videoPath).arrayBuffer();
-        } catch (error: unknown) {
-            return {
-                error: `youtube-pub cannot read the video at ${bounded(videoPath)}: ${error instanceof Error ? error.message : String(error)}`,
-            };
-        }
+    private async putBytes(location: string, bytes: ArrayBuffer): Promise<{ videoId: string } | { error: string }> {
         let response: Response;
         try {
             response = await this.fetchImpl(location, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(sizeBytes) },
+                headers: { 'Content-Type': 'video/mp4', 'Content-Length': String(bytes.byteLength) },
                 body: new Uint8Array(bytes),
-                signal: AbortSignal.timeout(uploadTimeoutMs(sizeBytes)),
+                signal: AbortSignal.timeout(uploadTimeoutMs(bytes.byteLength)),
             });
-        } catch (error: unknown) {
-            return {
-                error: `youtube-pub upload failed: ${error instanceof Error ? error.message : String(error)}`,
-            };
+        } catch {
+            return { error: 'youtube-pub upload failed (network error or timeout)' };
         }
         if (!response.ok) {
-            const detail = await readText(response);
-            return { error: `youtube-pub upload refused (HTTP ${response.status}): ${bounded(detail)}` };
+            return { error: `youtube-pub upload refused (HTTP ${response.status})` };
         }
         const payload = asRecord(await readJson(response));
         const videoId = typeof payload?.id === 'string' ? payload.id : '';

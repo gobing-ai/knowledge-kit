@@ -110,9 +110,9 @@ export function loadYouTubeCredentials(
     let raw: unknown;
     try {
         raw = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-    } catch (error: unknown) {
+    } catch {
         return {
-            error: `youtube-pub credentials file ${path} is not readable JSON: ${error instanceof Error ? error.message : String(error)}`,
+            error: `youtube-pub credentials file ${path} is not readable JSON`,
         };
     }
     const record = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;

@@ -122,10 +122,10 @@ describe('youtube-pub upload (AC1)', () => {
         expect(calls[1]?.headers['x-upload-content-type']).toBe('video/mp4');
         const init = JSON.parse(String(calls[1]?.body)) as {
             snippet: { title: string; description: string; tags?: string[] };
-            status: { privacyStatus: string; selfDeclaredMadeForKids: boolean };
+            status: { privacyStatus: string; selfDeclaredMadeForKids: boolean; embeddable: boolean };
         };
         expect(init.status.privacyStatus).toBe('private');
-        expect(init.status.selfDeclaredMadeForKids).toBe(false);
+        expect(init.status).toEqual({ privacyStatus: 'private', selfDeclaredMadeForKids: false, embeddable: true });
         expect(init.snippet.title).toBe('每日 AI 日报 1126');
         expect(init.snippet.description).toContain('#Shorts');
         expect(init.snippet.tags).toEqual(['ai', 'daily']);
@@ -217,6 +217,13 @@ describe('youtube-pub upload (AC1)', () => {
 });
 
 describe('youtube-pub fail-closed ladder (AC2)', () => {
+    test('returns a failure when the token endpoint sends invalid JSON', async () => {
+        const fetchImpl = Object.assign(async () => new Response('not JSON'), { preconnect: fetch.preconnect });
+        const result = await new YouTubeClient({ fetchImpl, credentials: CREDS }).publish(makeContent());
+        expect(result.ok).toBe(false);
+        expect(result.error).toContain('returned no access_token');
+    });
+
     const refuse = async (content: ReturnType<typeof makeContent>, credentials = CREDS) => {
         const { calls, fetchImpl } = fakeYouTube();
         const result = await new YouTubeClient({ fetchImpl, credentials }).publish(content);
@@ -241,6 +248,10 @@ describe('youtube-pub fail-closed ladder (AC2)', () => {
     test('refuses an unreadable video path and an over-long title', async () => {
         const missing = makeContent({ videoPath: join(tmpdir(), 'kk-absent-clip.mp4') });
         expect((await refuse(missing)).error).toContain('cannot read the video');
+
+        const locked = makeVideo();
+        Bun.spawnSync(['chmod', '000', locked]);
+        expect((await refuse(makeContent({ videoPath: locked }))).error).toContain('cannot read the video');
 
         const longTitle = makeContent({ title: 'x'.repeat(YOUTUBE_TITLE_MAX + 1) });
         expect((await refuse(longTitle)).error).toContain('YouTube accepts');
