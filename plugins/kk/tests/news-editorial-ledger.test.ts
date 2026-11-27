@@ -284,6 +284,24 @@ describe('news-editorial-ledger (0384 R10)', () => {
         // ledger *and* frozen in the snapshot, so the draft never has to read the live ledger.
         expect(snapshot?.preamble).toBe('上一期关于开源权重的说法有误，特此更正并致歉。');
         expect(readFileSync(ledgerPath, 'utf-8')).toContain('上一期关于开源权重的说法有误');
+
+        // A subsequent run with no new supersession must not re-emit yesterday's correction or preamble.
+        const nextDaySnapshotPath = join(root, 'run-next', '20-editorial', 'judgment-snapshot.json');
+        const nextDayReceiptPath = join(root, 'run-next', '20-editorial', 'judgment-commit-receipt.json');
+        const nextDayReceipt = await commitAlignment({
+            ledgerPath,
+            snapshotPath: nextDaySnapshotPath,
+            receiptPath: nextDayReceiptPath,
+            proposal: { version: 1, judgments: [] },
+            selectedIds: new Set(['doc-openai']),
+            runDate: '20261120',
+            runId: 'run-20261120',
+            now: '2026-11-20T06:00:00.000Z',
+        });
+        expect(nextDayReceipt.correctionIds).toEqual([]);
+        const nextDaySnapshot = readSnapshot(nextDaySnapshotPath);
+        expect(nextDaySnapshot?.corrections).toEqual([]);
+        expect(nextDaySnapshot?.preamble).toBeNull();
     });
 
     it('superseding an already superseded record is refused', async () => {

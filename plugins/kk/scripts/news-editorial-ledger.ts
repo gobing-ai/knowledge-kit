@@ -654,6 +654,7 @@ export async function commitAlignment(options: CommitOptions): Promise<CommitRec
 
         // 3. Snapshot: reuse the legal one when there is nothing new; a changed digest on the same
         //    run date is a conflict (the snapshot is immutable evidence for the draft).
+        const preamble = proposal.preamble?.trim() || undefined;
         const existingSnapshot = readSnapshot(snapshotPath);
         if (reconciled.status === 'no-op') {
             const reusable =
@@ -683,7 +684,8 @@ export async function commitAlignment(options: CommitOptions): Promise<CommitRec
                 now,
                 afterDigest,
                 proposalDigest,
-                resolvePreamble(proposal, before),
+                preamble ?? null,
+                new Set(reconciled.superseded),
             );
             writeAtomic(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
             const noop = receipt({
@@ -718,7 +720,6 @@ export async function commitAlignment(options: CommitOptions): Promise<CommitRec
             return stopped;
         }
 
-        const preamble = resolvePreamble(proposal, before);
         const text = renderConclusion(reconciled.ledger, preamble);
         if (before !== null) {
             const backupPath = `${ledgerPath}.bak-${now.replace(/[:.]/g, '')}`;
@@ -731,7 +732,8 @@ export async function commitAlignment(options: CommitOptions): Promise<CommitRec
                 now,
                 afterDigest,
                 proposalDigest,
-                resolvePreamble(proposal, before),
+                preamble ?? null,
+                new Set(reconciled.superseded),
             );
             writeAtomic(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
             const applied = receipt({
@@ -758,7 +760,8 @@ export async function commitAlignment(options: CommitOptions): Promise<CommitRec
             now,
             afterDigest,
             proposalDigest,
-            resolvePreamble(proposal, before),
+            preamble ?? null,
+            new Set(reconciled.superseded),
         );
         writeAtomic(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`);
         const applied = receipt({
@@ -830,23 +833,28 @@ export function buildSnapshot(
     ledgerDigest: string,
     proposalDigest: string,
     preamble?: string | null,
+    supersededInRun?: ReadonlySet<string>,
 ): JudgmentSnapshot {
     const retired = ledger.judgments.filter((entry) => entry.status === 'superseded' && entry.supersededBy);
     const superseded = retired.map((entry) => retiredRecord(entry));
-    const corrections: Correction[] = retired.map((entry) => {
-        const replacement = ledger.judgments.find((candidate) => candidate.id === entry.supersededBy);
-        const record = retiredRecord(entry);
-        return {
-            correctionId: correctionIdFor(entry.id, entry.supersededBy as string),
-            supersedes: entry.id,
-            judgmentId: entry.supersededBy as string,
-            selectedId: replacement?.selectedId ?? entry.selectedId,
-            wording: replacement?.comment ?? '',
-            text: correctionSentence(record, replacement),
-            retired: record,
-            evidence: replacement?.evidence ?? entry.evidence,
-        };
-    });
+    // Scope public corrections to judgments superseded in this run when provided so a prior
+    // day's correction is not re-aired on every subsequent episode.
+    const corrections: Correction[] = retired
+        .filter((entry) => supersededInRun === undefined || supersededInRun.has(entry.id))
+        .map((entry) => {
+            const replacement = ledger.judgments.find((candidate) => candidate.id === entry.supersededBy);
+            const record = retiredRecord(entry);
+            return {
+                correctionId: correctionIdFor(entry.id, entry.supersededBy as string),
+                supersedes: entry.id,
+                judgmentId: entry.supersededBy as string,
+                selectedId: replacement?.selectedId ?? entry.selectedId,
+                wording: replacement?.comment ?? '',
+                text: correctionSentence(record, replacement),
+                retired: record,
+                evidence: replacement?.evidence ?? entry.evidence,
+            };
+        });
     return {
         version: 1,
         runDate,
