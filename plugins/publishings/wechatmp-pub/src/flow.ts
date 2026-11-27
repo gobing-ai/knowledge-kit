@@ -312,6 +312,8 @@ const AUDIO_COVER_INPUT = [
     'input[type="file"][accept*="image/bmp"]',
 ];
 const AUDIO_TITLE_INPUT = [
+    '.audio-upload-dialog .title_form_wrp input.weui-desktop-form__input',
+    '.audio-upload-dialog input[placeholder*="标题"]',
     '.weui-desktop-dialog input[placeholder*="标题"]',
     '.audio_dialog input[placeholder*="标题"]',
     '.audio_dialog input.frm_input',
@@ -3532,7 +3534,9 @@ export async function insertAudioMaterial(
                     const saveDiagnostics = `(() => {
                         const form = [...document.querySelectorAll(".weui-desktop-dialog")].find((d) => d.querySelector(".title_form_wrp"));
                         const btn = form && [...form.querySelectorAll("button")].find((b) => (b.textContent ?? "").trim() === "保存");
-                        return JSON.stringify({ btn: btn ? { disabled: btn.disabled, offW: btn.offsetWidth } : null, toasts: (window.__kkToasts ?? []).slice(-3) });
+                        const fields = form ? [...form.querySelectorAll("input, textarea")].map((f) => ({ cls: String(f.className ?? "").slice(0, 40), v: String(f.value ?? "").slice(0, 30), offW: f.offsetWidth, cb: f.type === "checkbox" ? f.checked : undefined })) : [];
+                        const msgs = form ? [...form.querySelectorAll(".weui-desktop-form__msg, .frm_msg, .weui-desktop-tips")].map((m) => (m.textContent ?? "").trim()).filter(Boolean) : [];
+                        return JSON.stringify({ btn: btn ? { disabled: btn.disabled, offW: btn.offsetWidth } : null, fields, msgs, toasts: (window.__kkToasts ?? []).slice(-3) });
                     })()`;
                     const diag = (await evalOrFallback(page, saveDiagnostics, '')).slice(0, 400);
                     return failUpload(`音频: 保存失败，上传弹窗未关闭（dispatch=${dispatched} ${diag}）`);
