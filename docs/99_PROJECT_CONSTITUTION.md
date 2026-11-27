@@ -163,6 +163,22 @@ names the docs that must be touched **in the same commit / same change**:
 | T7 | The doc map or process changes | this file → re-sync `AGENTS.md` (§4.4) → propagate to sibling projects |
 | T8 | A multi-wave batch is planned | schedule "doc sync" as an **explicit work item** — same-commit discipline does not survive on memory alone |
 
+### 5.1 Batch landing gate — pay the deferred tier before the merge
+
+`spur task gate` inside a worktree batch stamps `DEFERRED` and says, in its own output, that the
+**integrated full gate stays owed on the merged tree**. Nothing in the pipeline collects that debt,
+so a batch that FF-merges without it lands work no full-suite run ever saw.
+
+Observed 2026-11-27 (feature D9, batch `runall-d9-4d35`): all five tasks landed `DEFERRED`, and
+`apps/cli/tests/kk-news-generate-dag.test.ts` — the suite pinning the news workflow's node roster,
+its var list and the one-`kk news`-verb-per-node rule — sat outside every task's changed scope. The
+new 26th node from 0449 only failed in the post-merge full suite and needed a follow-up commit.
+
+**Rule.** A `--worktree` batch runs the project's full gate (`bun run gate`) **on the merged tree,
+before the WT-4 FF-merge**. A red result blocks the merge and files the finding against the task(s)
+that own the failing scope — never against the batch. The light tier stays the fast in-flight
+filter; the landing gate is the proof the batch is shippable.
+
 ## 6. Edit principles per file
 
 ### 6.0 Writing rules (all key files)

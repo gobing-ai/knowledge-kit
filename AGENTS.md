@@ -207,6 +207,10 @@ CLI binary: `@gobing-ai/knowledge-kit` exposes `bin: { kk: "./dist/index.js", "k
 If a check fails, fix the root cause. **Never** bypass with `--no-verify`, `--force`, or new
 `biome-ignore` suppressions added solely to silence the gate.
 
+**Worktree batches:** each task's gate is `DEFERRED`, which leaves the integrated full gate owed
+(`docs/99_PROJECT_CONSTITUTION.md` §5.1). Run `bun run gate` on the merged tree **before** the batch's
+FF-merge; a red result blocks the merge and goes back to the task that owns the failing scope.
+
 ### Editing `plugins/kk/scripts/` (stage bodies)
 
 `kk stage <name>` resolves its runner from the **installed** package that the `kk` on PATH belongs
