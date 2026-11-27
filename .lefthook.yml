@@ -25,11 +25,15 @@ post-checkout:
   commands:
     bundle-plugins:
       run: bun scripts/bundle-plugins.ts --if-stale
+    build-board:
+      run: bun scripts/build-board.ts
 
 post-merge:
   commands:
     bundle-plugins:
       run: bun scripts/bundle-plugins.ts --if-stale
+    build-board:
+      run: bun scripts/build-board.ts
 
 pre-push:
   commands:
