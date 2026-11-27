@@ -75,6 +75,8 @@ const DESIGN_NODES = [
     'voice-fallback',
     'voice-fallback2',
     'cards',
+    // 0449 R3: the opt-in 9:16 teaser, before the bundle so its variants freeze with the episode.
+    'video',
     'variants',
     'safety-variants',
     'freeze',
@@ -90,9 +92,12 @@ const DESIGN_NODES = [
  *   per figure with per-figure receipts; no existing verb owns it.
  * - ADR-059: `safety-variants` — deterministic post-TTS variant integrity + PII gate that inherits
  *   the pre-TTS `safety` stamp and writes `4-safety-variants/safety.json` for `freeze`.
+ * - 0449 R3: `video` — `kk stage daily-video-request` writes the typed generator request (the
+ *   `Doc[]` envelope `kk executor run` validates) and the node then runs the video-gen plugin; no
+ *   `news` verb owns a generator invocation, and the request shape must stay next to the variants.
  * Declared once so an undocumented exception cannot slip in through one assertion.
  */
-const STAGE_NODE_EXCEPTIONS = new Set(['localize-check', 'illustrations-render', 'safety-variants']);
+const STAGE_NODE_EXCEPTIONS = new Set(['localize-check', 'illustrations-render', 'safety-variants', 'video']);
 
 const verbNodes = (): Node[] =>
     doc.nodes.filter(
@@ -107,9 +112,8 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
     it('declares exactly the designed node ids, in topological order', () => {
         expect(doc.name).toBe('kk-news-generate');
         expect(doc.kind).toBe('dag');
-        // 25 since 0426: 0417's 23 plus the opt-in inline-figure pair (`illustrations-plan`,
-        // `illustrations-render`).
-        expect(doc.nodes).toHaveLength(25);
+        // 26 since 0449: 0426's 25 plus the opt-in short-form `video` node (D9).
+        expect(doc.nodes).toHaveLength(26);
         expect(order).toEqual(DESIGN_NODES);
     });
 
@@ -153,6 +157,7 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
             'run_id',
             'skill_dir',
             'skip_review',
+            'video',
             'visual_skill_root',
             'work_dir',
         ]);
@@ -161,6 +166,8 @@ describe('kk-news-generate — AC1: twenty nodes, one executor variable, no padd
         expect(doc.vars.visual_skill_root).toBe('plugins/kk/skills');
         // 0426 R1: inline figures are opt-in; the default is off for every existing caller.
         expect(doc.vars.inline_illustrations).toBe('false');
+        // 0449 R3: the short-form video is opt-in too (`off`), so a default day renders nothing.
+        expect(doc.vars.video).toBe('off');
         // `agent` is the only executor switch: `inline` by default, and no node pins a model, an
         // executor roster entry or a second agent var.
         expect(doc.vars.agent).toBe('inline');
