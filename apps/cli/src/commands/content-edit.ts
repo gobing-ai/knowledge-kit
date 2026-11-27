@@ -9,6 +9,7 @@ import { resolveKkConfigPath } from '../invoke';
 import { consoleOutput } from '../output';
 import { resolveBundlePath } from '../publish-matrix';
 import { configPath, readConfig, resolveWorksDir } from './content';
+import { normalizeRunDate } from './content-launch';
 
 /**
  * The parse call sites, bound at module load.
@@ -42,6 +43,7 @@ export type EditableArtifact = (typeof EDITABLE_ARTIFACTS)[number];
 /** The closed refusal vocabulary; each is a `news.edit.*` code the CLI and the plane share. */
 export const EDIT_REFUSALS = [
     'news.edit.artifact.unknown',
+    'news.edit.day.invalid',
     'news.edit.source.unreadable',
     'news.edit.body.too-large',
     'news.edit.body.empty',
@@ -217,34 +219,26 @@ async function frozenReason(fs: FileSystem, dayDir: string): Promise<string | nu
         : null;
 }
 
-/**
- * Refuse when the day's `ops-console:<day>` lock is held by somebody other than this invocation.
- *
- * The plane holds that lock while its child runs, so the child must be able to prove it is the
- * holder — it does through `KK_LOCK_HOLDER`, set by the plane on the child's environment (never in
- * argv, which is what the audit records).
- */
-export async function lockHeldByOther(day: string): Promise<string | null> {
-    let store: Awaited<ReturnType<typeof openStore>>;
+/** Direct edits serialize with each other and with the Board's lock-held child. */
+async function withEditLock(day: string, edit: () => Promise<void>): Promise<void> {
+    const name = `ops-console:${day}`;
+    const store = await openStore({ path: await resolveStorePath(resolveKkConfigPath()) });
+    const mine = process.env.KK_LOCK_HOLDER;
+    const holder = `kk-news-edit:${crypto.randomUUID()}`;
+    let acquired = false;
     try {
-        // `kk lock` opens the same way, so a fresh store gets its tables here rather than throwing.
-        const dbPath = await resolveStorePath(resolveKkConfigPath());
-        store = await openStore({ path: dbPath });
-    } catch {
-        // A store that cannot be opened cannot be holding a lock.
-        return null;
-    }
-    try {
-        const record = await store.locks.current(`ops-console:${day}`);
-        if (record === undefined) return null;
-        const mine = process.env.KK_LOCK_HOLDER ?? '';
-        if (mine !== '' && record.ownerRun === mine) return null;
-        return `ops-console:${day} is held by ${record.ownerRun}`;
-    } catch {
-        // A store whose locks table cannot be read is not evidence of another holder.
-        return null;
+        const current = await store.locks.current(name);
+        if (current === undefined || current.ownerRun !== mine) {
+            acquired = await store.locks.acquire(name, holder, 120_000);
+            if (!acquired) refuse('news.edit.lock.held', `${name} is held by another operation`);
+        }
+        await edit();
     } finally {
-        await store.close();
+        try {
+            if (acquired) await store.locks.release(name, holder);
+        } finally {
+            await store.close();
+        }
     }
 }
 
@@ -295,8 +289,14 @@ async function readBody(fs: FileSystem, fromFile: string): Promise<string> {
     } catch {
         stat = null;
     }
-    if (stat === null || stat.isDirectory()) {
+    if (stat === null || !stat.isFile()) {
         throw new EditRefusedError('news.edit.source.unreadable', `${fromFile} is not a readable file`);
+    }
+    if (stat.size > EDIT_BODY_CAP_BYTES) {
+        throw new EditRefusedError(
+            'news.edit.body.too-large',
+            `the body is ${stat.size} bytes; the cap is ${EDIT_BODY_CAP_BYTES}`,
+        );
     }
     let body: string;
     try {
@@ -322,65 +322,54 @@ export async function editAction(options: EditOptions): Promise<void> {
     const fs = createNodeFileSystem();
     const configFile = configPath();
     const artifact = artifactOf(options.artifact);
-    const day = options.runDate;
+    const day = normalizeRunDate(options.runDate);
+    if (day === undefined) refuse('news.edit.day.invalid', '--run-date must be a calendar date');
     const { dayDir, exists } = await resolveEditDayDir(fs, configFile, day);
     if (!exists) refuse('news.edit.source.unreadable', `no kk-news-generate day directory at ${dayDir}`);
     const path = artifactPath(dayDir, day, artifact);
-    const before = await currentArtifact(fs, path);
 
-    if (options.revert === true) {
-        const backups = await backupsOf(fs, dayDir, artifact);
-        const newest = backups.at(-1);
-        if (newest === undefined) {
-            refuse('news.edit.no-backup', `no ${artifact} backup exists under ${editBackupDir(dayDir)}`);
+    const reverting = options.revert === true;
+    let body: string | undefined;
+    if (!reverting) {
+        if (options.fromFile === undefined)
+            refuse('news.edit.source.unreadable', 'either --from-file or --revert is required');
+        if (options.baseSha === undefined) refuse('news.edit.base-sha.mismatch', '--base-sha is required for an edit');
+        body = await readBody(fs, options.fromFile);
+    }
+
+    await withEditLock(day, async () => {
+        const before = await currentArtifact(fs, path);
+        const frozen = await frozenReason(fs, dayDir);
+        if (frozen !== null) refuse('news.edit.frozen', frozen);
+
+        let newBody: string;
+        let restoredFrom: string | null = null;
+        if (body === undefined) {
+            const newest = (await backupsOf(fs, dayDir, artifact)).at(-1);
+            if (newest === undefined)
+                refuse('news.edit.no-backup', `no ${artifact} backup exists under ${editBackupDir(dayDir)}`);
+            restoredFrom = join(editBackupDir(dayDir), newest);
+            newBody = await fs.readFile(restoredFrom);
+        } else {
+            const currentSha = before === null ? null : sha256Of(before);
+            if (currentSha !== options.baseSha?.toLowerCase()) {
+                refuse('news.edit.base-sha.mismatch', 'the artifact changed since the preview', currentSha);
+            }
+            if (artifact === 'script') {
+                const invalid = validateVoicescript(body);
+                if (invalid !== null) refuse('news.edit.script.invalid', invalid);
+            }
+            newBody = body;
         }
-        const restored = await fs.readFile(join(editBackupDir(dayDir), newest));
-        const heldByOther = await lockHeldByOther(day);
-        if (heldByOther !== null) refuse('news.edit.lock.held', heldByOther);
-        // The bytes this revert replaces are backed up too, so a revert is itself revertible.
-        if (before !== null) {
-            await atomicWriteText(
-                fs,
-                join(editBackupDir(dayDir), `${backupStamp()}-${artifact}.${extensionOf(artifact)}`),
-                before,
-            );
-        }
-        await atomicWriteText(fs, path, restored);
-        emit({
-            artifact,
-            path,
-            backup: join(editBackupDir(dayDir), newest),
-            sha256: sha256Of(restored),
-            reverted: true,
-        });
-        return;
-    }
 
-    if (options.fromFile === undefined) {
-        refuse('news.edit.source.unreadable', 'either --from-file or --revert is required');
-    }
-    if (options.baseSha === undefined) {
-        refuse('news.edit.base-sha.mismatch', '--base-sha is required for an edit');
-    }
-    const body = await readBody(fs, options.fromFile);
-    const currentSha = before === null ? null : sha256Of(before);
-    if (currentSha !== null && currentSha !== options.baseSha.toLowerCase()) {
-        refuse('news.edit.base-sha.mismatch', 'the artifact changed since the preview', currentSha);
-    }
-    if (artifact === 'script') {
-        const invalid = validateVoicescript(body);
-        if (invalid !== null) refuse('news.edit.script.invalid', invalid);
-    }
-    const frozen = await frozenReason(fs, dayDir);
-    if (frozen !== null) refuse('news.edit.frozen', frozen);
-    const heldByOther = await lockHeldByOther(day);
-    if (heldByOther !== null) refuse('news.edit.lock.held', heldByOther);
-
-    const backup =
-        before === null ? null : join(editBackupDir(dayDir), `${backupStamp()}-${artifact}.${extensionOf(artifact)}`);
-    if (backup !== null && before !== null) await atomicWriteText(fs, backup, before);
-    await atomicWriteText(fs, path, body);
-    emit({ artifact, path, backup, sha256: sha256Of(body), reverted: false });
+        const backup =
+            before === null
+                ? null
+                : join(editBackupDir(dayDir), `${backupStamp()}-${artifact}.${extensionOf(artifact)}`);
+        if (backup !== null && before !== null) await atomicWriteText(fs, backup, before);
+        await atomicWriteText(fs, path, newBody);
+        emit({ artifact, path, backup: restoredFrom ?? backup, sha256: sha256Of(newBody), reverted: reverting });
+    });
 }
 
 /** Print the structured record: one JSON line, which is what both the operator and the plane read. */

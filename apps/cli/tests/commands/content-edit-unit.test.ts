@@ -15,7 +15,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { openStore, resolveStorePath } from '@gobing-ai/kk-store';
@@ -32,7 +32,6 @@ import {
     EditRefusedError,
     editAction,
     editBackupDir,
-    lockHeldByOther,
     resolveEditDayDir,
     sha256Of,
     validateVoicescript,
@@ -276,6 +275,45 @@ describe('editAction refusals', () => {
                 baseSha: sha256Of(readFileSync(fx.article, 'utf8')),
             }),
         ).toBe('news.edit.frozen');
+        expect(await refusalOf({ runDate: DAY, artifact: 'article', revert: true })).toBe('news.edit.frozen');
+    });
+
+    it('rejects malformed run dates before resolving the artifact', async () => {
+        const fx = fixture();
+        expect(
+            await refusalOf({ runDate: 'not-a-date', artifact: 'article', fromFile: fx.article, baseSha: 'a' }),
+        ).toBe('news.edit.day.invalid');
+    });
+
+    it('serializes two edits that carry the same starting hash', async () => {
+        const fx = fixture();
+        const baseSha = sha256Of(readFileSync(fx.article, 'utf8'));
+        const first = join(fx.root, 'first.md');
+        const second = join(fx.root, 'second.md');
+        writeFileSync(first, 'first edit');
+        writeFileSync(second, 'second edit');
+        const outcomes = await Promise.all(
+            [first, second].map((fromFile) => refusalOf({ runDate: DAY, artifact: 'article', fromFile, baseSha })),
+        );
+        expect(outcomes.filter((outcome) => outcome === null)).toHaveLength(1);
+        expect(
+            outcomes.filter(
+                (outcome) => outcome === 'news.edit.lock.held' || outcome === 'news.edit.base-sha.mismatch',
+            ),
+        ).toHaveLength(1);
+        expect(await backupsOf(createNodeFileSystem(), fx.dayDir, 'article')).toHaveLength(1);
+    });
+
+    it('refuses a confirmed edit when the original was removed', async () => {
+        const fx = fixture();
+        const baseSha = sha256Of(readFileSync(fx.article, 'utf8'));
+        const source = join(fx.root, 'draft.md');
+        writeFileSync(source, 'replacement');
+        unlinkSync(fx.article);
+        expect(await refusalOf({ runDate: DAY, artifact: 'article', fromFile: source, baseSha })).toBe(
+            'news.edit.base-sha.mismatch',
+        );
+        expect(existsSync(fx.article)).toBe(false);
     });
 
     it('refuses when the day lock belongs to another holder', async () => {
@@ -286,7 +324,6 @@ describe('editAction refusals', () => {
         } finally {
             await store.close();
         }
-        expect(await lockHeldByOther(DAY)).toContain('held by ops-console:other');
         expect(
             await refusalOf({
                 runDate: DAY,
@@ -303,7 +340,14 @@ describe('editAction refusals', () => {
             if (previous === undefined) delete process.env.KK_LOCK_HOLDER;
             else process.env.KK_LOCK_HOLDER = previous;
         });
-        expect(await lockHeldByOther(DAY)).toBeNull();
+        expect(
+            await refusalOf({
+                runDate: DAY,
+                artifact: 'article',
+                fromFile: fx.article,
+                baseSha: sha256Of(readFileSync(fx.article, 'utf8')),
+            }),
+        ).toBeNull();
     });
 
     it('refuses a revert with no backup', async () => {
