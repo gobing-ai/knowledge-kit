@@ -1438,6 +1438,24 @@ files; the Board host exposes no run-control route and no downstream server hook
 is the only local process that can turn the console's recipe into the same verb without forking
 Spur. Detail: [Daily AI Voice ops console](design/daily-voice-ops-console.md).
 
+### Amendment — 2026-11-27 (0447: serve KK data through the native Board module API)
+
+Spur mounts the KK handler at `/api/modules/<id>/*` from each module's `bootstrap.modules[].api`
+declaration. The mount strips its prefix and passes the owning project path to the handler.
+Collect, Daily AI Voice and IT Content use the same-origin module routes for KK data and actions,
+and use Spur's own run endpoints for execution state. Both paths retain the project prefix when
+the Board is served through the gateway.
+
+The project server serves the compiled handler alongside the browser contributions. It owns host
+validation and CORS. The KK action plane still requires the exact request Origin and action
+header, and retains its allowlist, confirmation, locking and audit rules. The gateway validates
+public mutations and rewrites Host and Origin to the local server before forwarding. Run capture
+remains a CLI command. The separate reader process and `kk board serve` are retired.
+
+The installed contract is in `node_modules/@gobing-ai/spur/board/index.d.ts` (`BoardModuleApiHandler`)
+and `node_modules/@gobing-ai/spur/schemas/spur-config.schema.json` (`bootstrap.modules[].api`).
+The installed-package Board browser suite verifies the real mount.
+
 #### API/library claim sources and confidence
 
 | Claim | Source | Local verification | Confidence |

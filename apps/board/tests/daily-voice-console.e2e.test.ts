@@ -83,7 +83,7 @@ let works = '';
 let configFile = '';
 let stubArgvLog = '';
 let boardOrigin = '';
-let readerOrigin = '';
+let moduleApi = '';
 let spur: string[] = [];
 let browser: Browser | null = null;
 let page: Page | null = null;
@@ -243,6 +243,7 @@ function writeProjectConfig(): void {
     const moduleRoot = join(project, 'node_modules/@gobing-ai/kk-daily-voice-module/daily-voice');
     mkdirSync(dirname(moduleRoot), { recursive: true });
     cpSync(join(REPO, 'apps/cli/dist/board/daily-voice'), moduleRoot, { recursive: true });
+    cpSync(join(REPO, 'apps/cli/dist/board/api.js'), join(dirname(moduleRoot), 'api.js'));
     const lines = [
         '$schema: "@gobing-ai/spur/schemas/spur-config.schema.json"',
         'version: "1.2"',
@@ -256,6 +257,7 @@ function writeProjectConfig(): void {
         '      icon: "🎙️"',
         '      type: react',
         '      directory: node_modules/@@gobing-ai/kk-daily-voice-module/daily-voice'.replace('@@', '@'),
+        '      api: node_modules/@gobing-ai/kk-daily-voice-module/api.js',
         '      entry: index.js',
         '      styles: [index.css]',
         '',
@@ -380,38 +382,22 @@ async function setup(): Promise<void> {
     const stubBin = writeStubKk();
     runFixtureDays();
 
-    // 2. The Board, then the reader bound to that exact origin, with the stub `kk` first on PATH.
+    // The Board runs the native module with the fixture action configuration.
     const boardPort = freePort();
     boardOrigin = `http://127.0.0.1:${boardPort}`;
-    const boardServer = spawnServer('board', 'Board (spur self serve)', [
-        ...spur,
-        'self',
-        'serve',
-        '--port',
-        String(boardPort),
-        '--host',
-        '127.0.0.1',
-        '--no-open',
-        '--cwd',
-        project,
-    ]);
-    await waitFor(`${boardOrigin}/api/health`, boardServer);
-
-    const readerPort = freePort();
-    readerOrigin = `http://127.0.0.1:${readerPort}`;
-    const readerServer = spawnServer(
-        'reader',
-        'reader (kk board serve)',
-        [process.execPath, CLI_ENTRY, 'board', 'serve', '--board-origin', boardOrigin, '--port', String(readerPort)],
+    moduleApi = `${boardOrigin}/api/modules/${MODULE_ID}`;
+    const boardServer = spawnServer(
+        'board',
+        'Board (spur self serve)',
+        [...spur, 'self', 'serve', '--port', String(boardPort), '--host', '127.0.0.1', '--no-open', '--cwd', project],
         {
             KK_CONFIG: configFile,
             KK_STUB_ARGV_LOG: stubArgvLog,
             PATH: `${stubBin}:${process.env.PATH ?? ''}`,
         },
     );
-    await waitFor(`${readerOrigin}/api/health`, readerServer);
+    await waitFor(`${moduleApi}/api/health`, boardServer);
 
-    // 3. A real browser; a missing runtime fails the setup loudly rather than skipping.
     try {
         browser = await chromium.launch();
     } catch (error) {
@@ -435,16 +421,16 @@ afterAll(async () => {
 /** A navigation counter: a hash-only change is a same-document jump, so each visit gets a fresh URL. */
 let navigation = 0;
 
-/** The module route for one day and tab, carrying the reader origin the module needs. */
+/** The module route for one day and tab. */
 function moduleUrl(day: string, tab: string): string {
     navigation += 1;
-    const query = new URLSearchParams({ kkApi: readerOrigin, n: String(navigation) });
+    const query = new URLSearchParams({ n: String(navigation) });
     return `${boardOrigin}/board/modules/${MODULE_ID}?${query.toString()}#${new URLSearchParams({ day, tab }).toString()}`;
 }
 
 /** A reader request carrying the Board origin, exactly as the browser sends it. */
 function readerFetch(path: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${readerOrigin}${path}`, {
+    return fetch(`${moduleApi}${path}`, {
         ...init,
         headers: { origin: boardOrigin, ...(init.headers as Record<string, string> | undefined) },
     });
@@ -676,7 +662,7 @@ describe('the guarded action plane (R2/R11)', () => {
         async () => {
             const kind = 'publish-window';
             const params = { day: ACTION_DAY, window: 'overseas-rss', dummy: 'true' };
-            const foreign = await fetch(`${readerOrigin}/api/actions/${kind}`, {
+            const foreign = await fetch(`${moduleApi}/api/actions/${kind}`, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json', 'x-kk-action': '1', origin: 'http://127.0.0.1:9' },
                 body: JSON.stringify({ params }),

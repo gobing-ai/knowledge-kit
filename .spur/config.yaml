@@ -25,6 +25,7 @@ bootstrap:
       enabled: true
       type: react
       directory: apps/cli/dist/board/collect
+      api: apps/cli/dist/board/api.js
       entry: index.js
       styles: [index.css]
     - id: kk-daily-ai-voice2
@@ -33,6 +34,7 @@ bootstrap:
       enabled: true
       type: react
       directory: apps/cli/dist/board/daily-voice
+      api: apps/cli/dist/board/api.js
       entry: index.js
       styles: [index.css]
     - id: kk-itc
@@ -41,6 +43,7 @@ bootstrap:
       enabled: true
       type: react
       directory: apps/cli/dist/board/itc
+      api: apps/cli/dist/board/api.js
       entry: index.js
       styles: [index.css]
   logging:

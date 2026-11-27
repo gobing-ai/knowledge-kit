@@ -369,7 +369,10 @@ describe('outputGroups', () => {
             { id: 'bundle', label: 'Bundle', kind: 'text', availability: 'missing', producerNode: 'freeze' },
             { id: 'mystery', label: 'Mystery', kind: 'text', availability: 'available', producerNode: 'unlisted' },
         ] as unknown as RunResults['artifacts'];
-        const groups = outputGroups({ ...results, artifacts: withArtifacts }, 'http://127.0.0.1:4340');
+        const groups = outputGroups(
+            { ...results, artifacts: withArtifacts },
+            (_workflow, _runId, artifactId) => `/artifacts/${artifactId}`,
+        );
         // Known producers get human labels in stage order; an unlisted producer keeps its raw id.
         expect(groups.map((g) => g.label)).toEqual(['Write script', 'Generate audio', 'Freeze bundle', 'unlisted']);
         expect(groups[1]?.artifacts).toHaveLength(1);

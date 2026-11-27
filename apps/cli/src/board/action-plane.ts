@@ -25,7 +25,7 @@ import { unifiedDiff } from './text-diff';
  *
  * 1. the plane is off unless `board.actions.enabled` is true;
  * 2. the kind must be in the closed allowlist;
- * 3. the request must carry the exact Board `Origin` (never `null`), a loopback `Host` and
+ * 3. the request must carry the exact Board `Origin` (never `null`), the matching `Host` and
  *    `X-KK-Action: 1`, so a cross-site simple request cannot reach it;
  * 4. argv comes from `resolveArgv` — the same function the digest renders — so params are validated
  *    once and no free text exists;
@@ -155,13 +155,6 @@ export function bodyBoundHashOf(kind: ActionKind, argv: readonly string[], body:
         .digest('hex');
 }
 
-/** True when `host` names a loopback address (the reader's DNS-rebinding guard). */
-function isLoopbackHost(host: string | null): boolean {
-    if (host === null) return false;
-    const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : (host.split(':')[0] ?? '');
-    return name === '127.0.0.1' || name === 'localhost' || name === '[::1]';
-}
-
 /** The validated params bag from a request body (only string values survive). */
 function paramsOf(body: unknown): Record<string, string> | null {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) return null;
@@ -237,7 +230,7 @@ const REFUSAL_MESSAGES: Record<ActionRefusal, string> = {
     'actions.disabled': 'The action plane is disabled; set board.actions.enabled to true to allow launches.',
     'actions.kind.unknown': 'That action kind is not in the allowlist.',
     'actions.origin.refused': 'A POST must carry exactly the configured Board Origin.',
-    'actions.host.refused': 'Host must be loopback.',
+    'actions.host.refused': 'Host must match the Board origin.',
     'actions.header.missing': 'A POST must carry X-KK-Action: 1.',
     'actions.params.invalid': 'The action parameters are not valid for that kind.',
     'actions.token.invalid': 'The confirmation token is unknown, already used or expired. Request a new preview.',
@@ -295,7 +288,7 @@ export function createActionPlane(deps: ActionPlaneDeps): ActionPlane {
             });
             return refusal('actions.origin.refused');
         }
-        if (!isLoopbackHost(input.host)) {
+        if (input.host !== new URL(deps.boardOrigin).host) {
             await audit({
                 ...base,
                 argv: [],

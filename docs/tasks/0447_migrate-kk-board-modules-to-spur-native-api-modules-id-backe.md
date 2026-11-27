@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Migrate KK Board modules to Spur native /api/modules/:id/* backend and retire kk board serve
-status: todo
+status: wip
 template: feature-impl
 created_at: 2026-11-26T18:16:34.458Z
-updated_at: "2026-11-26T18:46:53.152Z"
+updated_at: "2026-11-27T21:38:36.466Z"
 
 priority: P1
 ac_numbering: task-local
@@ -132,7 +132,11 @@ Replace the standalone `kk board serve` loopback server (`127.0.0.1:4340`) with 
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+- `apps/cli/src/board/reader.ts` serves the existing domain routes through a Web Fetch handler. Its default export caches one handler per Spur project path. Reads that need Spur run authority use the server request origin, with an injectable origin and fetch for tests.
+- `scripts/build-board.ts` emits the Bun ESM backend in both distribution roots. `.spur/config.yaml` mounts it for Collect, Daily AI Voice and IT Content.
+- `apps/board/src/shared/api.ts` keeps module reads, artifacts, actions and Spur run URLs on the same origin, including the project gateway prefix. Collect and IT Content retain the prefix in copied run links.
+- `apps/cli/src/commands/board.ts` keeps run capture. Spur owns the host and CORS boundary. The write path still requires the exact Board Origin, matching Host and action header, alongside its existing preview, confirmation, locking and audit checks.
+- The package and browser suites run from a single Spur server per project fixture. ADR-035, the architecture guide and the command design describe the mounted transport.
 
 ### Testing
 
@@ -159,4 +163,5 @@ Replace the standalone `kk board serve` loopback server (`127.0.0.1:4340`) with 
 ### History
 
 - 2026-11-26T18:46:53.152Z backlog → todo (system)
+- 2026-11-27T21:31:13.703Z todo → wip (system)
 

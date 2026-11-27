@@ -35,9 +35,9 @@ import {
     revisionUsage,
     revisionUsageFromChild,
 } from '../../src/board/itc';
-import { createBoardReader } from '../../src/board/reader';
 import { main } from '../../src/main';
 import { captureOutput } from '../capture';
+import { fetchTestReader, registerTestReader } from './test-reader';
 
 const STAMP = '20261011';
 const STAGE = join(import.meta.dir, '../../../../plugins/kk/scripts/kk-workflow-stages.ts');
@@ -169,7 +169,7 @@ async function seededProject(overrides?: Record<string, string | null>) {
 }
 
 function startReader(boardOrigin: string, projectPath: string) {
-    const reader = createBoardReader({ boardOrigin, port: 0, projectPath });
+    const reader = registerTestReader({ boardOrigin, projectPath });
     servers.push(reader);
     return reader.url;
 }
@@ -183,7 +183,7 @@ interface ResultsJson {
 
 const resultsUrl = (reader: string) => `${reader}/api/workflows/kk-itc/runs/run-1/results`;
 const getResults = async (reader: string): Promise<ResultsJson> =>
-    (await (await fetch(resultsUrl(reader))).json()) as ResultsJson;
+    (await (await fetchTestReader(resultsUrl(reader))).json()) as ResultsJson;
 
 describe('judge confidence validation', () => {
     it('accepts only HIGH/MEDIUM/LOW and reports anything else as unknown', async () => {
@@ -380,7 +380,7 @@ describe('reader ITC route', () => {
         expect(results.artifacts.find((artifact) => artifact.id === 'cover')?.availability).toBe('available');
         expect(results.artifacts.find((artifact) => artifact.id === 'report')?.availability).toBe('available');
 
-        const config = (await (await fetch(`${reader}/api/workflows/kk-itc/runs/run-1/config`)).json()) as {
+        const config = (await (await fetchTestReader(`${reader}/api/workflows/kk-itc/runs/run-1/config`)).json()) as {
             settings: Record<string, string>;
             unavailableKeys: string[];
         };
@@ -412,9 +412,11 @@ describe('reader ITC route', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root, passedStates());
         const reader = startReader(board.origin, root);
-        expect((await fetch(resultsUrl(reader), { headers: { origin: 'http://evil.example' } })).status).toBe(403);
-        expect((await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/results`)).status).toBe(404);
-        expect((await fetch(`${reader}/api/workflows/kk-itc/runs/run-1/artifacts/nope`)).status).toBe(404);
+        expect((await fetchTestReader(resultsUrl(reader), { headers: { origin: 'http://evil.example' } })).status).toBe(
+            403,
+        );
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-1/results`)).status).toBe(404);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-itc/runs/run-1/artifacts/nope`)).status).toBe(404);
     });
 
     it('marks artifacts superseded for a later workspace owner (AC6)', async () => {

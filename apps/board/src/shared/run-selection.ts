@@ -144,19 +144,11 @@ export function resolveSelection<T extends string = BoardTab>(
     return { runId: rows[0]?.id ?? null, tab, diagnostics };
 }
 
-/**
- * Render the selection into a deep-link query, preserving the module's OTHER parameters. §4 freezes
- * that a validated `kkApi` reader origin "is retained in saved URLs", so the selection is written
- * into the existing query rather than replacing it — a reload after a run/tab change must still find
- * the reader the operator configured.
- */
+/** Render the selection into a deep link while preserving other module parameters. */
 export function selectionQuery(selection: RunSelection<string>, search = ''): string {
     const params = new URLSearchParams();
     if (selection.runId !== null) params.set('run', selection.runId);
     params.set('tab', selection.tab);
-    // Keep every OTHER module parameter (a validated `kkApi` reader origin above all — §4: it "is
-    // retained in saved URLs") after the selection, so the link reads run → tab → options and a reload
-    // still reaches the configured reader.
     for (const [key, value] of new URLSearchParams(search)) {
         if (key === 'run' || key === 'tab') continue;
         params.set(key, value);

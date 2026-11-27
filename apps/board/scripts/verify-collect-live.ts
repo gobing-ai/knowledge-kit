@@ -249,6 +249,7 @@ function writeConfig(project: string): void {
         '      icon: "📥"',
         '      type: react',
         `      directory: node_modules/${INSTALLED}/dist/board/collect`,
+        `      api: node_modules/${INSTALLED}/dist/board/api.js`,
         '      entry: index.js',
         '      styles: [index.css]',
         '',
@@ -281,7 +282,7 @@ function boardProject(paths: Paths): string {
 }
 
 /** Pack the CLI as an install would (`prepack` builds the board assets) and extract it. */
-function packAndInstall(project: string): string {
+function packAndInstall(project: string): void {
     const packDir = mkdtempSync(join(tmpdir(), 'kk-verify-pack-'));
     try {
         const packed = spawnSync('bun', ['pm', 'pack', '--destination', packDir, '--quiet'], {
@@ -303,12 +304,11 @@ function packAndInstall(project: string): string {
             encoding: 'utf-8',
         });
         if (untarred.status !== 0) throw new Error(`tar failed (${untarred.status}): ${untarred.stderr}`);
-        const entry = join(installedPkg, 'dist/index.js');
-        if (!existsSync(entry)) throw new Error(`the packed install does not carry the reader binary: ${entry}`);
+        const api = join(installedPkg, 'dist/board/api.js');
+        if (!existsSync(api)) throw new Error(`the packed install does not carry the module API: ${api}`);
         if (!existsSync(join(installedPkg, 'dist/board/collect/index.js'))) {
             throw new Error('the packed install does not carry the collect module');
         }
-        return entry;
     } finally {
         rmSync(packDir, { recursive: true, force: true });
     }
@@ -361,13 +361,12 @@ function overviewRow(page: Page, runId: string) {
 async function visit(
     page: Page,
     origin: string,
-    readerOrigin: string,
     out: string,
     tab: string,
     runId: string | null,
     assert: () => Promise<string>,
 ): Promise<TabResult> {
-    const params = new URLSearchParams({ kkApi: readerOrigin, tab, ...(runId === null ? {} : { run: runId }) });
+    const params = new URLSearchParams({ tab, ...(runId === null ? {} : { run: runId }) });
     const screenshot = join(out, `${runId ?? 'overview'}-${tab}.png`);
     const result: TabResult = { runId, tab, pass: false, detail: '', screenshot };
     try {
@@ -401,7 +400,6 @@ async function visit(
 /** Drive the installed Board through the five tabs the design names (§5). */
 async function checkTabs(
     origin: string,
-    readerOrigin: string,
     ids: { withStore: string; withoutStore: string },
     out: string,
 ): Promise<{ tabs: TabResult[]; consoleErrors: ConsoleError[]; failedRequests: string[] }> {
@@ -433,7 +431,7 @@ async function checkTabs(
         page.on('pageerror', (error) => consoleErrors.push({ text: error.message, url: null, status: null }));
         console.error('chromium: driving the installed Board …');
         const tabs = [
-            await visit(page, origin, readerOrigin, out, 'overview', null, async () => {
+            await visit(page, origin, out, 'overview', null, async () => {
                 await page.waitForSelector('.kk-collect-table tbody tr');
                 const rows = await page.locator('.kk-collect-table tbody tr').count();
                 const banner = (await page.locator('.kk-collect-banner').innerText()).replaceAll(/\s+/g, ' ').trim();
@@ -455,7 +453,7 @@ async function checkTabs(
                 }
                 return `${rows} run rows (${noStoreRows} not stored); ${ids.withStore} inserted ${inserted}; banner: ${banner}`;
             }),
-            await visit(page, origin, readerOrigin, out, 'summary', ids.withStore, async () => {
+            await visit(page, origin, out, 'summary', ids.withStore, async () => {
                 await page.waitForSelector('.kk-collect-funnel .kk-stat-card');
                 const stages = await page.locator('.kk-collect-funnel .kk-stat-card').count();
                 if (stages < 4) throw new Error(`Run detail shows ${stages} funnel stages, expected 4`);
@@ -477,7 +475,7 @@ async function checkTabs(
                     headers.length === 0 ? ' (no label rows for this run)' : ' with HIGH/MEDIUM/LOW columns'
                 }`;
             }),
-            await visit(page, origin, readerOrigin, out, 'items', ids.withStore, async () => {
+            await visit(page, origin, out, 'items', ids.withStore, async () => {
                 await page.waitForSelector('.kk-collect-items');
                 const panel = await page.locator('.kk-collect-items').innerText();
                 if (/could not be read/.test(panel)) throw new Error('Items panel reports an unreadable store');
@@ -494,7 +492,7 @@ async function checkTabs(
                     throw new Error('Items panel is empty without a reason');
                 return `${rows} item rows${pager === '' ? '' : `; ${pager}`}`;
             }),
-            await visit(page, origin, readerOrigin, out, 'summary', ids.withoutStore, async () => {
+            await visit(page, origin, out, 'summary', ids.withoutStore, async () => {
                 await page.waitForSelector('.kk-collect-detail');
                 const detail = await page.locator('.kk-collect-detail').innerText();
                 if (!detail.includes('wrote no store row')) {
@@ -502,7 +500,7 @@ async function checkTabs(
                 }
                 return 'states "This run wrote no store row."';
             }),
-            await visit(page, origin, readerOrigin, out, 'items', ids.withoutStore, async () => {
+            await visit(page, origin, out, 'items', ids.withoutStore, async () => {
                 await page.waitForSelector('.kk-collect-items');
                 const panel = await page.locator('.kk-collect-items').innerText();
                 if (/could not be read/.test(panel)) throw new Error('Items panel reports an unreadable store');
@@ -554,7 +552,7 @@ async function main(): Promise<number> {
     let report: Record<string, unknown> = {};
     try {
         console.error('packing + installing the CLI (prepack builds the board assets) …');
-        const cliEntry = packAndInstall(boardTemp);
+        packAndInstall(boardTemp);
         const boardPort = freePort();
         const origin = `http://127.0.0.1:${boardPort}`;
         console.error(`installed Board: ${origin}`);
@@ -582,23 +580,9 @@ async function main(): Promise<number> {
         const stored = storedRunIds(paths.store);
         const ids = pickRunIds(await boardRunPage(origin), spurRuns(paths.spurDb), stored);
         console.error(`runs: ${ids.withStore} (store row) · ${ids.withoutStore} (no store row)`);
-        const readerPort = freePort();
-        const readerOrigin = `http://127.0.0.1:${readerPort}`;
-        console.error(`installed reader: ${readerOrigin} (store ${paths.store}, opened in place)`);
-        servers.push(
-            spawnServer(
-                'reader',
-                [process.execPath, cliEntry, 'board', 'serve', '--board-origin', origin, '--port', String(readerPort)],
-                // Same project root as the Board (the reader refuses a Board whose project differs —
-                // 403 `board.project.mismatch`). Its `.works/kk.db` is the symlink to the live store,
-                // so every projection the browser asserts on comes from the real file.
-                boardTemp,
-                paths.out,
-            ),
-        );
-        await waitFor(`${readerOrigin}/api/health`, servers[1] as Server);
+        await waitFor(`${origin}/api/modules/${WORKFLOW}/api/health`, servers[0] as Server);
 
-        const { tabs, consoleErrors, failedRequests } = await checkTabs(origin, readerOrigin, ids, paths.out);
+        const { tabs, consoleErrors, failedRequests } = await checkTabs(origin, ids, paths.out);
         const filesAfter = storeFiles(paths.store);
         const storeDigestAfter = digest(paths.store);
         const digestIdentical = sameDigest(storeDigestBefore, storeDigestAfter);

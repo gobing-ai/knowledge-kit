@@ -32,9 +32,9 @@ import {
     projectDailyResults,
     projectProgress,
 } from '../../src/board/daily-voice';
-import { createBoardReader } from '../../src/board/reader';
 import { main } from '../../src/main';
 import { captureOutput } from '../capture';
+import { fetchTestReader, registerTestReader } from './test-reader';
 
 const STAMP = '20261011';
 const tempDirs: string[] = [];
@@ -169,7 +169,7 @@ async function seededProject(overrides?: Record<string, string | null>) {
 }
 
 function startReader(boardOrigin: string, projectPath: string) {
-    const reader = createBoardReader({ boardOrigin, port: 0, projectPath });
+    const reader = registerTestReader({ boardOrigin, projectPath });
     servers.push(reader);
     return reader.url;
 }
@@ -184,7 +184,7 @@ interface ResultsJson {
 const resultsUrl = (reader: string) => `${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/results`;
 
 async function getResults(reader: string): Promise<ResultsJson> {
-    return (await (await fetch(resultsUrl(reader))).json()) as ResultsJson;
+    return (await (await fetchTestReader(resultsUrl(reader))).json()) as ResultsJson;
 }
 
 describe('dagProducerState', () => {
@@ -535,7 +535,7 @@ describe('reader daily route (real server + files)', () => {
         const reader = startReader(board.origin, root);
         const results = await getResults(reader);
         expect(results.artifacts.find((a) => a.id === 'audio')?.availability).toBe('missing');
-        const artifact = await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`);
+        const artifact = await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`);
         expect(artifact.status).toBe(404);
     });
 
@@ -543,13 +543,13 @@ describe('reader daily route (real server + files)', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root, passedActions());
         const reader = startReader(board.origin, root);
-        const ranged = await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`, {
+        const ranged = await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`, {
             headers: { range: 'bytes=0-2' },
         });
         expect(ranged.status).toBe(206);
         expect(ranged.headers.get('content-type')).toBe('audio/mpeg');
         expect(await ranged.text()).toBe('MP3');
-        const refused = await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`, {
+        const refused = await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/audio`, {
             headers: { range: 'bytes=9999-' },
         });
         expect(refused.status).toBe(416);
@@ -559,8 +559,12 @@ describe('reader daily route (real server + files)', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root, passedActions());
         const reader = startReader(board.origin, root);
-        expect((await fetch(resultsUrl(reader), { headers: { origin: 'http://evil.example' } })).status).toBe(403);
-        expect((await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/nope`)).status).toBe(404);
+        expect((await fetchTestReader(resultsUrl(reader), { headers: { origin: 'http://evil.example' } })).status).toBe(
+            403,
+        );
+        expect(
+            (await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/nope`)).status,
+        ).toBe(404);
     });
 
     it('marks the daily artifacts superseded for a same-day later owner (AC6)', async () => {
@@ -1088,19 +1092,21 @@ describe('reader funnel surface (real server + files)', () => {
         const board = startFakeBoard(root, [...passedActions(), ...funnelActions()]);
         const reader = startReader(board.origin, root);
         const pool = await (
-            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`)
+            await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`)
         ).json();
         expect(JSON.stringify(pool)).not.toContain('SECRET-BODY');
         expect(JSON.stringify(pool)).not.toContain('Title a');
         expect(JSON.stringify(pool)).toContain('"count":4');
         const exclusions = await (
-            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-exclusions`)
+            await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-exclusions`)
         ).json();
         expect(JSON.stringify(exclusions)).toContain('policy-dispute');
         expect(JSON.stringify(exclusions)).toContain('lawsuit');
         expect(JSON.stringify(exclusions)).not.toContain('Secret title');
         const refusalBody = await (
-            await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-duration-refusal`)
+            await fetchTestReader(
+                `${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-duration-refusal`,
+            )
         ).json();
         expect(JSON.stringify(refusalBody)).toContain('"measuredMinutes":8.9');
         expect(JSON.stringify(refusalBody)).toContain('"minMinutes":15');
@@ -1135,7 +1141,8 @@ describe('reader funnel surface (real server + files)', () => {
         expect(funnel.poolCount).toBeNull();
         expect(funnel.gate).toBe('unknown');
         expect(
-            (await fetch(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`)).status,
+            (await fetchTestReader(`${reader}/api/workflows/kk-daily-ai-voice2/runs/run-1/artifacts/episode-pool`))
+                .status,
         ).toBe(404);
     }, 20_000);
 

@@ -223,7 +223,6 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'article publish-settle',
             'article status',
             'board capture',
-            'board serve',
             'bot codegen',
             'bot exec',
             'bot list',

@@ -68,7 +68,6 @@ let project = '';
 let installedPkg = '';
 let cliEntry = '';
 let boardOrigin = '';
-let readerOrigin = '';
 let browser: Browser | null = null;
 let page: Page | null = null;
 let spur: string[] = [];
@@ -263,6 +262,7 @@ function writeProjectConfig(): void {
             `      icon: "${module.icon}"`,
             '      type: react',
             `      directory: ${installedModuleDir(module.entry)}`,
+            `      api: node_modules/${INSTALLED}/dist/board/api.js`,
             '      entry: index.js',
             '      styles: [index.css]',
         );
@@ -739,7 +739,7 @@ async function setup(): Promise<void> {
     mkdirSync(installedPkg, { recursive: true });
     shell('tar', ['-xzf', tarball, '-C', installedPkg, '--strip-components=1'], project);
     cliEntry = join(installedPkg, 'dist/index.js');
-    if (!existsSync(cliEntry)) throw new Error(`the packed install does not carry the reader binary: ${cliEntry}`);
+    if (!existsSync(cliEntry)) throw new Error(`the packed install does not carry the CLI binary: ${cliEntry}`);
     for (const module of MODULES) {
         if (!existsSync(join(installedPkg, 'dist/board', module.entry, 'index.js'))) {
             throw new Error(`the packed install does not carry the ${module.entry} module`);
@@ -800,7 +800,7 @@ async function setup(): Promise<void> {
     // 4c. G81/0319: 35 extra tick days so the All channel-yield aggregate spans multiple pages.
     await seedChannelTicks();
 
-    // 5. The installed Board, then the reader bound to that exact origin.
+    // 5. The installed Board serves the browser contributions and their module API.
     const boardPort = freePort();
     boardOrigin = `http://127.0.0.1:${boardPort}`;
     const boardServer = spawnServer(
@@ -812,15 +812,9 @@ async function setup(): Promise<void> {
         { SPUR_CORS_ORIGINS: `http://${LAN_HOST}:${boardPort}` },
     );
     await waitFor(`${boardOrigin}/api/health`, boardServer);
-    const readerPort = freePort();
-    readerOrigin = `http://127.0.0.1:${readerPort}`;
-    const readerServer = spawnServer(
-        'reader',
-        'installed reader (kk board serve)',
-        [process.execPath, cliEntry, 'board', 'serve', '--board-origin', boardOrigin, '--port', String(readerPort)],
-        project,
-    );
-    await waitFor(`${readerOrigin}/api/health`, readerServer);
+    for (const module of MODULES) {
+        await waitFor(`${moduleApi(module.id)}/api/health`, boardServer);
+    }
     // 5b. G82/0320: in-window supply for d-funnel — a tick plus items BACKDATED to 2 h before the
     // run's own start, through the real DAOs (no raw SQL).
     await seedDailySupply();
@@ -888,14 +882,18 @@ async function waitForRunOption(runId: string): Promise<void> {
     }
 }
 
-/** The deep-link query every module needs to reach the non-default reader port. */
+/** Encode a module deep-link query. */
 function query(params: Record<string, string> = {}): string {
-    return new URLSearchParams({ kkApi: readerOrigin, ...params }).toString();
+    return new URLSearchParams(params).toString();
+}
+
+function moduleApi(id: string = 'kk-collect'): string {
+    return `${boardOrigin}/api/modules/${id}`;
 }
 
 /** A reader request carrying the correct Board origin header. */
 function readerFetch(path: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${readerOrigin}${path}`, {
+    return fetch(`${moduleApi(/^\/api\/workflows\/([^/]+)/.exec(path)?.[1])}${path}`, {
         ...init,
         headers: { origin: boardOrigin, ...(init.headers as Record<string, string> | undefined) },
     });
@@ -957,8 +955,6 @@ describe('installed Board native modules (AC1/AC7)', () => {
 
     it('mounts Collect when the Board is opened on a non-loopback hostname', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
-        // The reported shape: http://192.168.87.27:3003/board/modules/kk-collect — a LAN name that
-        // is not a loopback origin for the module's reader/board origin rule.
         const lanOrigin = `http://${LAN_HOST}:${new URL(boardOrigin).port}`;
         await page.goto(`${lanOrigin}/board/modules/kk-collect`, { waitUntil: 'commit' });
         await page.waitForSelector('.kk-board-collect', { timeout: 15_000 });
@@ -973,7 +969,7 @@ describe('run selection and deep links (AC2)', () => {
     it('restores a saved ?run=&tab= deep link and keeps both in the URL', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
         // G81/0308 keeps shipped `?tab=results` links alive: the alias resolves to Run Details.
-        await openModule('kk-collect', query({ run: 'r-b', tab: 'results' }));
+        await openModule('kk-collect', query({ run: 'r-b', tab: 'results', range: '7d' }));
         await waitForRunOption('r-b');
         if ((await page.locator('.kk-board-run-selector select').count()) > 0) {
             expect(await page.locator('.kk-board-run-selector select').inputValue()).toBe('r-b');
@@ -984,8 +980,7 @@ describe('run selection and deep links (AC2)', () => {
         const url = new URL(page.url());
         expect(url.searchParams.get('run')).toBe('r-b');
         expect(url.searchParams.get('tab')).toBe('runs');
-        // §4: the validated reader origin is retained in the saved URL.
-        expect(url.searchParams.get('kkApi')).toBe(readerOrigin);
+        expect(url.searchParams.get('range')).toBe('7d');
     }, 30_000);
 
     it('retains the selected run across tab changes, a reload and back/forward', async () => {
@@ -1067,7 +1062,7 @@ describe('workspace supersession and reader isolation (AC4/AC5)', () => {
         if (!ready) throw new Error('setup did not complete');
         expect((await readerFetch('/api/workflows/kk-collect/runs/r-a/results')).status).toBe(200);
         // A foreign Origin is refused (403); a non-loopback Host would be too.
-        const foreign = await fetch(`${readerOrigin}/api/workflows/kk-collect/runs/r-a/results`, {
+        const foreign = await fetch(`${moduleApi()}/api/workflows/kk-collect/runs/r-a/results`, {
             headers: { origin: 'http://evil.example' },
         });
         expect(foreign.status).toBe(403);
@@ -1100,19 +1095,17 @@ describe('workspace supersession and reader isolation (AC4/AC5)', () => {
 describe('truthful refresh, usability and media (AC6/AC7)', () => {
     it('keeps a truthful view when the reader is unavailable', async () => {
         if (!ready || page === null) throw new Error('setup did not complete');
-        // A closed loopback reader: the Board's own run history must still render, and the reader
-        // panels must say so instead of blanking or inventing data.
-        const dead = new URLSearchParams({ kkApi: `http://127.0.0.1:${deadPort()}` }).toString();
-        await openModule('kk-collect', dead);
-        await waitForRunOption('r-a');
-        if ((await page.locator('.kk-board-run-selector select option').count()) > 0) {
-            expect(await page.locator('.kk-board-run-selector select option').count()).toBeGreaterThan(1);
+        const moduleRoutes = '**/api/modules/kk-collect/**';
+        await page.route(moduleRoutes, (route) => route.abort());
+        try {
+            await openModule('kk-collect');
+            await waitForRunOption('r-a');
+            const banner = page.locator('.kk-board-reader-offline-banner');
+            await banner.waitFor();
+            expect(await banner.innerText()).toContain('Board module API unavailable');
+        } finally {
+            await page.unroute(moduleRoutes);
         }
-        // A dead reader is one explicit banner, not a wall of per-panel diagnostics.
-        await page.waitForSelector('.kk-board-reader-offline-banner');
-        expect((await page.locator('.kk-board-reader-offline-banner').innerText()).toLowerCase()).toContain(
-            'reader offline',
-        );
     }, 30_000);
 
     it('is keyboard-usable at a narrow viewport', async () => {
@@ -1560,9 +1553,3 @@ describe('Collect channel yield over a seeded store (0319)', () => {
  * drill-down coverage returns with 0441 on the existing per-run routes. The reader-level assertions
  * these cases also made survive above (`judge confidence vocabulary` keeps the projection round-trip).
  */
-
-/** An unused loopback port for the reader-outage scenario. */
-function deadPort(): number {
-    const port = freePort();
-    return port;
-}

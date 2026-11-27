@@ -81,9 +81,10 @@ async function withBuildLock<T>(fn: () => T | Promise<T>): Promise<T> {
 }
 
 describe('buildBoard', () => {
-    it.serial('emits index.js + index.css for collect into both distribution roots', async () => {
+    it.serial('emits the module assets and native API in both distribution roots', async () => {
         const emitted = await withBuildLock(() => buildBoard(REPO_ROOT));
         for (const outRoot of BOARD_OUTPUT_DIRS) {
+            expect(emitted).toContain(join(REPO_ROOT, outRoot, 'api.js'));
             for (const entry of BOARD_ENTRIES) {
                 const dir = join(REPO_ROOT, outRoot, entry.name);
                 expect(existsSync(join(dir, 'index.js'))).toBe(true);
@@ -207,12 +208,13 @@ describe('packed CLI distribution (G8/0255 AC1/AC7)', () => {
         if (packDir !== '') rmSync(packDir, { recursive: true, force: true, maxRetries: 3 });
     });
 
-    it.serial('ships the three native board entry trees (assets + CSS) and the reader binary', () => {
+    it.serial('ships the three native board entry trees (assets + CSS) and the native API bundle', () => {
         for (const entry of ENTRIES) {
             expect(packed.files, entry).toContain(`package/dist/board/${entry}/index.js`);
             expect(packed.files, entry).toContain(`package/dist/board/${entry}/index.css`);
         }
         expect(packed.files).toContain('package/dist/index.js');
+        expect(packed.files).toContain('package/dist/board/api.js');
     });
 
     it.serial('externalizes only the host React facades and bundles no second runtime', () => {
@@ -233,6 +235,7 @@ describe('packed CLI distribution (G8/0255 AC1/AC7)', () => {
     it.serial('lets the reader and module assets resolve outside the source checkout', () => {
         // The packed reader + entries are addressable by their own package-relative paths...
         expect(packed.files).toContain('package/dist/index.js');
+        expect(packed.files).toContain('package/dist/board/api.js');
         // ...and carry no reference back to the checkout they were built in.
         expect(packed.read('dist/index.js')).not.toContain(REPO_ROOT);
         for (const entry of ENTRIES) {

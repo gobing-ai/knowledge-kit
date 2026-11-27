@@ -61,7 +61,8 @@ let dayDir = '';
 let configFile = '';
 let disabledConfig = '';
 let boardOrigin = '';
-let readerOrigin = '';
+let disabledBoardOrigin = '';
+let moduleApi = '';
 let spur: string[] = [];
 let browser: Browser | null = null;
 let page: Page | null = null;
@@ -147,6 +148,18 @@ function spawnServer(label: string, args: string[], extraEnv: Record<string, str
     return handle;
 }
 
+async function startBoard(root: string, config: string, bin: string): Promise<string> {
+    const port = freePort();
+    const origin = `http://127.0.0.1:${port}`;
+    const server = spawnServer(
+        'Board (spur self serve)',
+        [...spur, 'self', 'serve', '--port', String(port), '--host', '127.0.0.1', '--no-open', '--cwd', root],
+        { KK_CONFIG: config, PATH: `${bin}:${process.env.PATH ?? ''}` },
+    );
+    await waitFor(`${origin}/api/modules/${MODULE_ID}/api/health`, server);
+    return origin;
+}
+
 /** Wait on a real readiness signal; a server that exits first fails with its captured output. */
 async function waitFor(
     url: string,
@@ -207,6 +220,7 @@ async function setup(): Promise<void> {
     const moduleRoot = join(project, 'node_modules/@gobing-ai/kk-daily-voice-module/daily-voice');
     mkdirSync(dirname(moduleRoot), { recursive: true });
     cpSync(join(REPO, 'apps/cli/dist/board/daily-voice'), moduleRoot, { recursive: true });
+    cpSync(join(REPO, 'apps/cli/dist/board/api.js'), join(dirname(moduleRoot), 'api.js'));
     mkdirSync(join(project, '.spur'), { recursive: true });
     writeFileSync(
         join(project, '.spur/config.yaml'),
@@ -223,6 +237,7 @@ async function setup(): Promise<void> {
             '      icon: "🎙️"',
             '      type: react',
             '      directory: node_modules/@gobing-ai/kk-daily-voice-module/daily-voice',
+            '      api: node_modules/@gobing-ai/kk-daily-voice-module/api.js',
             '      entry: index.js',
             '      styles: [index.css]',
             '',
@@ -241,30 +256,11 @@ async function setup(): Promise<void> {
     );
 
     const stubBin = writeKkShim();
-    const boardPort = freePort();
-    boardOrigin = `http://127.0.0.1:${boardPort}`;
-    const boardServer = spawnServer('Board (spur self serve)', [
-        ...spur,
-        'self',
-        'serve',
-        '--port',
-        String(boardPort),
-        '--host',
-        '127.0.0.1',
-        '--no-open',
-        '--cwd',
-        project,
-    ]);
-    await waitFor(`${boardOrigin}/api/health`, boardServer);
-
-    const readerPort = freePort();
-    readerOrigin = `http://127.0.0.1:${readerPort}`;
-    const readerServer = spawnServer(
-        'reader (kk board serve)',
-        [process.execPath, CLI_ENTRY, 'board', 'serve', '--board-origin', boardOrigin, '--port', String(readerPort)],
-        { KK_CONFIG: configFile, PATH: `${stubBin}:${process.env.PATH ?? ''}` },
-    );
-    await waitFor(`${readerOrigin}/api/health`, readerServer);
+    const disabledProject = realTempDir('kk-editor-project-disabled-');
+    cpSync(project, disabledProject, { recursive: true });
+    boardOrigin = await startBoard(project, configFile, stubBin);
+    moduleApi = `${boardOrigin}/api/modules/${MODULE_ID}`;
+    disabledBoardOrigin = await startBoard(disabledProject, disabledConfig, stubBin);
 
     try {
         browser = await chromium.launch();
@@ -289,10 +285,10 @@ afterAll(async () => {
 /** A navigation counter: a hash-only change is a same-document jump, so each visit gets a fresh URL. */
 let navigation = 0;
 
-/** The Generation tab of the console, carrying the reader origin it needs. */
+/** The Generation tab of the console. */
 function generationUrl(): string {
     navigation += 1;
-    const query = new URLSearchParams({ kkApi: readerOrigin, n: String(navigation) });
+    const query = new URLSearchParams({ n: String(navigation) });
     return `${boardOrigin}/board/modules/${MODULE_ID}?${query.toString()}#${new URLSearchParams({ day: DAY, tab: 'generation' }).toString()}`;
 }
 
@@ -313,7 +309,7 @@ async function shot(name: string): Promise<void> {
 
 /** One reader request carrying the Board origin, exactly as the browser sends it. */
 function readerFetch(path: string, init: RequestInit = {}): Promise<Response> {
-    return fetch(`${readerOrigin}${path}`, {
+    return fetch(`${moduleApi}${path}`, {
         ...init,
         headers: { origin: boardOrigin, ...(init.headers as Record<string, string> | undefined) },
     });
@@ -352,28 +348,11 @@ describe('the editor (R1–R4, AC4/AC6)', () => {
     it(
         'shows the recipes only when the plane is disabled',
         async () => {
-            const disabledPort = freePort();
-            const disabledOrigin = `http://127.0.0.1:${disabledPort}`;
-            const disabledReader = spawnServer(
-                'reader with actions disabled',
-                [
-                    process.execPath,
-                    CLI_ENTRY,
-                    'board',
-                    'serve',
-                    '--board-origin',
-                    boardOrigin,
-                    '--port',
-                    String(disabledPort),
-                ],
-                { KK_CONFIG: disabledConfig },
-            );
-            await waitFor(`${disabledOrigin}/api/health`, disabledReader);
             if (page === null) throw new Error('browser page not ready');
             navigation += 1;
-            const query = new URLSearchParams({ kkApi: disabledOrigin, n: String(navigation) });
+            const query = new URLSearchParams({ n: String(navigation) });
             await page.goto(
-                `${boardOrigin}/board/modules/${MODULE_ID}?${query.toString()}#${new URLSearchParams({ day: DAY, tab: 'generation' }).toString()}`,
+                `${disabledBoardOrigin}/board/modules/${MODULE_ID}?${query.toString()}#${new URLSearchParams({ day: DAY, tab: 'generation' }).toString()}`,
                 { waitUntil: 'domcontentloaded' },
             );
             await page.waitForSelector('[data-testid="editor-article"]');
@@ -484,7 +463,7 @@ describe('the refusal matrix (R5)', () => {
             const params = { day: DAY, artifact: 'article', baseSha: 'a'.repeat(64) };
             const before = readFileSync(join(dayDir, '22-article', `${DAY}_06_article-write_body.md`), 'utf8');
 
-            const foreign = await fetch(`${readerOrigin}/api/actions/edit-artifact`, {
+            const foreign = await fetch(`${moduleApi}/api/actions/edit-artifact`, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json', 'x-kk-action': '1', origin: 'http://127.0.0.1:9' },
                 body: JSON.stringify({ params, body: 'x\n' }),

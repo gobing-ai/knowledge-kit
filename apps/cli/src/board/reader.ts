@@ -7,6 +7,7 @@ import type {
     WorkflowName,
 } from '@gobing-ai/kk-board/contracts';
 import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
+import type { BoardModuleApiHandler } from '@gobing-ai/spur/board';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
 import { type ActionPlane, actionsEnabledFromConfig, defaultActionPlane } from './action-plane';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
@@ -45,99 +46,10 @@ import {
 } from './manifest';
 import { projectNewsResults } from './news';
 
-/**
- * The read-only Board API.
- *
- * Two surfaces over one routing body: `createBoardHandler` is a pure Web-Fetch handler that the
- * Spur server mounts at `/api/modules/<id>/*` (the native module API, ADR-035 amendment), and
- * `createBoardReader` wraps it in a loopback `Bun.serve` for the CLI's own tests and the legacy
- * `kk board serve`. Identity is proven against the Board's own HTTP APIs — a browser assertion is
- * never authorization.
- */
-
-/** The default reader port (§4). */
-export const DEFAULT_BOARD_PORT = 4340;
-
-/** Text/JSON preview cap (§4): larger evidence is reported `oversized`, never truncated silently. */
 export { MAX_PREVIEW_BYTES };
 
-/** Minimal fetch signature (satisfied by the platform `fetch`), injectable for tests. */
+/** Minimal fetch signature, injectable for tests. */
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
-
-/** The native module API handler's context (`@gobing-ai/spur/board` `BoardModuleApiContext`). */
-export interface BoardHandlerContext {
-    /** Absolute path of the project whose server is dispatching the request. */
-    readonly projectPath?: string;
-}
-
-/** Reader options. */
-export interface BoardReaderOptions {
-    /** The exact Board origin allowed to call the reader, e.g. `http://127.0.0.1:4310`. */
-    boardOrigin: string;
-    /** Loopback port; defaults to {@link DEFAULT_BOARD_PORT}. `0` binds any free port. */
-    port?: number;
-    /** Project root that owns `.works/.board`; defaults to the canonical cwd. */
-    projectPath?: string;
-    fs?: FileSystem;
-    fetchImpl?: FetchLike;
-    /**
-     * The guarded action plane (G83/0442). Omitted, the reader builds one from the configured
-     * `board.actions.enabled`, the store lock and a real argv spawn executor; tests inject a stub.
-     */
-    actionPlane?: (deps: { projectPath: string; fs: FileSystem; boardOrigin: string }) => Promise<ActionPlane>;
-}
-
-/** A running reader. */
-export interface BoardReader {
-    /** The reader origin clients should call. */
-    readonly url: string;
-    readonly port: number;
-    /** Stop the server (idempotent). */
-    stop(): void;
-}
-
-/** True when `origin` is an http loopback origin with no path, query or credentials. */
-export function isLoopbackOrigin(origin: string): boolean {
-    let url: URL;
-    try {
-        url = new URL(origin);
-    } catch {
-        return false;
-    }
-    if (url.protocol !== 'http:') return false;
-    if (url.username !== '' || url.password !== '' || url.pathname !== '/' || url.search !== '' || url.hash !== '') {
-        return false;
-    }
-    return url.hostname === '127.0.0.1' || url.hostname === 'localhost' || url.hostname === '[::1]';
-}
-
-/** True when a `Host` header names a loopback address (DNS-rebinding guard). */
-export function isLoopbackHost(host: string): boolean {
-    const name = host.startsWith('[') ? host.slice(0, host.indexOf(']') + 1) : (host.split(':')[0] ?? '');
-    return name === '127.0.0.1' || name === 'localhost' || name === '[::1]';
-}
-
-/**
- * True when `requestOrigin` matches `configuredBoardOrigin`, treating `127.0.0.1` and `localhost`
- * on the same port as equivalent loopback origins.
- */
-export function isMatchingBoardOrigin(requestOrigin: string, configuredBoardOrigin: string): boolean {
-    if (requestOrigin === configuredBoardOrigin) return true;
-    try {
-        const req = new URL(requestOrigin);
-        const conf = new URL(configuredBoardOrigin);
-        if (req.protocol !== conf.protocol) return false;
-        const reqPort = req.port || (req.protocol === 'https:' ? '443' : '80');
-        const confPort = conf.port || (conf.protocol === 'https:' ? '443' : '80');
-        if (reqPort !== confPort) return false;
-        const isReqLoopback = req.hostname === '127.0.0.1' || req.hostname === 'localhost' || req.hostname === '[::1]';
-        const isConfLoopback =
-            conf.hostname === '127.0.0.1' || conf.hostname === 'localhost' || conf.hostname === '[::1]';
-        return isReqLoopback && isConfLoopback;
-    } catch {
-        return false;
-    }
-}
 
 /**
  * Parse one `Range: bytes=…` header against a known size.
@@ -249,29 +161,13 @@ export interface BoardRoutingOptions {
     actionPlane?: (deps: { projectPath: string; fs: FileSystem; boardOrigin: string }) => Promise<ActionPlane>;
 }
 
-/**
- * One routing body for both surfaces: the loopback reader below, and the native module API the
- * Spur server mounts at `/api/modules/<id>/*` (`createBoardHandler`).
- */
-export function createBoardRouting(options: BoardRoutingOptions): {
-    handle: (request: Request, mountedOrigin?: string) => Promise<Response>;
+/** Build the module-relative Web Fetch handler mounted by Spur. */
+export function createBoardHandler(options: BoardRoutingOptions = {}): {
+    fetch: (request: Request) => Promise<Response>;
 } {
     const fs = options.fs ?? createNodeFileSystem();
     const doFetch: FetchLike = options.fetchImpl ?? fetch;
     const projectPath = options.projectPath ?? safeRealPath(fs, process.cwd()) ?? process.cwd();
-    const configuredOrigin = options.boardOrigin?.replace(/\/+$/, '');
-
-    /**
-     * The Board origin this request belongs to.
-     *
-     * Native mounting (`/api/modules/<id>/*`) runs inside the project's own server, so a request's
-     * own origin IS the Board's; a pinned `boardOrigin` keeps the legacy loopback reader and the
-     * unit tests explicit.
-     */
-    function originOf(request: Request): string {
-        return configuredOrigin ?? new URL(request.url).origin;
-    }
-
     async function boardGet(path: string, selfOrigin: string): Promise<{ status: number; body: unknown } | null> {
         try {
             const response = await doFetch(`${selfOrigin}${path}`, { headers: { accept: 'application/json' } });
@@ -824,256 +720,188 @@ export function createBoardRouting(options: BoardRoutingOptions): {
             actionHeader: request.headers.get('x-kk-action'),
             body,
         });
-        return Response.json(answer.body, {
-            status: answer.status,
-            headers: {
-                'access-control-allow-origin': selfOrigin,
-                'access-control-allow-methods': 'POST, OPTIONS',
-                'access-control-allow-headers': 'content-type, x-kk-action',
-                vary: 'origin',
-            },
-        });
+        return Response.json(answer.body, { status: answer.status });
     }
 
-    /** The Web-Fetch handler every route lives in (the native module API mounts exactly this). */
-    const handle = async (request: Request, mountedOrigin?: string): Promise<Response> => {
-        // Native mounting: the handler runs inside the project's own server, so the Board origin is
-        // the request's own origin unless a caller pinned one (the legacy loopback reader did).
-        const selfOrigin = mountedOrigin ?? originOf(request);
-        {
-            const origin = request.headers.get('origin');
-            const originMatches = origin === null || isMatchingBoardOrigin(origin, selfOrigin);
-            const allowedOrigin = origin !== null && originMatches ? origin : selfOrigin;
-            const cors: Record<string, string> = {
-                'access-control-allow-origin': allowedOrigin,
-                'access-control-allow-methods': 'GET, HEAD, OPTIONS',
-                'access-control-allow-headers': 'range, content-type',
-                vary: 'origin',
-            };
-            if (!originMatches) {
-                return jsonResponse(
-                    { code: 'board.origin.refused', message: 'Origin is not the configured Board.' },
-                    403,
-                    cors,
-                );
+    const handle = async (request: Request): Promise<Response> => {
+        const url = new URL(request.url);
+        const selfOrigin = options.boardOrigin ?? url.origin;
+        const origin = request.headers.get('origin');
+        if (origin !== null && origin !== selfOrigin) {
+            return jsonResponse({ code: 'board.origin.refused', message: 'Origin is not the Board origin.' }, 403);
+        }
+        if (pathIsAction(request)) {
+            if (request.method === 'OPTIONS')
+                return new Response(null, { status: 204, headers: { allow: 'POST, OPTIONS' } });
+            if (request.method === 'POST') return actionFor(request, selfOrigin);
+            return jsonResponse(
+                { code: 'board.method.refused', message: 'The action plane answers POST and OPTIONS only.' },
+                405,
+            );
+        }
+        if (request.method === 'OPTIONS')
+            return new Response(null, { status: 204, headers: { allow: 'GET, HEAD, OPTIONS' } });
+        if (request.method !== 'GET' && request.method !== 'HEAD') {
+            return jsonResponse({ code: 'board.method.refused', message: 'Only GET/HEAD/OPTIONS.' }, 405);
+        }
+        const path = url.pathname;
+        if (path === '/api/health') {
+            return jsonResponse({ schemaVersion: 1, projectPath }, 200);
+        }
+        // The day digest routes (G83 task 0439) are matched before the no-query-parameter
+        // gate: like the store views they declare their own parameters.
+        const dayArtifactMatch = /^\/api\/days\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+        if (dayArtifactMatch !== null) {
+            const day = decodeURIComponent(dayArtifactMatch[1] ?? '');
+            const artifact = decodeURIComponent(dayArtifactMatch[2] ?? '');
+            if (!isDayKey(day)) {
+                return jsonResponse({ code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' }, 400);
             }
-            if (!isLoopbackHost(request.headers.get('host') ?? '')) {
-                return jsonResponse({ code: 'board.host.refused', message: 'Host must be loopback.' }, 403, cors);
-            }
-            // The action plane declares its own CORS: POST plus the `x-kk-action` header, on this
-            // path family only (design §6 — every other route stays GET/HEAD/OPTIONS).
-            if (pathIsAction(request)) {
-                const actionCors: Record<string, string> = {
-                    ...cors,
-                    'access-control-allow-methods': 'POST, OPTIONS',
-                    'access-control-allow-headers': 'content-type, x-kk-action',
-                };
-                if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: actionCors });
-                if (request.method === 'POST') return actionFor(request, selfOrigin);
-                return jsonResponse(
-                    { code: 'board.method.refused', message: 'The action plane answers POST and OPTIONS only.' },
-                    405,
-                    actionCors,
-                );
-            }
-            if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
-            if (request.method !== 'GET' && request.method !== 'HEAD') {
-                return jsonResponse({ code: 'board.method.refused', message: 'Only GET/HEAD/OPTIONS.' }, 405, cors);
-            }
-            const url = new URL(request.url);
-            const path = url.pathname;
-            if (path === '/api/health') {
-                return jsonResponse({ schemaVersion: 1, projectPath }, 200, cors);
-            }
-            // The day digest routes (G83 task 0439) are matched before the no-query-parameter
-            // gate: like the store views they declare their own parameters.
-            const dayArtifactMatch = /^\/api\/days\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
-            if (dayArtifactMatch !== null) {
-                const day = decodeURIComponent(dayArtifactMatch[1] ?? '');
-                const artifact = decodeURIComponent(dayArtifactMatch[2] ?? '');
+            const refused = parseQuery(url.searchParams);
+            if (refused !== null) return jsonResponse(refused.body, refused.status);
+            const response = await dayArtifactFor(day, artifact);
+            return jsonResponse(response.body, response.status);
+        }
+        const dayMatch = /^\/api\/days\/([^/]+)$/.exec(path);
+        if (path === '/api/days' || dayMatch !== null) {
+            if (dayMatch !== null) {
+                const day = decodeURIComponent(dayMatch[1] ?? '');
                 if (!isDayKey(day)) {
-                    return jsonResponse({ code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' }, 400, cors);
+                    return jsonResponse({ code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' }, 400);
                 }
                 const refused = parseQuery(url.searchParams);
-                if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
-                const response = await dayArtifactFor(day, artifact);
-                return jsonResponse(response.body, response.status, cors);
+                if (refused !== null) return jsonResponse(refused.body, refused.status);
+                const response = await dayFor(day);
+                return jsonResponse(response.body, response.status);
             }
-            const dayMatch = /^\/api\/days\/([^/]+)$/.exec(path);
-            if (path === '/api/days' || dayMatch !== null) {
-                if (dayMatch !== null) {
-                    const day = decodeURIComponent(dayMatch[1] ?? '');
-                    if (!isDayKey(day)) {
-                        return jsonResponse(
-                            { code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' },
-                            400,
-                            cors,
-                        );
-                    }
-                    const refused = parseQuery(url.searchParams);
-                    if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
-                    const response = await dayFor(day);
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                const query = parseDaysQuery(url.searchParams);
-                if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                const response = await daysFor(query.query);
-                return jsonResponse(response.body, response.status, cors);
-            }
-            const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
-            const selectionsMatch = /^\/api\/workflows\/([^/]+)\/store\/selections$/.exec(path);
-            const channelsMatch = /^\/api\/workflows\/([^/]+)\/store\/channels$/.exec(path);
-            const storeItemsMatch = /^\/api\/workflows\/([^/]+)\/store\/items$/.exec(path);
-            const runStoreSelectionsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/selections$/.exec(path);
-            const runStoreMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store$/.exec(path);
-            const runStoreItemsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/items$/.exec(path);
-            const storeMatch =
-                overviewMatch ??
-                selectionsMatch ??
-                channelsMatch ??
-                storeItemsMatch ??
-                runStoreSelectionsMatch ??
-                runStoreMatch ??
-                runStoreItemsMatch;
-            if (storeMatch !== null) {
-                const storeRaw = storeMatch[1] ?? '';
-                // Store views exist for kk-collect only: another workflow is an unknown route, not
-                // a bad identity (§3).
-                if (decodeURIComponent(storeRaw) !== STORE_WORKFLOW) {
-                    return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404, cors);
-                }
-                if (overviewMatch !== null) {
-                    const runs = parseRunsQuery(url.searchParams);
-                    if ('response' in runs) return jsonResponse(runs.response.body, runs.response.status, cors);
-                    const response = await storeOverviewFor(runs.runIds);
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                if (selectionsMatch !== null) {
-                    const query = parseSelectionsQuery(url.searchParams);
-                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                    const response = await storeSelectionsFor(query.query);
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                if (channelsMatch !== null) {
-                    const query = parseChannelsQuery(url.searchParams);
-                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                    const response = await storeChannelsFor(query.query);
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                if (storeItemsMatch !== null) {
-                    const query = parseItemsQuery(url.searchParams);
-                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                    const response = await storeItemsFor('', query.query);
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                if (runStoreSelectionsMatch !== null) {
-                    const identified = identify(storeRaw, runStoreSelectionsMatch[2] ?? '');
-                    if ('response' in identified)
-                        return jsonResponse(identified.response.body, identified.response.status, cors);
-                    const query = parseSelectionsQuery(url.searchParams);
-                    if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                    const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
-                    if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
-                    const response = await storeSelectionsFor({ ...query.query, runId: identified.runId });
-                    return jsonResponse(response.body, response.status, cors);
-                }
-                if (runStoreMatch !== null) {
-                    // §3 declares "Query: none" here: this route refuses every parameter, exactly
-                    // like the shipped ones (review 0307 P3).
-                    const refused = parseQuery(url.searchParams);
-                    if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
-                }
-                const identified = identify(storeRaw, storeMatch[2] ?? '');
-                if ('response' in identified)
-                    return jsonResponse(identified.response.body, identified.response.status, cors);
-                const query = runStoreItemsMatch === null ? null : parseItemsQuery(url.searchParams);
-                if (query !== null && 'response' in query)
-                    return jsonResponse(query.response.body, query.response.status, cors);
-                const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
-                if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
-                const response =
-                    query === null
-                        ? await storeRunFor(identified.runId)
-                        : await storeItemsFor(identified.runId, query.query);
-                return jsonResponse(response.body, response.status, cors);
-            }
-            const match = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/(results|config|evidence)$/.exec(path);
-            const artifactMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
-            // Query parsing moved AFTER matching: only the store routes declare parameters, every
-            // shipped route keeps refusing them (§3 / R8).
-            const query = parseQuery(url.searchParams);
-            if (query !== null) return jsonResponse(query.body, query.status, cors);
-            if (match !== null) {
-                const [, workflow, runId, verb] = match;
-                const identified = identify(workflow ?? '', runId ?? '');
-                if ('response' in identified)
-                    return jsonResponse(identified.response.body, identified.response.status, cors);
-                const response =
-                    verb === 'results'
-                        ? await resultsFor(identified.workflow, identified.runId, selfOrigin)
-                        : verb === 'config'
-                          ? await configFor(identified.workflow, identified.runId, selfOrigin)
-                          : await evidenceFor(identified.workflow, identified.runId, selfOrigin);
-                return jsonResponse(response.body, response.status, cors);
-            }
-            if (artifactMatch !== null) {
-                const [, workflow, runId, artifactId] = artifactMatch;
-                const identified = identify(workflow ?? '', runId ?? '');
-                if ('response' in identified)
-                    return jsonResponse(identified.response.body, identified.response.status, cors);
-                const response = await artifactFor(
-                    identified.workflow,
-                    identified.runId,
-                    decodeURIComponent(artifactId ?? ''),
-                    request.headers.get('range'),
-                    selfOrigin,
-                );
-                return artifactResponse(response, cors);
-            }
-            return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404, cors);
+            const query = parseDaysQuery(url.searchParams);
+            if ('response' in query) return jsonResponse(query.response.body, query.response.status);
+            const response = await daysFor(query.query);
+            return jsonResponse(response.body, response.status);
         }
+        const overviewMatch = /^\/api\/workflows\/([^/]+)\/store\/overview$/.exec(path);
+        const selectionsMatch = /^\/api\/workflows\/([^/]+)\/store\/selections$/.exec(path);
+        const channelsMatch = /^\/api\/workflows\/([^/]+)\/store\/channels$/.exec(path);
+        const storeItemsMatch = /^\/api\/workflows\/([^/]+)\/store\/items$/.exec(path);
+        const runStoreSelectionsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/selections$/.exec(path);
+        const runStoreMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store$/.exec(path);
+        const runStoreItemsMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/store\/items$/.exec(path);
+        const storeMatch =
+            overviewMatch ??
+            selectionsMatch ??
+            channelsMatch ??
+            storeItemsMatch ??
+            runStoreSelectionsMatch ??
+            runStoreMatch ??
+            runStoreItemsMatch;
+        if (storeMatch !== null) {
+            const storeRaw = storeMatch[1] ?? '';
+            // Store views exist for kk-collect only: another workflow is an unknown route, not
+            // a bad identity (§3).
+            if (decodeURIComponent(storeRaw) !== STORE_WORKFLOW) {
+                return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404);
+            }
+            if (overviewMatch !== null) {
+                const runs = parseRunsQuery(url.searchParams);
+                if ('response' in runs) return jsonResponse(runs.response.body, runs.response.status);
+                const response = await storeOverviewFor(runs.runIds);
+                return jsonResponse(response.body, response.status);
+            }
+            if (selectionsMatch !== null) {
+                const query = parseSelectionsQuery(url.searchParams);
+                if ('response' in query) return jsonResponse(query.response.body, query.response.status);
+                const response = await storeSelectionsFor(query.query);
+                return jsonResponse(response.body, response.status);
+            }
+            if (channelsMatch !== null) {
+                const query = parseChannelsQuery(url.searchParams);
+                if ('response' in query) return jsonResponse(query.response.body, query.response.status);
+                const response = await storeChannelsFor(query.query);
+                return jsonResponse(response.body, response.status);
+            }
+            if (storeItemsMatch !== null) {
+                const query = parseItemsQuery(url.searchParams);
+                if ('response' in query) return jsonResponse(query.response.body, query.response.status);
+                const response = await storeItemsFor('', query.query);
+                return jsonResponse(response.body, response.status);
+            }
+            if (runStoreSelectionsMatch !== null) {
+                const identified = identify(storeRaw, runStoreSelectionsMatch[2] ?? '');
+                if ('response' in identified) return jsonResponse(identified.response.body, identified.response.status);
+                const query = parseSelectionsQuery(url.searchParams);
+                if ('response' in query) return jsonResponse(query.response.body, query.response.status);
+                const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
+                if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status);
+                const response = await storeSelectionsFor({ ...query.query, runId: identified.runId });
+                return jsonResponse(response.body, response.status);
+            }
+            if (runStoreMatch !== null) {
+                // §3 declares "Query: none" here: this route refuses every parameter, exactly
+                // like the shipped ones (review 0307 P3).
+                const refused = parseQuery(url.searchParams);
+                if (refused !== null) return jsonResponse(refused.body, refused.status);
+            }
+            const identified = identify(storeRaw, storeMatch[2] ?? '');
+            if ('response' in identified) return jsonResponse(identified.response.body, identified.response.status);
+            const query = runStoreItemsMatch === null ? null : parseItemsQuery(url.searchParams);
+            if (query !== null && 'response' in query) return jsonResponse(query.response.body, query.response.status);
+            const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
+            if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status);
+            const response =
+                query === null
+                    ? await storeRunFor(identified.runId)
+                    : await storeItemsFor(identified.runId, query.query);
+            return jsonResponse(response.body, response.status);
+        }
+        const match = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/(results|config|evidence)$/.exec(path);
+        const artifactMatch = /^\/api\/workflows\/([^/]+)\/runs\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+        // Query parsing moved AFTER matching: only the store routes declare parameters, every
+        // shipped route keeps refusing them (§3 / R8).
+        const query = parseQuery(url.searchParams);
+        if (query !== null) return jsonResponse(query.body, query.status);
+        if (match !== null) {
+            const [, workflow, runId, verb] = match;
+            const identified = identify(workflow ?? '', runId ?? '');
+            if ('response' in identified) return jsonResponse(identified.response.body, identified.response.status);
+            const response =
+                verb === 'results'
+                    ? await resultsFor(identified.workflow, identified.runId, selfOrigin)
+                    : verb === 'config'
+                      ? await configFor(identified.workflow, identified.runId, selfOrigin)
+                      : await evidenceFor(identified.workflow, identified.runId, selfOrigin);
+            return jsonResponse(response.body, response.status);
+        }
+        if (artifactMatch !== null) {
+            const [, workflow, runId, artifactId] = artifactMatch;
+            const identified = identify(workflow ?? '', runId ?? '');
+            if ('response' in identified) return jsonResponse(identified.response.body, identified.response.status);
+            const response = await artifactFor(
+                identified.workflow,
+                identified.runId,
+                decodeURIComponent(artifactId ?? ''),
+                request.headers.get('range'),
+                selfOrigin,
+            );
+            return artifactResponse(response);
+        }
+        return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404);
     };
 
-    return { handle };
+    return { fetch: handle };
 }
 
-/**
- * The pure Web-Fetch handler the Spur server mounts at `/api/modules/<id>/*` (ADR-035 amendment).
- *
- * The mount strips its own prefix, so the handler sees the module-relative path — the same routes
- * the loopback reader serves. Without a pinned `boardOrigin` the request's own origin is the Board,
- * which is what makes the module API same-origin by construction.
- */
-export function createBoardHandler(options: Omit<BoardRoutingOptions, 'boardOrigin'> = {}): {
-    fetch: (request: Request, ctx?: { projectPath?: string }) => Promise<Response>;
-} {
-    const routing = createBoardRouting(options);
-    return { fetch: (request: Request) => routing.handle(request) };
-}
+const handlers = new Map<string, ReturnType<typeof createBoardHandler>>();
 
-/**
- * The loopback server: the CLI's own board test suites use it.
- *
- * It is a wrapper over the routing body, so no route exists only here — the retired
- * `kk board serve` subcommand was a caller, never a behaviour.
- */
-export function createBoardReader(options: BoardReaderOptions): BoardReader {
-    if (!isLoopbackOrigin(options.boardOrigin)) {
-        throw new Error(`--board-origin must be a loopback http origin, got '${options.boardOrigin}'`);
-    }
-    const port = options.port ?? DEFAULT_BOARD_PORT;
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-        throw new Error(`--port must be an integer 0-65535, got '${port}'`);
-    }
-    const routing = createBoardRouting(options);
-    const server = Bun.serve({
-        hostname: '127.0.0.1',
-        port,
-        fetch: (request) => routing.handle(request, options.boardOrigin),
-    });
-    const boundPort = server.port ?? port;
-    return { url: `http://127.0.0.1:${boundPort}`, port: boundPort, stop: () => void server.stop(true) };
-}
+export default {
+    fetch: (request, { projectPath }) => {
+        let handler = handlers.get(projectPath);
+        if (handler === undefined) {
+            handler = createBoardHandler({ projectPath });
+            handlers.set(projectPath, handler);
+        }
+        return handler.fetch(request);
+    },
+} satisfies BoardModuleApiHandler;
 
 /** The one workflow whose store views this reader serves (design §3). */
 const STORE_WORKFLOW: WorkflowName = 'kk-collect';
@@ -1323,12 +1151,8 @@ function identify(
     return { workflow: workflow as WorkflowName, runId };
 }
 
-/** A JSON answer with the CORS headers the browser needs. */
-function jsonResponse(body: unknown, status: number, cors: Record<string, string>): Response {
-    return new Response(JSON.stringify(body), {
-        status,
-        headers: { 'content-type': 'application/json; charset=utf-8', ...cors },
-    });
+function jsonResponse(body: unknown, status: number): Response {
+    return Response.json(body, { status });
 }
 
 /**
@@ -1371,18 +1195,17 @@ export async function artifactContent(
 }
 
 /** An artifact answer: JSON diagnostics stay JSON, content goes out with its MIME and attachment name. */
-export function artifactResponse(response: { status: number; body: unknown }, cors: Record<string, string>): Response {
+export function artifactResponse(response: { status: number; body: unknown }): Response {
     const body = asRecord(response.body);
     if (response.status !== 200 && response.status !== 206) {
-        return jsonResponse(response.body, response.status, cors);
+        return jsonResponse(response.body, response.status);
     }
     if (body === null || body.__binary !== true) {
-        return jsonResponse(response.body, response.status, cors);
+        return jsonResponse(response.body, response.status);
     }
     const headers: Record<string, string> = {
         'content-type': String(body.mime),
         'content-disposition': 'attachment',
-        ...cors,
     };
     const range = asRecord(body.range);
     if (range !== null) {

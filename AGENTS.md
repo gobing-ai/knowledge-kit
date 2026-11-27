@@ -312,6 +312,11 @@ spur <noun> <verb> … --json
 spur <noun> --help
 ```
 
+`spur self serve` mounts the KK Board backend for Collect, Daily AI Voice and IT Content from
+`bootstrap.modules[].api`. `bun scripts/build-board.ts` builds the browser assets and
+`apps/cli/dist/board/api.js`. The UI uses `/api/modules/<id>/*` on the Board origin and retains
+a project gateway prefix. `kk board capture` records run evidence during workflow preparation.
+
 ---
 
 ## Superskill CLI surface

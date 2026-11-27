@@ -1,6 +1,6 @@
 /**
  * G8/0252 — the `kk board` noun: the registered command surface, the capture action's
- * happy/failure paths and the serve guard. The capture happy path runs as a child process
+ * happy/failure paths and the retired serve route. The capture happy path runs as a child process
  * with its own cwd, exactly as workflow preparation invokes it.
  */
 
@@ -39,11 +39,9 @@ async function run(args: string[]): Promise<{ code: number; out: string; err: st
 }
 
 describe('registerBoardCommand', () => {
-    it('registers serve and capture with the frozen option surface', () => {
+    it('registers capture with the frozen option surface', () => {
         const board = createProgram().commands.find((command) => command.name() === 'board');
-        expect(board?.commands.map((command) => command.name())).toEqual(['serve', 'capture']);
-        const serve = board?.commands.find((command) => command.name() === 'serve');
-        expect(serve?.options.map((option) => option.long)).toEqual(['--board-origin', '--port']);
+        expect(board?.commands.map((command) => command.name())).toEqual(['capture']);
         const capture = board?.commands.find((command) => command.name() === 'capture');
         expect(capture?.options.map((option) => option.long)).toEqual([
             '--workflow',
@@ -62,10 +60,10 @@ describe('registerBoardCommand', () => {
         ]);
     });
 
-    it('fails loud when serve is given a non-loopback origin', async () => {
-        const { code, err } = await run(['board', 'serve', '--board-origin', 'http://evil.example']);
+    it('rejects the retired serve command', async () => {
+        const { code, err } = await run(['board', 'serve']);
         expect(code).toBe(1);
-        expect(err).toContain('kk.board.serve.failed');
+        expect(err).toContain("unknown command 'serve'");
     });
 
     it('fails loud for an unknown workflow or an unknown setting value', async () => {
@@ -138,12 +136,6 @@ describe('kk board capture (child process)', () => {
 });
 
 describe('kk board capture (in-process)', () => {
-    it('rejects a non-integer port before serving', async () => {
-        await expect(run(['board', 'serve', '--board-origin', 'http://127.0.0.1:1', '--port', 'abc'])).rejects.toThrow(
-            /--port must be an integer/,
-        );
-    });
-
     it('prints the capture outcome and drops an unknown setting from its own cwd', async () => {
         const root = tempDir('kk-board-inproc-');
         const workDir = join(root, '.works', 'kk-collect', 'S1');

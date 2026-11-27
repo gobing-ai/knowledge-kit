@@ -1,13 +1,4 @@
-import {
-    type ChangeEvent,
-    type ComponentType,
-    type MouseEvent,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import { type ChangeEvent, type ComponentType, type MouseEvent, useCallback, useEffect, useRef, useState } from 'react';
 import type {
     BoardDiagnostic,
     CollectChannelYield,
@@ -20,11 +11,9 @@ import type {
     RunResults,
 } from '../contracts';
 import {
-    type BoardClient,
+    boardBasePath,
     createBoardClient,
-    DEFAULT_READER_ORIGIN,
     MAX_OVERVIEW_RUNS,
-    readerOriginFrom,
     type StoreItemFilterName,
     type StoreItemsQuery,
     type StoreSelectionsQuery,
@@ -145,15 +134,14 @@ function isOfflineError(msg: string): boolean {
 export function CollectModule() {
     const [link] = useState(() => parseDeepLink(window.location.search, COLLECT_TABS, COLLECT_TAB_ALIASES));
     const [rangeLink] = useState(() => parseRange(window.location.search));
-    const [reader] = useState(() => readerOriginFrom(window.location.search, window.location.origin));
-    // The channel-yield aggregate always targets the loopback reader, resolved independently of the
-    // native client: a valid kkApi override wins, else the documented default reader (0319).
-    const [aggregateReader] = useState(() => readerOriginFrom(window.location.search, DEFAULT_READER_ORIGIN));
-    const readerOrigin = reader.origin;
-    const aggregateReaderOrigin = aggregateReader.origin;
-    const client = useMemo<BoardClient>(
-        () => createBoardClient({ readerOrigin, aggregateReaderOrigin, boardOrigin: window.location.origin }),
-        [readerOrigin, aggregateReaderOrigin],
+    const basePath = boardBasePath(window.location.pathname);
+    const modulePath = basePath + COLLECT_MODULE_PATH;
+    const [client] = useState(() =>
+        createBoardClient({
+            moduleId: 'kk-collect',
+            boardOrigin: window.location.origin,
+            pathname: window.location.pathname,
+        }),
     );
 
     const [rows, setRows] = useState<RunListRow[]>([]);
@@ -165,8 +153,6 @@ export function CollectModule() {
     const [diagnostics, setDiagnostics] = useState(() => [
         ...link.diagnostics,
         ...(rangeLink.diagnostic === null ? [] : [rangeLink.diagnostic]),
-        ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
-        ...(aggregateReader.diagnostic === null ? [] : [aggregateReader.diagnostic]),
     ]);
     const [isReaderOffline, setIsReaderOffline] = useState(false);
 
@@ -471,23 +457,26 @@ export function CollectModule() {
 
     // Sync address bar
     useEffect(() => {
-        syncSelectionUrl(selection, { location: window.location, history: window.history });
-    }, [selection]);
+        syncSelectionUrl(selection, { location: window.location, history: window.history }, modulePath);
+    }, [selection, modulePath]);
 
     // Persist the range pill in the URL (R3); the selection sync above preserves it on rewrite.
     useEffect(() => {
-        if (window.location.pathname !== COLLECT_MODULE_PATH) return;
+        if (window.location.pathname !== modulePath) return;
         const params = new URLSearchParams(window.location.search);
         if (params.get('range') === timeRange) return;
         params.set('range', timeRange);
         window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}`);
-    }, [timeRange]);
+    }, [timeRange, modulePath]);
 
     const tab = selection.tab;
     const now = Date.now();
     const currentStoreRun = storeRun?.runId === selection.runId ? storeRun : null;
 
-    const runHref = useCallback((runId: string) => selectionPath({ runId, tab: 'runs' }, window.location.search), []);
+    const runHref = useCallback(
+        (runId: string) => selectionPath({ runId, tab: 'runs' }, window.location.search, modulePath),
+        [modulePath],
+    );
     const toggleQuality = useCallback(() => setShowEffective((state) => !state), []);
 
     const filterChanged = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
@@ -517,7 +506,7 @@ export function CollectModule() {
     }, []);
 
     const modalFacts = modalResults ? collectSummaryFacts(modalResults, now) : [];
-    const modalArtifacts = modalResults ? artifactViews(modalResults, readerOrigin) : [];
+    const modalArtifacts = modalResults ? artifactViews(modalResults, client.artifactUrl) : [];
     const modalSteps: ProgressRow[] = progressRows(modalProgress);
 
     // Filter out reader/store connection diagnostics if reader is marked offline (preventing 4-error noise)
@@ -556,7 +545,7 @@ export function CollectModule() {
                         ↻ Refresh
                     </button>
                     <a
-                        href={selectionPath(selection, window.location.search)}
+                        href={selectionPath(selection, window.location.search, modulePath)}
                         className="kk-btn-action"
                         title="Permanent link"
                     >
@@ -565,15 +554,14 @@ export function CollectModule() {
                 </div>
             </header>
 
-            {/* Companion reader offline status banner (only if custom loopback reader is dead) */}
-            {isReaderOffline && readerOrigin !== window.location.origin ? (
+            {isReaderOffline ? (
                 <div className="kk-board-reader-offline-banner" role="alert">
                     <div className="kk-board-reader-offline-icon">⚠️</div>
                     <div className="kk-board-reader-offline-content">
-                        <strong>Loopback Board Reader Offline ({readerOrigin})</strong>
+                        <strong>Board module API unavailable</strong>
                         <p>
-                            Store facts, item inspection, and artifact evidence require the local reader process. Spur
-                            run execution history remains available.
+                            Store facts, item inspection, and artifact evidence are temporarily unavailable. Spur run
+                            execution history remains available.
                         </p>
                     </div>
                     <button
@@ -610,7 +598,7 @@ export function CollectModule() {
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
                     No runs recorded for kk-collect. Configure the workflow in{' '}
-                    <a href="/board/settings/workflows">Settings → Workflows</a>.
+                    <a href={`${basePath}/board/settings/workflows`}>Settings → Workflows</a>.
                 </p>
             ) : null}
 

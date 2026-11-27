@@ -1,3 +1,4 @@
+import type { BoardClient } from '../shared/api';
 /**
  * 0390 — pure narrowing and view rows over the `RunEvidence` envelope for news runs.
  *
@@ -450,8 +451,8 @@ export interface OutputGroup {
  * Group artifact views by their manifest producer node, in stage order. Availability was resolved
  * by the reader from the fixed manifest keys — this never invents an artifact or a link.
  */
-export function outputGroups(results: RunResults, readerOrigin: string): OutputGroup[] {
-    const views = artifactViews(results, readerOrigin);
+export function outputGroups(results: RunResults, artifactUrl: BoardClient['artifactUrl']): OutputGroup[] {
+    const views = artifactViews(results, artifactUrl);
     const producersOf = new Map(views.map((view) => [view.id, view]));
     const byProducer = new Map<string, ArtifactView[]>();
     for (const descriptor of results.artifacts) {

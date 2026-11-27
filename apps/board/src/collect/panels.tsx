@@ -11,6 +11,7 @@ import type {
     RunResults,
 } from '../contracts';
 import {
+    boardBasePath,
     MAX_OVERVIEW_RUNS,
     type StoreItemFilterName,
     type StoreItemsQuery,
@@ -1352,7 +1353,9 @@ export function ConfigPanel({ config }: { config: RunConfig | null }) {
             </dl>
             {config.unavailableKeys.length === 0 ? null : <p>Uncaptured keys: {config.unavailableKeys.join(', ')}</p>}
             <p>
-                Current definitions and defaults live in <a href="/board/settings/workflows">Settings → Workflows</a>.
+                Current definitions and defaults live in{' '}
+                <a href={`${boardBasePath(window.location.pathname)}/board/settings/workflows`}>Settings → Workflows</a>
+                .
             </p>
         </div>
     );

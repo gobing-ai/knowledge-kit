@@ -1,6 +1,6 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RunConfig, RunResults } from '../contracts';
-import { type BoardClient, createBoardClient, readerOriginFrom } from '../shared/api';
+import { boardBasePath, createBoardClient } from '../shared/api';
 import { artifactViews, type ProgressRow, progressRows } from '../shared/collect';
 import { dedupeDiagnostics, diagnosticLine, formatTimestamp } from '../shared/format';
 import {
@@ -89,20 +89,18 @@ function usePolling(loader: () => Promise<void>, intervalMs: number, refresh: Re
 /** The four tabs of the IT Content module. */
 export function ItcModule() {
     const [link] = useState(() => parseDeepLink(window.location.search));
-    // A mistyped or hostile `kkApi` value falls back to the default reader with a diagnostic.
-    const [reader] = useState(() => readerOriginFrom(window.location.search));
-    const readerOrigin = reader.origin;
-    const client = useMemo<BoardClient>(
-        () => createBoardClient({ readerOrigin, boardOrigin: window.location.origin }),
-        [readerOrigin],
+    const modulePath = boardBasePath(window.location.pathname) + MODULE_PATH;
+    const [client] = useState(() =>
+        createBoardClient({
+            moduleId: WORKFLOW,
+            boardOrigin: window.location.origin,
+            pathname: window.location.pathname,
+        }),
     );
     const [rows, setRows] = useState<RunListRow[]>([]);
     const [cursor, setCursor] = useState<string | null>(null);
     const [selection, setSelection] = useState<RunSelection>({ runId: link.runId ?? null, tab: link.tab ?? 'summary' });
-    const [diagnostics, setDiagnostics] = useState(() => [
-        ...link.diagnostics,
-        ...(reader.diagnostic === null ? [] : [reader.diagnostic]),
-    ]);
+    const [diagnostics, setDiagnostics] = useState(() => link.diagnostics);
     const [historyRefresh, setHistoryRefresh] = useState<RefreshState>(() => initialRefresh(HISTORY_POLL_MS));
     const [readerRefresh, setReaderRefresh] = useState<RefreshState>(() => initialRefresh(ACTIVE_POLL_MS));
     const [results, setResults] = useState<RunResults | null>(null);
@@ -177,14 +175,14 @@ export function ItcModule() {
     }, [rows, selection.runId, link]);
 
     useEffect(() => {
-        syncSelectionUrl(selection, { location: window.location, history: window.history }, MODULE_PATH);
-    }, [selection]);
+        syncSelectionUrl(selection, { location: window.location, history: window.history }, modulePath);
+    }, [selection, modulePath]);
 
     const tab = selection.tab;
     const now = Date.now();
     const summary = results === null ? null : itcSummary(results);
     const facts = results === null ? [] : itcSummaryFacts(results, now);
-    const artifacts = results === null ? [] : artifactViews(results, readerOrigin);
+    const artifacts = results === null ? [] : artifactViews(results, client.artifactUrl);
     const steps: ProgressRow[] = progressRows(progress);
     const selectedRow = rows.find((row) => row.id === selection.runId);
     const filteredRows = useMemo(() => {
@@ -252,7 +250,7 @@ export function ItcModule() {
                     </button>
                     {selection.runId === null ? null : (
                         <a
-                            href={selectionPath(selection, window.location.search, MODULE_PATH)}
+                            href={selectionPath(selection, window.location.search, modulePath)}
                             className="kk-btn-action"
                             title="Permanent link"
                         >
@@ -276,7 +274,10 @@ export function ItcModule() {
             {rows.length === 0 ? (
                 <p className="kk-board-empty">
                     No runs recorded for kk-itc. Configure the workflow in{' '}
-                    <a href="/board/settings/workflows">Settings → Workflows</a>.
+                    <a href={`${boardBasePath(window.location.pathname)}/board/settings/workflows`}>
+                        Settings → Workflows
+                    </a>
+                    .
                 </p>
             ) : null}
             {tab === 'summary' ? <SummaryPanel facts={facts} results={results} /> : null}
@@ -526,7 +527,9 @@ function ConfigPanel({ config }: { config: RunConfig | null }) {
             </dl>
             {config.unavailableKeys.length === 0 ? null : <p>Uncaptured keys: {config.unavailableKeys.join(', ')}</p>}
             <p>
-                Current definitions and defaults live in <a href="/board/settings/workflows">Settings → Workflows</a>.
+                Current definitions and defaults live in{' '}
+                <a href={`${boardBasePath(window.location.pathname)}/board/settings/workflows`}>Settings → Workflows</a>
+                .
             </p>
         </div>
     );

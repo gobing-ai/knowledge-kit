@@ -90,23 +90,23 @@ describe('syncSelectionUrl', () => {
         expect(calls).toHaveLength(1);
     });
 
-    it('retains a validated kkApi reader origin in the saved URL (§4)', () => {
+    it('retains the range in a saved gateway URL', () => {
         const calls: { url: string }[] = [];
         const history = {
             state: null,
             replaceState: (_data: unknown, _unused: string, url?: string | null) => calls.push({ url: String(url) }),
         };
-        const kkApi = 'kkApi=http%3A%2F%2F127.0.0.1%3A4341';
-        const search = `?run=old&tab=summary&${kkApi}`;
+        const range = 'range=7d';
+        const modulePath = '/knowledge-kit/board/modules/kk-collect';
+        const search = `?run=old&tab=summary&${range}`;
         syncSelectionUrl(
             { runId: 'r-1', tab: 'results' },
-            { history, location: { pathname: '/board/modules/kk-collect', search } },
+            { history, location: { pathname: modulePath, search } },
+            modulePath,
         );
-        // The write-back keeps unknown module parameters — dropping kkApi would send a reload back to
-        // the default reader port (P3 from the second review).
-        expect(calls[0]?.url).toBe(`/board/modules/kk-collect?run=r-1&tab=results&${kkApi}`);
-        expect(selectionPath({ runId: 'r-1', tab: 'results' }, search)).toBe(
-            `/board/modules/kk-collect?run=r-1&tab=results&${kkApi}`,
+        expect(calls[0]?.url).toBe(`${modulePath}?run=r-1&tab=results&${range}`);
+        expect(selectionPath({ runId: 'r-1', tab: 'results' }, search, modulePath)).toBe(
+            `${modulePath}?run=r-1&tab=results&${range}`,
         );
     });
 });

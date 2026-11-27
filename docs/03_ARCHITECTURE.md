@@ -685,13 +685,15 @@ byte-identical.
 
 ## Workflow visibility boundary (G8)
 
-ADR-035 assigns the native browser contributions to `apps/board` and artifact/config reads to a
-KK-owned loopback reader in the CLI (`kk board capture` / `kk board serve`); both are shipped
-(0252–0255). Spur remains the run/execution authority. Run identity,
-workspace reuse, config provenance, DAG evidence and integration flow are specified in
-[workflow-board-modules.md](design/workflow-board-modules.md); the surface (operator setup, the
-`/board/modules/<id>` page vs `/modules/<id>` asset route, installed-package acceptance) lives in
-`04` `kk board`.
+ADR-035 assigns native browser contributions to `apps/board` and the KK module API to
+`apps/cli/src/board/reader.ts`. Spur mounts the packaged Web-Fetch handler at
+`/api/modules/<id>/*`, provides the project path, and remains the run and execution authority.
+The browser calls that handler for KK data and uses Spur run endpoints for execution state.
+Both sets of URLs use the gateway project prefix when present. `kk board capture` writes
+run-bound capture evidence during workflow preparation. The standalone `kk board serve`
+command is retired. [Workflow Board modules](design/workflow-board-modules.md) defines
+capture provenance and artifact containment. [Command design](04_DESIGN.md) describes the
+current module registration and operator setup.
 
 G8 reuses Settings → Workflows for definition selection, YAML and static graphs; its config tab
 owns only captured run settings and provenance.

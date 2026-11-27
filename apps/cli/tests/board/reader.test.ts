@@ -25,7 +25,6 @@ import type { ArtifactObservation } from '../../src/board/collect';
 import {
     artifactContent,
     artifactResponse,
-    createBoardReader,
     MAX_OVERVIEW_RUNS,
     MAX_PREVIEW_BYTES,
     mimeFor,
@@ -35,6 +34,7 @@ import {
     producerStateFrom,
 } from '../../src/board/reader';
 import { collectStoreTestSeeded } from './collect-store-fixture';
+import { fetchTestReader, registerTestReader } from './test-reader';
 
 const STAMP = '20261011T1200Z';
 const tempDirs: string[] = [];
@@ -153,7 +153,7 @@ async function seededProject(): Promise<{ root: string; workDir: string; stamp: 
 
 /** Start a reader wired to one fake Board + one project root (optionally a readonly fs seam). */
 function startReader(boardOrigin: string, projectPath: string, fs?: FileSystem) {
-    const reader = createBoardReader({ boardOrigin, port: 0, projectPath, ...(fs === undefined ? {} : { fs }) });
+    const reader = registerTestReader({ boardOrigin, projectPath, ...(fs === undefined ? {} : { fs }) });
     servers.push(reader);
     return reader.url;
 }
@@ -168,7 +168,7 @@ interface ResultsJson {
 
 /** GET a reader URL and decode its JSON body with the test's own shape. */
 async function getJson<T = ResultsJson>(url: string): Promise<T> {
-    return (await (await fetch(url)).json()) as T;
+    return (await (await fetchTestReader(url)).json()) as T;
 }
 
 const resultsUrl = (reader: string) => `${reader}/api/workflows/kk-collect/runs/run-1/results`;
@@ -180,33 +180,31 @@ async function errorCode(response: Response): Promise<string | undefined> {
 }
 
 describe('reader authorization', () => {
-    it('answers health and refuses a foreign origin and a non-loopback Host', async () => {
+    it('answers health and refuses a foreign origin without separate CORS headers', async () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const health = await fetch(`${reader}/api/health`);
+        const health = await fetchTestReader(`${reader}/api/health`);
         expect(health.status).toBe(200);
-        expect((await fetch(`${reader}/api/health`, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
-        const altLoopback = board.origin.includes('127.0.0.1')
-            ? board.origin.replace('127.0.0.1', 'localhost')
-            : board.origin.replace('localhost', '127.0.0.1');
-        const loopbackRes = await fetch(`${reader}/api/health`, { headers: { origin: altLoopback } });
-        // The refusal body names which guard fired if this ever fails: origin or Host.
-        expect(loopbackRes.status, await loopbackRes.clone().text()).toBe(200);
-        expect(loopbackRes.headers.get('access-control-allow-origin')).toBe(altLoopback);
-        expect((await fetch(`${reader}/api/health`, { headers: { host: 'evil.example' } })).status).toBe(403);
-        expect((await fetch(`${reader}/api/health`, { method: 'POST' })).status).toBe(405);
+        expect(
+            (await fetchTestReader(`${reader}/api/health`, { headers: { origin: 'http://evil.example' } })).status,
+        ).toBe(403);
+        const sameOrigin = await fetchTestReader(`${reader}/api/health`, { headers: { origin: board.origin } });
+        expect(sameOrigin.status).toBe(200);
+        expect(sameOrigin.headers.has('access-control-allow-origin')).toBe(false);
+        expect((await fetchTestReader(`${reader}/api/health`, { method: 'POST' })).status).toBe(405);
     });
 
     it('returns 400 for an unknown workflow, an unsafe run id and an unknown query', async () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        expect((await fetch(`${reader}/api/workflows/nope/runs/run-1/results`)).status).toBe(400);
+        expect((await fetchTestReader(`${reader}/api/workflows/nope/runs/run-1/results`)).status).toBe(400);
         expect(
-            (await fetch(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent('../x')}/results`)).status,
+            (await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/${encodeURIComponent('../x')}/results`))
+                .status,
         ).toBe(400);
-        const badQuery = await fetch(`${resultsUrl(reader)}?limit=5`);
+        const badQuery = await fetchTestReader(`${resultsUrl(reader)}?limit=5`);
         expect(badQuery.status).toBe(400);
         expect(await badQuery.json()).toMatchObject({ code: 'board.query.invalid' });
     });
@@ -215,9 +213,9 @@ describe('reader authorization', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        expect((await fetch(`${reader}/api/workflows/kk-collect/runs/run-unknown/results`)).status).toBe(404);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-unknown/results`)).status).toBe(404);
         board.state.projectPath = tempDir('kk-other-project-');
-        expect((await fetch(resultsUrl(reader))).status).toBe(403);
+        expect((await fetchTestReader(resultsUrl(reader))).status).toBe(403);
     });
 
     it('returns 404 when the Board has no matching run or the workflow differs', async () => {
@@ -225,7 +223,7 @@ describe('reader authorization', () => {
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
         board.state.run = { id: 'run-1', workflowName: 'kk-itc', status: 'done' };
-        expect((await fetch(resultsUrl(reader))).status).toBe(404);
+        expect((await fetchTestReader(resultsUrl(reader))).status).toBe(404);
     });
 });
 
@@ -279,11 +277,11 @@ describe('artifact access', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const facts = await fetch(artifactUrl(reader));
+        const facts = await fetchTestReader(artifactUrl(reader));
         expect(facts.status).toBe(200);
         expect(await facts.text()).toContain('# Core facts');
-        expect((await fetch(artifactUrl(reader, 'unknown-id'))).status).toBe(404);
-        expect((await fetch(artifactUrl(reader, encodeURIComponent('../../etc/passwd')))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader, 'unknown-id'))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader, encodeURIComponent('../../etc/passwd')))).status).toBe(404);
     });
 
     it('does not follow a symlink that escapes the workspace', async () => {
@@ -294,7 +292,7 @@ describe('artifact access', () => {
         symlinkSync(outside, join(workDir, '20-facts', `${STAMP}_02_collect_core-facts.md`));
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader))).status).toBe(404);
     });
 
     it('marks a later owner and a failed producer as unavailable, never stale content', async () => {
@@ -308,7 +306,7 @@ describe('artifact access', () => {
         );
         const superseded = await getJson(resultsUrl(reader));
         expect(superseded.artifacts[0]?.availability).toBe('superseded');
-        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader))).status).toBe(404);
         // Re-claim the workspace for run-1, then fail its facts producer.
         await captureRun(
             { workflow: 'kk-collect', runId: 'run-1', workDir, stamp: STAMP, settings: { limit: '10' } },
@@ -319,7 +317,7 @@ describe('artifact access', () => {
         failProducer(board, 'collect:onEnter:1');
         const failed = await getJson(resultsUrl(reader));
         expect(failed.artifacts.find((artifact) => artifact.id === 'facts')?.availability).toBe('missing');
-        expect((await fetch(artifactUrl(reader, 'blended'))).status).toBe(200);
+        expect((await fetchTestReader(artifactUrl(reader, 'blended'))).status).toBe(200);
     });
 
     it('reports an unavailable progress projection as unverified', async () => {
@@ -332,7 +330,7 @@ describe('artifact access', () => {
         expect(results.diagnostics.map((diagnostic: { code: string }) => diagnostic.code)).toContain(
             'board.progress.unavailable',
         );
-        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader))).status).toBe(404);
     });
 
     it('reports evidence over the preview cap as oversized instead of truncating it', async () => {
@@ -345,18 +343,20 @@ describe('artifact access', () => {
         const reader = startReader(board.origin, root);
         const results = await getJson(resultsUrl(reader));
         expect(results.artifacts.find((artifact) => artifact.id === 'facts')?.availability).toBe('oversized');
-        expect((await fetch(artifactUrl(reader))).status).toBe(404);
+        expect((await fetchTestReader(artifactUrl(reader))).status).toBe(404);
     });
 
     it('serves a satisfiable byte range as 206 and refuses an unsatisfiable one with 416', async () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const ranged = await fetch(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
+        const ranged = await fetchTestReader(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
         expect(ranged.status).toBe(206);
         expect(ranged.headers.get('content-range')).toMatch(/^bytes 0-3\/\d+$/);
         expect(await ranged.text()).toBe('# Co');
-        expect((await fetch(artifactUrl(reader), { headers: { range: 'bytes=99999999-' } })).status).toBe(416);
+        expect((await fetchTestReader(artifactUrl(reader), { headers: { range: 'bytes=99999999-' } })).status).toBe(
+            416,
+        );
     });
 });
 
@@ -367,7 +367,7 @@ describe('marker re-verification and malformed evidence', () => {
         const reader = startReader(board.origin, root, swappingMarkerFs(root, workDir));
         // The capture revokes run-1's ownership and writes run-2's marker while the facts file is
         // being read: the successor's bytes must never be served under run-1's identity.
-        const full = await fetch(artifactUrl(reader));
+        const full = await fetchTestReader(artifactUrl(reader));
         expect(full.status).toBe(404);
         expect(await errorCode(full)).toBe('board.artifact.owner-changed');
     });
@@ -376,7 +376,7 @@ describe('marker re-verification and malformed evidence', () => {
         const { root, workDir } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root, swappingMarkerFs(root, workDir));
-        const ranged = await fetch(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
+        const ranged = await fetchTestReader(artifactUrl(reader), { headers: { range: 'bytes=0-3' } });
         expect(ranged.status).toBe(404);
     });
 
@@ -385,7 +385,7 @@ describe('marker re-verification and malformed evidence', () => {
         writeFileSync(join(root, '.works/.board/runs/run-1.json'), '{not json');
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const response = await fetch(resultsUrl(reader));
+        const response = await fetchTestReader(resultsUrl(reader));
         expect(response.status).toBe(422);
         expect(await errorCode(response)).toBe('board.capture.invalid');
     });
@@ -401,7 +401,7 @@ describe('marker re-verification and malformed evidence', () => {
         const reader = startReader(board.origin, root);
         const results = await getJson(resultsUrl(reader));
         expect(results.availability).toBe('invalid');
-        const artifact = await fetch(artifactUrl(reader));
+        const artifact = await fetchTestReader(artifactUrl(reader));
         expect(artifact.status).toBe(422);
         expect(await errorCode(artifact)).toBe('board.artifact.invalid');
     });
@@ -447,7 +447,7 @@ describe('marker re-verification and malformed evidence', () => {
         const reader = startReader(board.origin, root);
         const results = await getJson(resultsUrl(reader));
         expect(results.artifacts.find((artifact) => artifact.id === 'blended')?.availability).toBe('available');
-        expect((await fetch(artifactUrl(reader, 'blended'))).status).toBe(200);
+        expect((await fetchTestReader(artifactUrl(reader, 'blended'))).status).toBe(200);
     });
 });
 
@@ -512,19 +512,16 @@ describe('artifact bytes and mime', () => {
     });
 
     it('sends media bytes with their real content-length and content-range', () => {
-        const response = artifactResponse(
-            {
-                status: 206,
-                body: {
-                    __binary: true,
-                    mime: 'audio/mpeg',
-                    text: new Uint8Array([9, 8, 7]),
-                    bytes: 10,
-                    range: { start: 0, end: 2 },
-                },
+        const response = artifactResponse({
+            status: 206,
+            body: {
+                __binary: true,
+                mime: 'audio/mpeg',
+                text: new Uint8Array([9, 8, 7]),
+                bytes: 10,
+                range: { start: 0, end: 2 },
             },
-            {},
-        );
+        });
         expect(response.status).toBe(206);
         expect(response.headers.get('content-type')).toBe('audio/mpeg');
         expect(response.headers.get('content-length')).toBe('3');
@@ -578,10 +575,10 @@ describe('structurally invalid stored evidence (P3, second review)', () => {
         );
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const results = await fetch(resultsUrl(reader));
+        const results = await fetchTestReader(resultsUrl(reader));
         expect(results.status).toBe(422);
         expect(await errorCode(results)).toBe('board.capture.invalid');
-        const artifact = await fetch(artifactUrl(reader));
+        const artifact = await fetchTestReader(artifactUrl(reader));
         expect(artifact.status).toBe(422);
     });
 });
@@ -648,12 +645,12 @@ describe('collect store routes (0307 R4/R6/R7/R8)', () => {
             '?runs=run-1&limit=2',
             `?runs=${Array.from({ length: MAX_OVERVIEW_RUNS + 1 }, () => 'r').join(',')}`,
         ]) {
-            const response = await fetch(`${overview}${query}`);
+            const response = await fetchTestReader(`${overview}${query}`);
             expect(response.status).toBe(400);
             expect(await errorCode(response)).toBe('board.query.invalid');
         }
         // Duplicates collapse; one safe id list is accepted.
-        expect((await fetch(`${overview}?runs=run-2,run-2`)).status).toBe(200);
+        expect((await fetchTestReader(`${overview}?runs=run-2,run-2`)).status).toBe(200);
     });
 
     it('serves a run detail with no capture record (store rows predate capture)', async () => {
@@ -671,7 +668,7 @@ describe('collect store routes (0307 R4/R6/R7/R8)', () => {
         const category = detail.labelQuality.find((entry) => entry.decisionId === 'kk-item-category');
         expect(category?.effective.length).toBe(1);
         // §3 declares "Query: none" for this route: an undeclared parameter is refused (0307 P3).
-        const refused = await fetch(`${reader}/api/workflows/kk-collect/runs/run-2/store?page=2`);
+        const refused = await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-2/store?page=2`);
         expect(refused.status).toBe(400);
         expect(await errorCode(refused)).toBe('board.query.invalid');
     });
@@ -682,20 +679,20 @@ describe('collect store routes (0307 R4/R6/R7/R8)', () => {
         const reader = startReader(board.origin, root);
         const itemsUrl = `${reader}/api/workflows/kk-collect/runs/run-2/store/items`;
         // Wrong origin, and the workflow that is not kk-collect.
-        expect((await fetch(itemsUrl, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
-        expect((await fetch(`${reader}/api/workflows/kk-itc/store/overview?runs=run-2`)).status).toBe(404);
-        expect((await fetch(`${reader}/api/workflows/kk-itc/runs/run-2/store`)).status).toBe(404);
+        expect((await fetchTestReader(itemsUrl, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-itc/store/overview?runs=run-2`)).status).toBe(404);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-itc/runs/run-2/store`)).status).toBe(404);
         // The Board does not own this project, or does not know the run.
         board.state.projectPath = tempDir('kk-store-other-');
-        expect((await fetch(itemsUrl)).status).toBe(403);
+        expect((await fetchTestReader(itemsUrl)).status).toBe(403);
         board.state.projectPath = root;
         board.state.run = { id: 'run-1', workflowName: 'kk-collect', status: 'done' };
-        const unknownRun = await fetch(itemsUrl);
+        const unknownRun = await fetchTestReader(itemsUrl);
         expect(unknownRun.status).toBe(404);
         expect(await errorCode(unknownRun)).toBe('board.run.unknown');
         // A Board that cannot be reached at all is 503, not an empty payload.
         const offline = startReader('http://127.0.0.1:1', root);
-        expect((await fetch(`${offline}/api/workflows/kk-collect/runs/run-2/store`)).status).toBe(503);
+        expect((await fetchTestReader(`${offline}/api/workflows/kk-collect/runs/run-2/store`)).status).toBe(503);
     });
 
     it('serves items with the declared query only, and refuses everything else', async () => {
@@ -723,12 +720,14 @@ describe('collect store routes (0307 R4/R6/R7/R8)', () => {
             '?selection=maybe',
             '?source=nowhere',
         ]) {
-            const response = await fetch(`${items}${query}`);
+            const response = await fetchTestReader(`${items}${query}`);
             expect([400, response.status]).toContain(400);
             expect(await errorCode(response)).toBe('board.query.invalid');
         }
         // The shipped routes still take no query at all.
-        expect((await fetch(`${reader}/api/workflows/kk-collect/runs/run-2/results?page=1`)).status).toBe(400);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-2/results?page=1`)).status).toBe(
+            400,
+        );
     });
 
     it('parses the store queries by contract, not by prefix', () => {
@@ -803,7 +802,7 @@ describe('collect channels route (0319 R3/R4/R6)', () => {
         const reader = startReader(board.origin, root);
         const dayMs = 86_400_000;
         const url = `${reader}/api/workflows/kk-collect/store/channels?from=${now - 2 * dayMs}&until=${now + dayMs}&page=1`;
-        const response = await fetch(url, { headers: { origin: board.origin } });
+        const response = await fetchTestReader(url, { headers: { origin: board.origin } });
         expect(response.status).toBe(200);
         const body = (await response.json()) as {
             availability: string;
@@ -819,7 +818,7 @@ describe('collect channels route (0319 R3/R4/R6)', () => {
         expect(body.lastPositiveAt['aihot-ingest']).toBe(now - dayMs);
         // No Board call is needed: a foreign project still answers the aggregate.
         board.state.projectPath = tempDir('kk-foreign-project-');
-        expect((await fetch(url, { headers: { origin: board.origin } })).status).toBe(200);
+        expect((await fetchTestReader(url, { headers: { origin: board.origin } })).status).toBe(200);
     });
 
     it('refuses non-GET, malformed and cross-workflow channels requests', async () => {
@@ -829,14 +828,16 @@ describe('collect channels route (0319 R3/R4/R6)', () => {
         const dayMs = 86_400_000;
         const good = `${reader}/api/workflows/kk-collect/store/channels?from=${now - 2 * dayMs}&until=${now + dayMs}&page=1`;
         // Method envelope (405) and origin (403).
-        expect((await fetch(good, { method: 'POST' })).status).toBe(405);
-        expect((await fetch(good, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
+        expect((await fetchTestReader(good, { method: 'POST' })).status).toBe(405);
+        expect((await fetchTestReader(good, { headers: { origin: 'http://evil.example' } })).status).toBe(403);
         // Malformed query (400), and another workflow on a store route (404).
-        expect((await fetch(`${reader}/api/workflows/kk-collect/store/channels?from=0`)).status).toBe(400);
-        expect((await fetch(`${reader}/api/workflows/kk-collect/store/channels?from=0&until=1&page=0`)).status).toBe(
-            400,
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-collect/store/channels?from=0`)).status).toBe(400);
+        expect(
+            (await fetchTestReader(`${reader}/api/workflows/kk-collect/store/channels?from=0&until=1&page=0`)).status,
+        ).toBe(400);
+        expect((await fetchTestReader(`${reader}/api/workflows/kk-itc/store/channels?from=0&until=1`)).status).toBe(
+            404,
         );
-        expect((await fetch(`${reader}/api/workflows/kk-itc/store/channels?from=0&until=1`)).status).toBe(404);
     });
 });
 
@@ -894,7 +895,7 @@ describe('run evidence envelope (0391)', () => {
         const { root } = await seededProject();
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        const response = await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
         expect(response.status).toBe(200);
         const body = (await response.json()) as EvidenceJson;
         expect(body.schemaVersion).toBe(1);
@@ -907,7 +908,7 @@ describe('run evidence envelope (0391)', () => {
         const root = tempDir('kk-board-uncaptured-');
         const board = startFakeBoard(root); // run-1 is Board-authorized but never captured
         const reader = startReader(board.origin, root);
-        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        const response = await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
         expect(response.status).toBe(200);
         const body = (await response.json()) as EvidenceJson;
         expect(body.capture).toBeNull();
@@ -922,7 +923,7 @@ describe('run evidence envelope (0391)', () => {
         writeFileSync(captureRecordPath(root, 'run-1'), 'not json {');
         const board = startFakeBoard(root);
         const reader = startReader(board.origin, root);
-        const response = await fetch(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
+        const response = await fetchTestReader(`${reader}/api/workflows/kk-collect/runs/run-1/evidence`);
         expect(response.status).toBe(422);
         expect(await errorCode(response)).toBe('board.capture.invalid');
     });
@@ -939,7 +940,9 @@ describe('run evidence envelope (0391)', () => {
         expect(results.artifacts.find((artifact: { id: string }) => artifact.id === 'pool-gate')).toMatchObject({
             availability: 'available',
         });
-        const gate = await fetch(`${reader}/api/workflows/kk-news-generate/runs/run-news/artifacts/pool-gate`);
+        const gate = await fetchTestReader(
+            `${reader}/api/workflows/kk-news-generate/runs/run-news/artifacts/pool-gate`,
+        );
         expect(gate.status).toBe(200);
         // The gate verdict serves its sanitized projection (status only), never the raw body.
         expect(((await gate.json()) as { projection: unknown }).projection).toEqual({ status: 'PASS' });

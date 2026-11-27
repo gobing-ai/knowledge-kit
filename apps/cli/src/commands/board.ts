@@ -2,23 +2,8 @@ import type { RunCaptureInput, WorkflowName } from '@gobing-ai/kk-board/contract
 import { type Command, CommanderError } from 'commander';
 import { captureRun, parseSetting } from '../board/capture';
 import { WORKFLOW_NAMES, workflowFamily } from '../board/manifest';
-import { createBoardReader, DEFAULT_BOARD_PORT } from '../board/reader';
 import { consoleOutput } from '../output';
 import { resolveWorksDir } from './daily';
-
-/**
- * `kk board` — the local Board reader and the run-capture seam
- * (docs/design/workflow-board-modules.md §9).
- *
- * `serve` runs the read-only loopback reader in the foreground; `capture` binds a run id to
- * its workspace and sanitized settings. Neither verb mutates Spur state or runs a workflow.
- */
-
-/** Options accepted by `kk board serve`. */
-interface ServeOptions {
-    boardOrigin: string;
-    port: number;
-}
 
 /** Options accepted by `kk board capture`. */
 interface CaptureOptions {
@@ -41,31 +26,6 @@ function failLoud(code: string, error: unknown): never {
     const message = `${code}: ${cause}`;
     consoleOutput.error(message);
     throw new CommanderError(1, code, message);
-}
-
-/** Parse `--port`: an integer in range, rejected loudly otherwise. */
-function parsePort(raw: string): number {
-    const port = Number(raw);
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-        throw new Error(`--port must be an integer 0-65535, got '${raw}'`);
-    }
-    return port;
-}
-
-/**
- * `kk board serve --board-origin <origin> [--port <n>]` — run the loopback reader in the
- * foreground until terminated (no scheduler, no daemon).
- */
-async function serveAction(options: ServeOptions): Promise<void> {
-    try {
-        const reader = createBoardReader({ boardOrigin: options.boardOrigin, port: options.port });
-        consoleOutput.write(JSON.stringify({ reader: reader.url, boardOrigin: options.boardOrigin }));
-        // The entrypoint exits as soon as the command returns, so serve owns the process
-        // lifetime explicitly; termination stops it with the process.
-        await new Promise<never>(() => {});
-    } catch (error) {
-        failLoud('kk.board.serve.failed', error);
-    }
 }
 
 /**
@@ -117,18 +77,9 @@ async function captureAction(options: CaptureOptions): Promise<void> {
     }
 }
 
-/** Register the `kk board` noun (`serve`, `capture`). */
+/** Register the `kk board` noun (`capture`). */
 export function registerBoardCommand(program: Command): void {
-    const board = program.command('board').description('Local Board reader and run capture');
-
-    board
-        .command('serve')
-        .description('Serve the read-only loopback reader for the current project')
-        .requiredOption('--board-origin <origin>', 'Exact Board origin allowed to call the reader')
-        .option('--port <n>', 'Loopback port (default: 4340)', String(DEFAULT_BOARD_PORT))
-        .action(async (options: { boardOrigin: string; port: string }) =>
-            serveAction({ boardOrigin: options.boardOrigin, port: parsePort(options.port) }),
-        );
+    const board = program.command('board').description('Board run capture');
 
     board
         .command('capture')

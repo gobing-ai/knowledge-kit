@@ -14,7 +14,7 @@ import {
 } from '@gobing-ai/spur/board/ui';
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DailyDigest, DayArtifactDocument, DaySummary, Recipe, RunEvidence } from '../contracts';
-import { type BoardClient, createBoardClient, DEFAULT_READER_ORIGIN, readerOriginFrom } from '../shared/api';
+import { type BoardClient, createBoardClient } from '../shared/api';
 import { dedupeDiagnostics, formatTimestamp } from '../shared/format';
 import {
     type AttentionRow,
@@ -85,12 +85,6 @@ const INITIAL: ConsoleState = { loading: true, digest: null, days: [], error: nu
 /** A fetch that never reached the reader reads as offline, not as missing data. */
 function isOfflineError(message: string): boolean {
     return message.includes('Failed to fetch') || message.includes('NetworkError') || message.includes('ECONNREFUSED');
-}
-
-/** The reader origin and its one diagnostic, from the module query string. */
-function readerFor(search: string): { origin: string; diagnostic: { code: string; message: string } | null } {
-    const resolved = readerOriginFrom(search, DEFAULT_READER_ORIGIN);
-    return { origin: resolved.origin, diagnostic: resolved.diagnostic };
 }
 
 /** Today's headline strip: the day, its status word and where the reader last answered. */
@@ -1005,8 +999,7 @@ function ActionsPanel({
 }
 
 /** The mounted module: hash-driven day/tab state over the two day routes. */
-function DailyVoiceConsole({ search }: { search: string }) {
-    const reader = useMemo(() => readerFor(search), [search]);
+export function DailyVoiceModule() {
     const clientRef = useRef<BoardClient | null>(null);
     const [location, setLocation] = useState(() => parseConsoleHash(globalThis.location?.hash ?? ''));
     const [state, setState] = useState<ConsoleState>(INITIAL);
@@ -1014,9 +1007,9 @@ function DailyVoiceConsole({ search }: { search: string }) {
 
     if (clientRef.current === null) {
         clientRef.current = createBoardClient({
-            readerOrigin: reader.origin,
-            boardOrigin: globalThis.location?.origin ?? reader.origin,
-            fetchImpl: fetch,
+            moduleId: 'kk-daily-ai-voice2',
+            boardOrigin: window.location.origin,
+            pathname: window.location.pathname,
         });
     }
 
@@ -1039,9 +1032,7 @@ function DailyVoiceConsole({ search }: { search: string }) {
                 loading: false,
                 digest: null,
                 days: prior.days,
-                error: isOfflineError(message)
-                    ? 'The reader is not answering. Start it with `kk board serve --board-origin <this Board>.`'
-                    : message,
+                error: isOfflineError(message) ? 'The Board module API could not be reached.' : message,
                 searchedPath: null,
             }));
         }
@@ -1125,13 +1116,6 @@ function DailyVoiceConsole({ search }: { search: string }) {
         <div className="kk-board kk-board-daily-voice">
             <ModuleShell>
                 {header}
-                {reader.diagnostic === null ? null : (
-                    <Diagnostic
-                        title="Reader origin ignored"
-                        detail={reader.diagnostic.message}
-                        code={reader.diagnostic.code}
-                    />
-                )}
                 {state.error === null ? null : (
                     <Diagnostic
                         title="The day could not be read"
@@ -1177,12 +1161,6 @@ function DailyVoiceConsole({ search }: { search: string }) {
             </ModuleShell>
         </div>
     );
-}
-
-/** The module as the host mounts it: no `createRoot`, no private Board context imports. */
-export function DailyVoiceModule() {
-    const search = globalThis.location?.search ?? '';
-    return <DailyVoiceConsole search={search} />;
 }
 
 /** Entry the host mounts (`{ apiVersion: 1, component }`). */

@@ -16,9 +16,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DailyDigest, DaySummary } from '@gobing-ai/kk-board/contracts';
 import type { ActionInput, ActionPlane } from '../../src/board/action-plane';
-import { type BoardReader, createBoardReader } from '../../src/board/reader';
+import { fetchTestReader, registerTestReader } from './test-reader';
 
-const servers: BoardReader[] = [];
+const servers: ReturnType<typeof registerTestReader>[] = [];
 
 afterAll(() => {
     for (const server of servers) server.stop();
@@ -51,7 +51,7 @@ function seededDay(day: string): string {
 
 function startReader(projectPath: string): string {
     // The reader requires a loopback Board origin; the day projection never calls the Board.
-    const reader = createBoardReader({ boardOrigin: 'http://127.0.0.1:4340', port: 0, projectPath });
+    const reader = registerTestReader({ boardOrigin: 'http://127.0.0.1:4340', projectPath });
     servers.push(reader);
     return reader.url;
 }
@@ -60,7 +60,7 @@ describe('GET /api/days/<day> (task R4)', () => {
     it('answers the day digest', async () => {
         const root = seededDay('29991212');
         const url = startReader(root);
-        const response = await fetch(`${url}/api/days/29991212`);
+        const response = await fetchTestReader(`${url}/api/days/29991212`);
         expect(response.status).toBe(200);
         const digest = (await response.json()) as DailyDigest;
         expect(digest.day).toBe('29991212');
@@ -71,7 +71,7 @@ describe('GET /api/days/<day> (task R4)', () => {
     it('answers 404 with the looked-up path for a day that does not exist', async () => {
         const root = seededDay('29991211');
         const url = startReader(root);
-        const response = await fetch(`${url}/api/days/29990101`);
+        const response = await fetchTestReader(`${url}/api/days/29990101`);
         expect(response.status).toBe(404);
         const body = (await response.json()) as { code: string; message: string };
         expect(body.code).toBe('board.day.not-found');
@@ -80,9 +80,11 @@ describe('GET /api/days/<day> (task R4)', () => {
 
     it('refuses a malformed day key and any query parameter', async () => {
         const url = startReader(seededDay('29991210'));
-        expect((await fetch(`${url}/api/days/2026-11-10`)).status).toBe(400);
-        expect((await fetch(`${url}/api/days/29991210?from=29991201`)).status).toBe(400);
-        const refused = (await fetch(`${url}/api/days/29991210?window=cn-peak`)).json() as Promise<{ code: string }>;
+        expect((await fetchTestReader(`${url}/api/days/2026-11-10`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days/29991210?from=29991201`)).status).toBe(400);
+        const refused = (await fetchTestReader(`${url}/api/days/29991210?window=cn-peak`)).json() as Promise<{
+            code: string;
+        }>;
         expect((await refused).code).toBe('board.query.invalid');
     });
 });
@@ -102,15 +104,14 @@ describe('the action plane route (G83/0442)', () => {
 
     it('dispatches POST /api/actions/<kind> to the plane and refuses other methods', async () => {
         const seen: ActionInput[] = [];
-        const reader = createBoardReader({
+        const reader = registerTestReader({
             boardOrigin: 'http://127.0.0.1:4340',
-            port: 0,
             projectPath: seededDay('29991206'),
             actionPlane: stubPlane(seen),
         });
         servers.push(reader);
 
-        const post = await fetch(`${reader.url}/api/actions/publish-retry`, {
+        const post = await fetchTestReader(`${reader.url}/api/actions/publish-retry`, {
             method: 'POST',
             headers: { 'content-type': 'application/json', 'x-kk-action': '1' },
             body: JSON.stringify({ params: { day: '29991206', window: 'after-generate' } }),
@@ -119,28 +120,25 @@ describe('the action plane route (G83/0442)', () => {
         expect(seen[0]?.kind).toBe('publish-retry');
         expect(seen[0]?.actionHeader).toBe('1');
 
-        // The preflight for this path family advertises POST and x-kk-action.
-        const preflight = await fetch(`${reader.url}/api/actions/publish-retry`, { method: 'OPTIONS' });
+        // The handler advertises the methods for this route.
+        const preflight = await fetchTestReader(`${reader.url}/api/actions/publish-retry`, { method: 'OPTIONS' });
         expect(preflight.status).toBe(204);
-        expect(preflight.headers.get('access-control-allow-methods')).toContain('POST');
-        expect(preflight.headers.get('access-control-allow-headers')).toContain('x-kk-action');
+        expect(preflight.headers.get('allow')).toContain('POST');
 
         // Every other method on the action path is refused, and the GET routes still refuse POST.
-        expect((await fetch(`${reader.url}/api/actions/publish-retry`)).status).toBe(405);
-        expect((await fetch(`${reader.url}/api/days/29991206`, { method: 'POST' })).status).toBe(405);
+        expect((await fetchTestReader(`${reader.url}/api/actions/publish-retry`)).status).toBe(405);
+        expect((await fetchTestReader(`${reader.url}/api/days/29991206`, { method: 'POST' })).status).toBe(405);
     });
 
-    it('advertises GET-only CORS on every non-action route', async () => {
-        const reader = createBoardReader({
+    it('advertises read methods on every non-action route', async () => {
+        const reader = registerTestReader({
             boardOrigin: 'http://127.0.0.1:4340',
-            port: 0,
             projectPath: seededDay('29991205'),
             actionPlane: stubPlane([]),
         });
         servers.push(reader);
-        const preflight = await fetch(`${reader.url}/api/days/29991205`, { method: 'OPTIONS' });
-        expect(preflight.headers.get('access-control-allow-methods')).toBe('GET, HEAD, OPTIONS');
-        expect(preflight.headers.get('access-control-allow-headers')).toBe('range, content-type');
+        const preflight = await fetchTestReader(`${reader.url}/api/days/29991205`, { method: 'OPTIONS' });
+        expect(preflight.headers.get('allow')).toBe('GET, HEAD, OPTIONS');
     });
 });
 
@@ -154,7 +152,7 @@ describe('GET /api/days?from&until (task R4)', () => {
             JSON.stringify({ schemaVersion: 1, runId: 'kk-news-generate-29991208-1', status: 'done' }),
         );
         const url = startReader(root);
-        const response = await fetch(`${url}/api/days?from=29991201&until=29991231`);
+        const response = await fetchTestReader(`${url}/api/days?from=29991201&until=29991231`);
         expect(response.status).toBe(200);
         const days = (await response.json()) as DaySummary[];
         expect(days.map((day) => day.day)).toEqual(['29991209', '29991208']);
@@ -162,10 +160,10 @@ describe('GET /api/days?from&until (task R4)', () => {
 
     it('refuses a missing, inverted, malformed, oversized or unknown range', async () => {
         const url = startReader(seededDay('29991207'));
-        expect((await fetch(`${url}/api/days`)).status).toBe(400);
-        expect((await fetch(`${url}/api/days?from=29991209&until=29991201`)).status).toBe(400);
-        expect((await fetch(`${url}/api/days?from=2020-01-01&until=29991201`)).status).toBe(400);
-        expect((await fetch(`${url}/api/days?from=20200101&until=20201231`)).status).toBe(400);
-        expect((await fetch(`${url}/api/days?from=29991201&until=29991231&page=2`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days?from=29991209&until=29991201`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days?from=2020-01-01&until=29991201`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days?from=20200101&until=20201231`)).status).toBe(400);
+        expect((await fetchTestReader(`${url}/api/days?from=29991201&until=29991231&page=2`)).status).toBe(400);
     });
 });

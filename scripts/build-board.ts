@@ -111,6 +111,19 @@ export async function buildBoard(root: string = REPO_ROOT): Promise<string[]> {
             }
         }
     }
+    for (const outRoot of BOARD_OUTPUT_DIRS) {
+        const built = await Bun.build({
+            entrypoints: [join(root, 'apps/cli/src/board/reader.ts')],
+            outdir: join(root, outRoot),
+            target: 'bun',
+            format: 'esm',
+            naming: 'api.js',
+        });
+        if (!built.success) {
+            throw new Error(`board API build failed: ${built.logs.map(String).join('; ')}`);
+        }
+        emitted.push(...built.outputs.map((output) => output.path));
+    }
     return emitted;
 }
 

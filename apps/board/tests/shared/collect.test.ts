@@ -143,9 +143,10 @@ describe('artifactViews', () => {
                     },
                 ],
             }),
-            'http://127.0.0.1:4340',
+            (workflow, runId, artifactId) =>
+                `/api/modules/kk-collect/api/workflows/${workflow}/runs/${runId}/artifacts/${artifactId}`,
         );
-        expect(views[0]?.href).toBe('http://127.0.0.1:4340/api/workflows/kk-collect/runs/r-1/artifacts/facts');
+        expect(views[0]?.href).toBe('/api/modules/kk-collect/api/workflows/kk-collect/runs/r-1/artifacts/facts');
         expect(views[1]?.href).toBeNull();
         expect(views[1]?.state).toBe('Superseded by a later run');
     });

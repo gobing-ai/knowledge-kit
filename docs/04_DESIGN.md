@@ -132,7 +132,6 @@ kk ledger sync --workflow <name> [--works-dir <dir>] [--work-dir <dir>]
 kk ledger cutover-check --candidate <name> --baseline <name> --runs <n> [--works-dir <dir>]
 kk board capture --workflow <name> --run <id> --work-dir <dir> --stamp <stamp>
                  [--definition-digest <sha256:digest>] [--setting <key=value> …]
-kk board serve --board-origin <origin> [--port <n>]
 ```
 
 | Command | Description | Status |
@@ -410,18 +409,21 @@ ownership marker `<work-dir>/.kk-board-owner.json` atomically, revoking the prev
 | `--trusted-root <dir>` | optional; a configured works root whose canonical CHILD may be captured (an external ITC workspace). The root itself, the home/config tree and the project are refused; the ITC path defaults to the configured works dir |
 | `--setting <key=value>` | repeatable; allowlisted per workflow. A non-allowlisted key is dropped, never captured; free text (topics, titles, prompts, paths) is never capturable |
 
-Capture never initiates content work and never depends on the reader being alive. A failed
+Capture runs locally during workflow preparation. A failed
 *optional* capture after a successful revocation warns and leaves artifact access disabled rather
 than aborting production; a failed revocation refuses the result mutation entirely.
 
-**`kk board serve --board-origin <origin> [--port <n>]`** runs the read-only reader on `127.0.0.1`
-(default port 4340) with `GET`/`HEAD`/`OPTIONS` only:
-`/api/health`, `/api/workflows/<name>/runs/<id>/results`, `…/config`, `…/artifacts/<opaque-id>`.
-Exact-Origin plus loopback-Host are required, every read is containment- and symlink-checked and
-re-verifies the workspace owner before the response is written, text/JSON previews cap at 1 MiB, and
-media is served as byte ranges. Status vocabulary: `400` bad identity or query, `403` foreign
-origin or project, `404` unknown capture/artifact or a changed owner, `405` mutating method, `416`
-unsatisfiable range, `422` malformed stored evidence, `503` Board authority unavailable.
+**Native Board module API (0447).** Spur loads the Bun ESM bundle declared in
+`bootstrap.modules[].api` and mounts it at `/api/modules/<id>/*`. The paths below are
+relative to that mount. For example, Collect health is `/api/modules/kk-collect/api/health`.
+A gateway URL adds the project prefix before `/api/modules`. `kk board serve` is retired.
+
+The read routes support `GET` and `HEAD`. Artifact reads check containment and symlinks,
+recheck workspace ownership before returning bytes, cap text and JSON previews at 1 MiB, and
+support media byte ranges. Main status codes are `400` for invalid identity or query,
+`403` for a foreign origin or project, `404` for an unknown capture/artifact or changed owner,
+`405` for a disallowed method, `416` for an unsatisfiable range, `422` for malformed evidence,
+and `503` when Spur authority is unavailable.
 
 **Day digest routes (G83, task 0439 — `docs/design/daily-voice-ops-console.md` §3).** Two read-only
 routes serve the day-centric projection `projectDay()`; both are file-backed (no Board call) and
@@ -433,8 +435,8 @@ refuse everything outside the day directory.
 | `/api/days` | `from`/`until` (required `YYYYMMDD`, `from <= until`, at most 31 days) | `DaySummary[]`, newest first |
 | `/api/days/<YYYYMMDD>/artifacts/<article\|script>` | none | `DayArtifactDocument` for the Generation tab's editor: the current bytes, their sha256, and both argv recipes computed server-side (`edit-artifact` against the current sha, `revert-artifact` when a backup exists). `400 board.day.artifact.unknown`, `404 board.day.not-found`. Read-only — the write is the action plane |
 
-Both routes carry the action plane's `board.actions.enabled` switch into the digest (`actions.enabled`),
-read once per reader process from `resolveKkConfigPath`, so the console renders recipes-only with a
+The digest routes carry the action plane's `board.actions.enabled` switch into the digest (`actions.enabled`),
+read from `resolveKkConfigPath`, so the console renders recipes-only with a
 reason when launches are off. `kk news digest` resolves the same switch through
 `actionsEnabledFromConfig`, which is what makes the verb's `--json` output object-identical to
 `GET /api/days/<day>` (asserted by the committed E2E).
@@ -493,40 +495,29 @@ empty; run rows are still served). Messages are bounded and never carry raw SQLi
    `build:bundle`/`prepack` invoke the same script, so a packed install ships them too). CI's
    `bun install --ignore-scripts` skips `prepare` and is covered by its explicit `bun run build`.
 2. Declare each module in `.spur/config.yaml` under `bootstrap.modules`: `type: react`,
-   `directory: apps/cli/dist/board/<entry>`, `entry: index.js`, `styles: [index.css]`, and one of
+   `directory: apps/cli/dist/board/<entry>`, `api: apps/cli/dist/board/api.js`,
+   `entry: index.js`, `styles: [index.css]`, and one of
    `id: kk-collect | kk-daily-ai-voice2 | kk-itc`. This checkout ships the declarations **enabled**
    — G8/0255, made safe by step 1. The host validates every `directory` at *server start*, so a
    checkout that skipped lifecycle scripts (or ran `git clean -xdf`) still needs one
    `bun scripts/build-board.ts` before serving; otherwise `spur self serve` fails with
    `bootstrap.modules[<i>] ("kk-…"): module directory "…" was not found`. An installed user points
-   `directory` at their installed package's own `dist/board/<entry>` tree and needs neither this
-   checkout nor a `node_modules` edit.
+   `directory` at their installed package's `dist/board/<entry>` tree and `api` at its
+   `dist/board/api.js`. Both paths must resolve inside the project.
 3. Start the Board: `spur self serve --host 127.0.0.1 [--port <n>]` (Spur ≥ 0.4.39 moved `serve` under `self`); the UI is `/board`.
-4. Start the reader in a second terminal: `kk board serve --board-origin http://127.0.0.1:<board-port>`
-   (default port 4340, `127.0.0.1` only). It is a foreground process with no daemon or scheduler.
-5. Open a module at `/board/modules/<id>` on the Board origin. The module PAGE is mounted by the
-   SPA under the `/board` app prefix at `/board/modules/<id>`; its bundles are served from the bare
-   `/modules/<id>/index.js` + `/modules/<id>/index.css` (the descriptor's `route`/`entryUrl` in
-   `GET /api/board/modules` use that `/modules/<id>` prefix). Opening the bare `/modules/<id>` page
-   only shows the SPA's own 404. Definitions stay in **Settings → Workflows**
-   (`/board/settings/workflows`). A validated `kkApi` query parameter selects a non-default loopback
-   reader port and is retained in saved URLs. A Board served on a LAN address
-   (`spur self serve --host 0.0.0.0`, opened as `http://<lan-ip>:<port>`) is supported too: the Board
-   origin a module validates is `window.location.origin`, so Collect's native mode reads the
-   Board's own routes and no module refuses to render. Only the `kkApi` reader override stays
-   loopback-only.
+4. Open `/board/modules/<id>`. Spur serves the browser bundles under `/modules/<id>` and the
+   data through the same-origin module API. Use `/<project>/board/modules/<id>` on a project gateway.
+   Definitions stay in **Settings → Workflows**.
 
-**Restart / shutdown.** Both processes are foreground and stateless. `Ctrl-C` (SIGINT/SIGTERM) stops
-the Board (it releases the scheduler owner lock, stops its job children, closes the DB) and the
-reader. Restart the Board only after `.spur/config.yaml` changes — module declarations and asset
-paths are read at start; restart the reader only after a `kk board capture` wrote a new run record.
-A reader restarted on a different port needs a fresh `?kkApi=http://127.0.0.1:<port>` in the module
-URL. The reader never migrates or writes the KK store.
+**Restart / shutdown.** Stop the foreground Board with Ctrl-C. Restart it after changing a
+module declaration or rebuilding the API bundle so Spur loads the new configuration and handler.
+New captures become visible on subsequent requests. The module opens the KK store read-only
+for its Collect views.
 
 **Installed-package acceptance.** `apps/board/tests/installed-board.test.ts` packs the CLI
 (`bun pm pack`, honoring `prepack`), installs the tarball into a throwaway project, starts the
 installed `spur` Board against that project's declaration pointing at the installed
-`dist/board/<entry>` trees, and drives the three routes plus Settings → Workflows with real Chromium
+`dist/board/<entry>` trees and `dist/board/api.js`, and drives the three routes plus Settings → Workflows with real Chromium
 (Playwright, pinned by the root catalog `playwright: catalog:`, declared in `apps/board`). It asserts
 the served bundles are byte-identical to the installed package files, so no source-checkout import
 can satisfy it. A missing Chromium binary FAILS the setup (`bunx playwright install chromium`) —
@@ -538,17 +529,15 @@ an explicit no-captured-results state — nothing is reconstructed from dates, m
 folders. An existing workspace without a matching owner marker is `unverified`; a workspace owned by
 another run is `superseded`, so its config and Spur progress survive but its artifact bytes are not
 served. Workflow Config Summary shows only sanitized recorded run values — current definitions and
-defaults live in Settings → Workflows, and uncaptured historical keys stay explicitly unknown. All
-operation is local-loopback and read-only; there is no remote or multi-user mode.
+defaults live in Settings → Workflows, and uncaptured historical keys stay explicitly unknown.
 
-**Guarded action plane (G83, task 0442).** The reader gains exactly one write route,
+**Guarded action plane (G83, task 0442).** The module API has one write route,
 `POST /api/actions/<kind>`, over the closed six-kind allowlist (`publish-retry`, `publish-window`,
 `generate-from-node`, `rerender-step`, `cancel-run`, `store-release`). Off by default:
 `board.actions.enabled: true` in `~/.config/kk/config.yaml` (resolved through `resolveKkConfigPath`) —
-a reader restart picks it up. A request must carry the exact Board `Origin` (an absent Origin is
-refused on POST), a loopback `Host` and `X-KK-Action: 1`; the preflight for this path family alone
-advertises `POST` and `x-kk-action`. Argv comes from `resolveArgv` — the same function the digest
-renders — so a copied command and a clicked action are byte-identical, and no parameter is free text.
+a Board restart picks it up. A POST requires the exact Board `Origin`, the matching `Host`, and
+`X-KK-Action: 1`. The gateway validates the public request and rewrites Origin and Host to the
+upstream Board values. The action and the digest use `resolveArgv` to produce the same command.
 
 The handshake: a body without a token is a **preview** that resolves the argv (plus the dry-run
 output for `publish-retry`) and mints a single-use 5-minute token bound to

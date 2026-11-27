@@ -1,4 +1,5 @@
 import type { Availability, CollectRunStore, CollectRunStoreRow, RunResults } from '../contracts';
+import type { BoardClient } from './api';
 import { availabilityLabel, formatElapsed, formatTimestamp } from './format';
 
 /**
@@ -264,17 +265,14 @@ export function progressRows(progress: unknown): ProgressRow[] {
 }
 
 /** The Results tab's artifact rows, with a reader URL only for an available artifact. */
-export function artifactViews(results: RunResults, readerOrigin: string): ArtifactView[] {
+export function artifactViews(results: RunResults, artifactUrl: BoardClient['artifactUrl']): ArtifactView[] {
     return results.artifacts.map((artifact) => ({
         id: artifact.id,
         label: artifact.label,
         kind: artifact.kind,
         availability: artifact.availability,
         state: availabilityLabel(artifact.availability),
-        href:
-            artifact.availability === 'available'
-                ? `${readerOrigin}/api/workflows/${results.workflow}/runs/${results.runId}/artifacts/${artifact.id}`
-                : null,
+        href: artifact.availability === 'available' ? artifactUrl(results.workflow, results.runId, artifact.id) : null,
     }));
 }
 

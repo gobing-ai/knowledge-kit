@@ -45,6 +45,14 @@ describe('createBoardHandler (native module API)', () => {
         expect(((await response.json()) as { projectPath: string }).projectPath).toBe(root);
     });
 
+    it('answers a native LAN request without a loopback or CORS requirement', async () => {
+        const root = project();
+        const handler = createBoardHandler({ projectPath: root });
+        const response = await handler.fetch(new Request('http://192.0.2.1:4310/api/health'));
+        expect(response.status).toBe(200);
+        expect(response.headers.has('access-control-allow-origin')).toBe(false);
+    });
+
     it('answers the day digest and the editor artifact document', async () => {
         const root = project();
         const handler = createBoardHandler({ projectPath: root });
