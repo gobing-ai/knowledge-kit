@@ -4,7 +4,7 @@ name: Daily AI Voice Generation-tab artifact editor and end-to-end evidence
 status: done
 template: feature-impl
 created_at: 2026-11-26T01:24:35.107Z
-updated_at: "2026-11-27T18:11:18.607Z"
+updated_at: "2026-11-27T20:25:48.364Z"
 feature_id: G84
 priority: P2
 tags:
@@ -114,17 +114,17 @@ Rejected: refetching the digest on a timer (the plane already returns the new st
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — Edit shown only when `board.actions.enabled`; disabled shows the copyable `kk news edit` recipe and no editable field | MET | `apps/board/src/daily-voice/index.tsx:463-660` (recipes-only branch, `editor-<a>-recipe`); server-computed argv in `apps/cli/src/board/day.ts:765-820`; asserted by `apps/board/tests/daily-voice/editor.e2e.test.ts` "shows the recipes only when the plane is disabled" (textarea count 0, recipe text contains the run-date/artifact argv) |
-| R2 — load bytes + sha, preview the server diff, confirm with the token, refetch once, show stale + `artifact-edited` | MET | editor `ask`/`confirm` (`index.tsx:520-575`), one `onChanged()` call; `StaleNotice` (`index.tsx:665-700`); E2E "loads, previews …, then reverts" asserts the diff (`--- a/22-article`), `saved`, then the stale block with `artifact-edited` and the `generate-render` recipe |
-| R3 — 409 offers reload-current-bytes without discarding the draft; other refusals show their envelope message | MET | `index.tsx:575-620` (banner + `reload current bytes`, `draft` never derived from the refetch); E2E "keeps the draft across a 409 conflict" (draft intact, reload refills bytes, no overwrite) |
-| R4 — revert through `revert-artifact`, offered only when a backup exists, same preview/confirm and conflict behaviour | MET | `index.tsx:620-660` (button gated on `document.revertRecipe`); E2E revert round-trip asserts the restored bytes equal the pre-edit text |
-| R5 — one repeatable E2E on the fixture: edit → preview → confirm → revert, screenshots + `actions.jsonl`, plus the refusal matrix for both kinds | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts` (one command: `bun test tests/daily-voice/editor.e2e.test.ts`); artifacts `docs/tasks/evidence/0445/20261125/{editor-loaded,editor-preview-diff,stale-after-edit,reverted,conflict-keeps-draft,disabled-recipes-only}.png` + `actions.jsonl`; matrix test covers foreign origin, missing header, reused token, stale sha/lock and asserts nothing was written |
-| R6 — `docs/05_FEATURES.md` G84 row and the satellite §10 status synced; index via `spur feature refresh` | MET | `docs/05_FEATURES.md:116` (new G84 row, done); `docs/design/daily-voice-ops-console.md:10,240-250`; `docs/features/INDEX.md:102` refreshed by `spur feature refresh --feature G84`, not hand-edited |
+| R1 | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts:352` proves disabled actions show recipes without an editor. |
+| R2 | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts:389` asserts load, server diff, successful save and stale projection. |
+| R3 | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts:445` proves a 409 keeps the draft and offers reload. |
+| R4 | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts:389` asserts confirmed revert restores the original bytes. |
+| R5 | MET | `apps/board/tests/daily-voice/editor.e2e.test.ts:480` exercises the refusal matrix. The browser run uses scratch by default and the evidence remains committed. |
+| R6 | MET | `docs/05_FEATURES.md:116` and `docs/design/daily-voice-ops-console.md:207` document G84. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC4 — the Board edits through the guarded action plane | MET | test | `apps/board/tests/daily-voice/editor.e2e.test.ts` (preview diff, confirmed write, stale + recipes, revert round-trip; `actions.jsonl` records one preview, one launch and one exit per write, with the token hash and no body text) |
-| AC6 — a concurrent change is not overwritten | MET | test | the 409 case in the same file: draft preserved, bytes on disk unchanged, reload refills the sha |
+| R4 — The Board edits through the guarded action plane | MET | test | `apps/board/tests/daily-voice/editor.e2e.test.ts:389` exercises confirm, audit, stale state and revert. |
+| R6 — A concurrent change to the artifact is not overwritten | MET | test | `apps/board/tests/daily-voice/editor.e2e.test.ts:445` verifies conflict and draft preservation. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

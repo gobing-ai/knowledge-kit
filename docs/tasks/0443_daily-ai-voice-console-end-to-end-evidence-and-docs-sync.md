@@ -4,7 +4,7 @@ name: Daily AI Voice console end-to-end evidence and docs sync
 status: done
 template: feature-impl
 created_at: 2026-11-26T00:29:45.939Z
-updated_at: "2026-11-27T19:46:48.579Z"
+updated_at: "2026-11-27T20:25:47.278Z"
 feature_id: G83
 priority: P2
 tags:
@@ -123,14 +123,14 @@ Design: docs/design/daily-voice-ops-console.md §7.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — fixture works root, days 20261115–20261125, incl. shipinhao `effect: none` failure, an engine-fallback day, and a window whose plan has no launch receipt reading `unknown` | MET | `apps/board/tests/fixtures/daily-voice-days/kk-news-generate/` (11 days) + the `describe('the fixture works root (R1)')` assertions at `apps/board/tests/daily-voice-console.e2e.test.ts:481-507`; the `effect: none` day is `20261125` (`4-publish/receipts/video.shipinhao.json`), the fallback day `20261116` (`step-timing.json`), the unbound window `20261119` (`plan.cn-peak.json` with no `schedule-receipt.cn-peak.json`) asserted `unknown` / `no-launch-receipt` |
-| R2 — browser E2E drives the module against a reader on the fixture; commits renders of Today, Generation, Publishing, History plus one previewed and confirmed `publish-window --dummy` action with a stub `kk` on PATH | MET | `apps/board/tests/daily-voice-console.e2e.test.ts:510-620` (DOM assertions then screenshots) and `:621-704` (preview argv equality, stub launch, `actions.jsonl` audit, refusal matrix); artifacts `apps/board/tests/artifacts/daily-voice-console/{today,generation,publishing,history,action}.png`, `argv.log`, `digest.json` |
-| R3 — `kk news digest` markdown/JSON parity with the Today DTO asserted | MET | `apps/board/tests/daily-voice-console.e2e.test.ts:578-608`: `--json` output `toEqual` the reader's `DailyDigest`, markdown checked against the same figures; both surfaces now resolve `actions.enabled` identically (`apps/cli/src/board/reader.ts:713-735`, `apps/cli/src/commands/content.ts:527-534`) |
-| R4 — `04`, `03`, `05` and the satellite describe the shipped routes, verb, tabs and action envelope | MET | `docs/04_DESIGN.md:64,426-441,556-586`, `docs/03_ARCHITECTURE.md:707-731`, `docs/05_FEATURES.md:115`, `docs/design/daily-voice-ops-console.md:5,172-186` |
+| R1 | MET | `apps/board/tests/daily-voice-console.e2e.test.ts:483` verifies all 11 fixture days and the three named edge cases. |
+| R2 | MET | `apps/board/tests/daily-voice-console.e2e.test.ts:512` checks all tabs, and `apps/board/tests/daily-voice-console.e2e.test.ts:624` drives the preview and confirmed dummy publish action. Checked-in evidence stayed byte-identical. |
+| R3 | MET | `apps/board/tests/daily-voice-console.e2e.test.ts:581` compares CLI JSON to the reader DTO and checks Markdown parity. |
+| R4 | MET | `docs/04_DESIGN.md:64`, `docs/03_ARCHITECTURE.md:707`, `docs/05_FEATURES.md:115`, and `docs/design/daily-voice-ops-console.md:172` cover the shipped surface and evidence. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — Surface docs and end-to-end evidence ship with the change | MET | test | the E2E above (12/12 pass, 59 expectations; the batch's light gate reported 6/6 checks PASS) together with the four doc edits cited in R4 |
+| R13 — Surface docs and end-to-end evidence ship with the change | MET | test | `apps/board/tests/daily-voice-console.e2e.test.ts:709` verifies all five renders, argv and digest. Evidence refresh is opt-in. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

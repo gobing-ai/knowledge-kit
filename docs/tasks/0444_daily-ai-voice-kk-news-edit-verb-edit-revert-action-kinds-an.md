@@ -4,7 +4,7 @@ name: Daily AI Voice kk news edit verb, edit/revert action kinds and safety-stal
 status: done
 template: feature-impl
 created_at: 2026-11-26T01:24:35.100Z
-updated_at: "2026-11-27T17:04:14.228Z"
+updated_at: "2026-11-27T20:25:48.032Z"
 feature_id: G84
 priority: P2
 tags:
@@ -132,21 +132,21 @@ Rejected: a recipe that tells the operator to delete `30-audio/...` by hand (int
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — `kk news edit … --from-file <path|-> --base-sha <hex>` replaces exactly the allowlisted file via temp+rename, backs up the prior bytes, prints backup + new sha256 | MET | `apps/cli/src/commands/content-edit.ts:323-409` (order: day → enum → read → cap → sha → script shape → frozen → lock → backup → write); `apps/cli/tests/commands/content-edit.test.ts:102-152` asserts bytes, backup bytes, printed sha equals the file's sha, and both `--from-file -` and `--from-file <path>` |
-| R2 — `--revert` restores the newest backup and backs up the bytes it replaces | MET | `content-edit.ts:336-366`; `content-edit.test.ts:154-176` (two edits → revert → revert-of-revert returns to the second edit, three backups) |
-| R3 — closed refusals, nothing written, no destination from caller input | MET | codes at `content-edit.ts:43-52`, refusal path `:260-268`; `content-edit.test.ts:214-495` covers unknown artifact, unreadable source, stale sha (with `current=<sha>`), body > cap (and exactly-at-cap accepted), invalid YAML / one segment / empty text, frozen bundle, foreign lock; each asserts unchanged bytes and no `edits/` entry. Target derivation is the enum + `artifactPath()` (`:118-126`) |
-| R4 — kinds `edit-artifact` / `revert-artifact`, preview diff, verb spawn with stdin, body-bound token, audit hash only | MET | `apps/cli/src/board/actions.ts:205-243` (allowlist + argv); `action-plane.ts:74-102,151-160,355-395,420-500`; `action-plane-edit.test.ts:93-230` (diff preview, cap before hashing, body-bound token mismatch → 409, stdin + `KK_LOCK_HOLDER`, no body in the audit) |
-| R5 — `projectDay()` reports safety stale (digest mismatch **and** article body newer than content.json) and adds `artifact-edited` with the ordered recipes | MET | `apps/cli/src/board/day.ts:303-420` (mirror + mtime case), `:372-412` (recipes); `day-artifact-edit.test.ts:89-140` asserts fresh, script (safety → voice), article (render → safety) and the two-directional parity against `safety-artifact-check.ts revision-valid` |
-| R6 — a confirmed edit with a stale base sha is a 409 carrying the current sha | MET | `action-plane.ts:430-455` refuses before the lock and before the spawn; `action-plane-edit.test.ts:150-190` asserts 409, `currentSha` shape, zero children, and the refusal in the audit |
-| R7 — `docs/04_DESIGN.md` documents the verb and the two kinds in the same commit | MET | `docs/04_DESIGN.md:1533-1536` (surface lines) and `:1562-1587` (refusal codes, token formula, 409, projection re-arm) |
+| R1 | MET | `apps/cli/tests/commands/content-edit.test.ts:102` covers real CLI writes from file and stdin, backed-up bytes, and the resulting SHA. |
+| R2 | MET | `apps/cli/tests/commands/content-edit.test.ts:164` verifies revert and revert-of-revert. |
+| R3 | MET | `apps/cli/tests/commands/content-edit.test.ts:232` exercises input/frozen/lock refusals. `apps/cli/tests/commands/content-edit-unit.test.ts:267` adds frozen revert, malformed day, concurrent writers and deleted-draft cases. |
+| R4 | MET | `apps/cli/tests/board/action-plane-edit.test.ts:93` exercises server diff, body-bound token, stdin, and audit hashes. |
+| R5 | MET | `apps/cli/tests/board/day-artifact-edit.test.ts:89` covers edited script and article safety staleness, ordered recipes and digest parity. |
+| R6 | MET | `apps/cli/tests/board/action-plane-edit.test.ts:150` verifies stale SHA 409 with current SHA and no child. `apps/cli/tests/commands/content-edit-unit.test.ts:288` confirms same-day direct writers serialize. |
+| R7 | MET | `docs/04_DESIGN.md:1575` records edit/revert, refusal codes and lock behavior. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — the operator edits an allowlisted day artifact through the CLI verb | MET | test | `apps/cli/tests/commands/content-edit.test.ts:102-152` (real binary, real bytes/backup/sha) |
-| AC2 — every edit can be reverted to the bytes it replaced | MET | test | `content-edit.test.ts:154-176` |
-| AC3 — unsafe or stale edits are refused and change nothing | MET | test | `content-edit.test.ts:214-495` (each refusal: unchanged bytes, no backup) |
-| AC5 — an edit re-arms the safety gate and names the re-render steps | MET | test | `apps/cli/tests/board/day-artifact-edit.test.ts:89-140` (both cases, recipe order, gate parity) |
-| AC6 — a concurrent change is not overwritten | MET | test | `apps/cli/tests/board/action-plane-edit.test.ts:150-190` (409 + current sha, child never spawned); the verb's own `--base-sha` refusal backs the non-plane path |
+| R1 — The operator edits an allowlisted day artifact through the CLI verb | MET | test | `apps/cli/tests/commands/content-edit.test.ts:102` asserts bytes, backup and emitted SHA. |
+| R2 — Every edit can be reverted to the bytes it replaced | MET | test | `apps/cli/tests/commands/content-edit.test.ts:164` exercises the CLI twice in each direction. |
+| R3 — Unsafe or stale edits are refused and change nothing | MET | test | `apps/cli/tests/commands/content-edit.test.ts:232` and `apps/cli/tests/commands/content-edit-unit.test.ts:267` exercise refusal paths and frozen revert. |
+| R5 — An edit re-arms the safety gate and names the re-render steps | MET | test | `apps/cli/tests/board/day-artifact-edit.test.ts:89` verifies stale detection and repair recipes. |
+| R6 — A concurrent change to the artifact is not overwritten | MET | test | `apps/cli/tests/board/action-plane-edit.test.ts:150` and `apps/cli/tests/commands/content-edit-unit.test.ts:288` cover stale SHA and concurrent writes. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review

@@ -4,7 +4,7 @@ name: "Daily AI Voice digest push: kk news digest --push webhook, receipts and w
 status: done
 template: feature-impl
 created_at: 2026-11-26T01:24:35.109Z
-updated_at: "2026-11-27T18:24:06.712Z"
+updated_at: "2026-11-27T20:25:48.682Z"
 feature_id: G85
 priority: P2
 tags:
@@ -129,21 +129,21 @@ Rejected: retrying inside the run (the next window or a manual `--push` is the r
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 — POST the digest (markdown, or JSON per config) with status/attention first, from the URL named by `url_env`, 10 s timeout, no in-run retry | MET | `apps/cli/src/news-digest-push.ts` (render → POST → receipt, `AbortSignal.timeout(10_000)`); `apps/cli/tests/news-digest-push.test.ts` "posts the renderer output …", "posts JSON when the config asks for it" (body equality with the renderer, content type asserted) |
-| R2 — `notify.digest {enabled, url_env, body, min_status}` via the config seam; disabled/missing/unset → nothing sent, nonzero exit; below floor → skip exit 0 | MET | `digestNotifyConfigOf`/`loadNotifyConfig` (defaults per key, malformed keys fall back); tests "is off unless …", "reads the block, defaulting each key", "refuses an unset variable", "skips a digest below the configured floor with exit 0"; `kk news digest --push` resolves the same config through `configPath()` |
-| R3 — `<day>/notify-receipt.<trigger>.json` with the recorded fields; unchanged sha256 skips and reports the earlier receipt; changed posts `update: true` | MET | `receiptPath`, the receipt write; tests "skips an unchanged digest and reports the earlier receipt" and "posts a changed digest with `update: true`" |
-| R4 — URL/token never in stdout, stderr, receipt, logs or config; `--dry-run` prints body + host and writes nothing | MET | only `new URL(url).host` is surfaced (`digestPushLine`, outcome.host); `redact()` strips the URL and host from an error; tests "refuses a plaintext non-loopback URL and exposes only the host", "keeps the token out of the receipt, the line and the log", "a dry run prints the body and writes nothing" |
-| R5 — the launch supervisor pushes best-effort after its terminal receipt for every generate and publish-window launch; a push error never changes status/exit/receipt | MET | `apps/cli/src/launch.ts` (`LaunchDeps.pushDigest`, call after `writeReceipt`, own try/catch, trigger = window for `kk-publish`); `apps/cli/tests/launch.test.ts` new cases: generate trigger, window trigger, a failed run still pushing, a throwing push leaving the receipt's status/exitCode unchanged |
-| R6 — `docs/04_DESIGN.md` documents `--push`, `--trigger`, `--dry-run` and the `notify.digest` key in the same commit | MET | `docs/04_DESIGN.md` verb surface + the `notify.digest` contract block (order, floor, receipt fields, closed codes, redaction, dry run, launcher hook) |
+| R1 | MET | `apps/cli/tests/news-digest-push.test.ts:132` verifies both loopback POST formats, status, attention and the relative Board link. |
+| R2 | MET | `apps/cli/tests/news-digest-push.test.ts:261` covers disabled, missing config, unset URL and status floor. |
+| R3 | MET | `apps/cli/tests/news-digest-push.test.ts:112` proves concurrent identical deliveries result in one POST. Receipt and changed-content cases at `apps/cli/tests/news-digest-push.test.ts:187`. |
+| R4 | MET | `apps/cli/tests/news-digest-push.test.ts:358` proves URL fragments stay out of receipts and redirects are refused. Dry run asserts no receipt or network send at `apps/cli/tests/news-digest-push.test.ts:400`. |
+| R5 | MET | `apps/cli/tests/launch.test.ts:249` checks generate and publish-window triggers after the receipt and unchanged launch outcomes on push failure. |
+| R6 | MET | `docs/04_DESIGN.md:1600` records configuration, webhook layout and delivery options. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 — the digest is pushed to the configured webhook | MET | test | `apps/cli/tests/news-digest-push.test.ts` (loopback stub receives exactly the renderer body) |
-| AC2 — off by default, URL out of config and the repo | MET | test | the disabled default, the unset-variable refusal, and the token-absence assertions on stdout/stderr/receipt |
-| AC3 — a failed push never fails the run | MET | test | `apps/cli/tests/launch.test.ts` throwing-push case (status and exitCode equal a no-push run; the error text is not in the receipt) |
-| AC4 — each trigger pushes at most once per unchanged digest | MET | test | the unchanged-sha skip test plus the per-trigger receipt path |
-| AC5 — wired after generation and after each publish window | MET | test | `launch.test.ts` generate-trigger and `cn-peak` window cases |
-| AC6 — a dry run shows the exact body without sending | MET | test | the dry-run case (body printed, host printed, no receipt written, stub received nothing) |
+| R1 — The digest is pushed to the configured webhook | MET | test | `apps/cli/tests/news-digest-push.test.ts:132` verifies the exact POST body against a loopback endpoint. |
+| R2 — Pushing is off by default and keeps the URL out of config and the repo | MET | test | `apps/cli/tests/news-digest-push.test.ts:261` and `apps/cli/tests/news-digest-push.test.ts:358` verify configuration and error handling. |
+| R3 — A failed push never fails the run | MET | test | `apps/cli/tests/launch.test.ts:302` checks the launch result and receipt across a failed push. |
+| R4 — Each trigger pushes at most once per unchanged digest | MET | test | `apps/cli/tests/news-digest-push.test.ts:112` and `apps/cli/tests/news-digest-push.test.ts:187` verify concurrent and sequential deduplication. |
+| R5 — The push is wired after generation and after each publish window | MET | test | `apps/cli/tests/launch.test.ts:249` checks both triggers after the launch receipt. |
+| R6 — A dry run shows the exact body without sending | MET | test | `apps/cli/tests/news-digest-push.test.ts:400` exercises the dry-run body, transport seam and receipt. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
