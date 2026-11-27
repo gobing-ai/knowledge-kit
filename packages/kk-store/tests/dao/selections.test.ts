@@ -75,4 +75,23 @@ describe('SelectionsDao', () => {
         expect((await store.selections.listByRun('run-2'))[0]?.status).toBe('selected');
         expect(await store.selections.updateStatus('run-1', 'ai-news', 'dropped', [])).toBe(0);
     });
+
+    it('promotes dropped rows to published when a resumed run airs, while release never reverts published', async () => {
+        const { store } = await openTempStore(makeTempDir(), 'selections-resumed.db');
+        await store.selections.insertMany([
+            { topic: 'ai-news', itemId: 'i1', runId: 'run-1', storyId: 'i1' },
+            { topic: 'ai-news', itemId: 'i2', runId: 'run-1', storyId: 'i2' },
+        ]);
+
+        // Initial failed launch recycles selections to dropped.
+        expect(await store.selections.updateStatus('run-1', 'ai-news', 'dropped')).toBe(2);
+        // Resumed run airs i1: mark-published promotes i1 from dropped -> published.
+        expect(await store.selections.updateStatus('run-1', 'ai-news', 'published', ['i1'])).toBe(1);
+        // Releasing the run afterwards leaves i1 published and i2 dropped.
+        expect(await store.selections.updateStatus('run-1', 'ai-news', 'dropped')).toBe(0);
+
+        const rows = await store.selections.listByRun('run-1');
+        expect(rows.find((row) => row.itemId === 'i1')?.status).toBe('published');
+        expect(rows.find((row) => row.itemId === 'i2')?.status).toBe('dropped');
+    });
 });
