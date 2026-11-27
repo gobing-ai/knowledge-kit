@@ -1,0 +1,18 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261119-1",
+    "planDigest": "f60c382e2006d758ad4a3a9b95b7fc4acbff78cf262eb6ff21519a53fe340ff8",
+    "payloadDigest": "6265af0fe261fc659ae2321a550ebc03793348bbdd5cb33932440cf1171a9533",
+    "plugin": "podcast",
+    "profile": "default",
+    "mode": "live",
+    "attemptId": "podcast.xiaoyuzhou-1",
+    "status": "succeeded",
+    "effect": "confirmed",
+    "target": "podcast.xiaoyuzhou",
+    "window": "after-generate",
+    "dummy": false,
+    "url": "https://example.com/episode.mp3",
+    "startedAt": "2026-11-19T09:00:00.000Z",
+    "finishedAt": "2026-11-19T09:00:05.000Z"
+}

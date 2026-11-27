@@ -1,0 +1,18 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261125-1",
+    "planDigest": "3574b3e32c85761d7f13e925528c8e0f7e518773f6a0f22997e0f46ed2e047d6",
+    "payloadDigest": "2c04e85506de3292bfbd03e75fc0169b75dea9d6f0e697a67cee3c1a0579742f",
+    "plugin": "video",
+    "profile": "default",
+    "mode": "live",
+    "attemptId": "video.shipinhao-1",
+    "status": "failed",
+    "effect": "none",
+    "target": "video.shipinhao",
+    "window": "after-generate",
+    "dummy": false,
+    "error": "shipinhao: no draft rail accepted the payload",
+    "startedAt": "2026-11-25T09:00:00.000Z",
+    "finishedAt": "2026-11-25T09:00:05.000Z"
+}

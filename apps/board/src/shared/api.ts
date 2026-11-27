@@ -11,6 +11,7 @@ import type {
     CollectStoreSelection,
     CollectStoreSelections,
     DailyDigest,
+    DayArtifactDocument,
     DaySummary,
     RunConfig,
     RunEvidence,
@@ -136,6 +137,11 @@ export interface BoardClient {
     day(day: string): Promise<DailyDigest>;
     /** The bounded day list (G83) behind the History view. */
     days(from: string, until: string): Promise<DaySummary[]>;
+    /**
+     * One editable draft of a day (G84/0445): its current bytes, the sha the plane expects, and both
+     * argv recipes computed server-side. Read-only — the write is `action('edit-artifact', …)`.
+     */
+    dayArtifact(day: string, artifact: string): Promise<DayArtifactDocument>;
     /**
      * The guarded action plane (G83/0442): one POST to `/api/actions/<kind>`. A preview omits the
      * token; an execute presents it. The reader refuses everything unless `board.actions.enabled`.
@@ -813,6 +819,10 @@ export function createBoardClient(options: BoardClientOptions): BoardClient {
                 `${reader}/api/workflows/${encodeURIComponent(workflow)}/runs/${encodeURIComponent(runId)}/evidence`,
             ),
         day: (day) => getJson<DailyDigest>(`${reader}/api/days/${encodeURIComponent(day)}`),
+        dayArtifact: (day, artifact) =>
+            getJson<DayArtifactDocument>(
+                `${reader}/api/days/${encodeURIComponent(day)}/artifacts/${encodeURIComponent(artifact)}`,
+            ),
         days: (from, until) =>
             getJson<DaySummary[]>(
                 `${reader}/api/days?from=${encodeURIComponent(from)}&until=${encodeURIComponent(until)}`,

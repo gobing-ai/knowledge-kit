@@ -136,7 +136,7 @@ describe('resolveArgv — the frozen argv table (R3, AC3)', () => {
 
 describe('resolveArgv — refusals (task R3)', () => {
     it('refuses an unknown kind', () => {
-        expect(refusal('edit-artifact' as Parameters<typeof resolveArgv>[0], { day: '20261125' })).toBe('kind');
+        expect(refusal('delete-run' as Parameters<typeof resolveArgv>[0], { day: '20261125' })).toBe('kind');
     });
 
     it('refuses a key the kind does not allowlist', () => {

@@ -2871,3 +2871,32 @@ Artifact written: `/Users/robin/xprojects/knowledge-kit-run-0427-427a/.spur/run/
 ### Scope discipline for a docs-only wrap
 - A markdown-only repair does not need the 281 s+ gate; the reviewable artifact is the diff plus a
   `git status` that shows only `docs/`. State the skipped checks instead of implying the full gate ran.
+## 2026-11-27 — batch 0443, 0444, 0445, 0446 (Daily AI Voice console, editor, push)
+
+- **`e2e` cases that spawn the real CLI need an explicit per-case budget.** bun's 5 s default is shorter
+  than two `bun run` launches, and the SIGTERM lands *mid-case*, so the symptom is a half-written
+  fixture compared against a full expectation (0444/0445 gates). Give every CLI-spawning case
+  `it(name, fn, 60_000)` — or `setDefaultTimeout` at the file head — before the first gate run.
+- **A coverage trace written by a killed test file makes an unrelated coverage table red.** The
+  light gate's `bun test --coverage` over a subset reports per-file thresholds for whatever the subset
+  loaded; a truncated trace reads as "these plugin files are untested". Judge the run by the pass/fail
+  counts, and fix the budget rather than the coverage.
+- **`apps/cli/tests/content-generate.e2e.test.ts` measured 47 s alone against a 60 s guard** and failed
+  three separate gate visits inside the 24-file parallel batch. Its budget is now 180 s; any future
+  flake there should start from "does the case actually have room?" before suspecting the harness.
+- **The action-plane answer shape has to match the work.** A fire-and-forget `202` is right for a
+  workflow launch and wrong for a sub-second edit verb: the UI's refetch raced the write and read a
+  fresh digest, which looked like a projection bug. Body-bound kinds now await the child and answer
+  `200 {saved}` / `409` / `422` with the verb's own closed code.
+- **`ProcessExecutor.run` has no stdin; `runStreaming` does.** A body-carrying spawn must use the
+  streaming handle and `writeStdin`, or the child reads EOF and writes an empty file — which the
+  empty-body refusal now also blocks.
+- **A committed fixture whose bytes a digest binds must be excluded from the formatter.** Biome
+  reformatted `22-article/*_content.json` and invalidated the recorded safety digest; `**/fixtures`
+  is now ignored, and the E2E sets mtimes explicitly at copy time (git does not carry them).
+- **Headless host execution needs the receipt path, not prose.** `spur workflow continue
+  --answer-text <path>` consumes a `.spur/run/<runId>/receipts/<state>.json` for a host work item and a
+  free-text answer file for a `hitl.input` gate; mixing them is refused before anything is mutated.
+- **Corpus writes stay in the worktree.** Task/feature/doc updates land on the branch; the invoking
+  tree shows pre-run statuses until the landing merge (expected, not a bug).
+

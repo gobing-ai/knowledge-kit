@@ -1,0 +1,224 @@
+{
+    "schemaVersion": 1,
+    "day": "20261123",
+    "status": "attention",
+    "generation": {
+        "runId": "kk-news-generate-20261123-1",
+        "launchStatus": "done",
+        "exitCode": 0,
+        "startedAt": "2026-11-23T04:30:00.000Z",
+        "finishedAt": "2026-11-23T05:05:00.000Z",
+        "outcome": "episode",
+        "attempts": [
+            {
+                "runId": "kk-news-generate-20261123-1",
+                "capturedAt": "2026-11-23T05:06:00.000Z",
+                "status": "done"
+            }
+        ],
+        "bundle": {
+            "identity": "kk-news-generate-20261123-1-bundle",
+            "runDate": "20261123",
+            "parentRunId": null,
+            "title": "The GPU lease that expired",
+            "variants": [
+                "en",
+                "zh"
+            ],
+            "safety": "pass"
+        },
+        "durations": [
+            {
+                "step": "prepare",
+                "startedAt": "2026-11-23T04:30:00.000Z",
+                "endedAt": "2026-11-23T04:30:12.000Z",
+                "durationMs": 12000
+            },
+            {
+                "step": "collect",
+                "startedAt": "2026-11-23T04:30:12.000Z",
+                "endedAt": "2026-11-23T04:34:30.000Z",
+                "durationMs": 258000
+            },
+            {
+                "step": "curate",
+                "startedAt": "2026-11-23T04:34:30.000Z",
+                "endedAt": "2026-11-23T04:39:10.000Z",
+                "durationMs": 280000
+            },
+            {
+                "step": "plan",
+                "startedAt": "2026-11-23T04:39:10.000Z",
+                "endedAt": "2026-11-23T04:40:02.000Z",
+                "durationMs": 52000
+            },
+            {
+                "step": "qc-content",
+                "startedAt": "2026-11-23T04:40:02.000Z",
+                "endedAt": "2026-11-23T04:41:40.000Z",
+                "durationMs": 98000
+            },
+            {
+                "step": "generate",
+                "startedAt": "2026-11-23T04:41:40.000Z",
+                "endedAt": "2026-11-23T04:49:00.000Z",
+                "durationMs": 440000
+            },
+            {
+                "step": "voice",
+                "startedAt": "2026-11-23T04:49:00.000Z",
+                "endedAt": "2026-11-23T04:57:20.000Z",
+                "durationMs": 500000
+            },
+            {
+                "step": "safety",
+                "startedAt": "2026-11-23T04:57:20.000Z",
+                "endedAt": "2026-11-23T04:58:05.000Z",
+                "durationMs": 45000
+            },
+            {
+                "step": "duration",
+                "startedAt": "2026-11-23T04:58:05.000Z",
+                "endedAt": "2026-11-23T04:58:10.000Z",
+                "durationMs": 5000
+            },
+            {
+                "step": "run-report",
+                "startedAt": "2026-11-23T04:58:10.000Z",
+                "endedAt": "2026-11-23T04:58:30.000Z",
+                "durationMs": 20000
+            }
+        ],
+        "unknownReason": null
+    },
+    "windows": [
+        {
+            "window": "after-generate",
+            "runId": "kk-publish-20261123-after-generate",
+            "launchStatus": "done",
+            "unknownReason": null,
+            "recordedStatus": "full",
+            "provenance": {
+                "dateMatch": true,
+                "bundleMatch": true,
+                "parentMatch": true,
+                "digestMatch": true
+            },
+            "targets": [
+                {
+                    "id": "podcast.xiaoyuzhou",
+                    "tier": 1,
+                    "mode": "live",
+                    "target": "podcast.xiaoyuzhou",
+                    "status": "succeeded",
+                    "effect": "confirmed",
+                    "url": null,
+                    "guid": null,
+                    "finishedAt": "2026-11-23T09:00:05.000Z",
+                    "error": null,
+                    "evidence": {
+                        "plan": "4-publish/plan.after-generate.json",
+                        "receipt": "4-publish/receipts/podcast.xiaoyuzhou.json"
+                    }
+                }
+            ]
+        },
+        {
+            "window": "cn-peak",
+            "runId": "kk-publish-20261123-cn-peak",
+            "launchStatus": "done",
+            "unknownReason": null,
+            "recordedStatus": "dummy",
+            "provenance": {
+                "dateMatch": true,
+                "bundleMatch": true,
+                "parentMatch": true,
+                "digestMatch": true
+            },
+            "targets": [
+                {
+                    "id": "video.shipinhao",
+                    "tier": 1,
+                    "mode": "dummy",
+                    "target": "video.shipinhao",
+                    "status": "succeeded",
+                    "effect": "none",
+                    "url": null,
+                    "guid": null,
+                    "finishedAt": "2026-11-23T09:00:05.000Z",
+                    "error": null,
+                    "evidence": {
+                        "plan": "4-publish/plan.cn-peak.json",
+                        "receipt": "4-publish/receipts/video.shipinhao.json"
+                    }
+                }
+            ]
+        },
+        {
+            "window": "overseas-rss",
+            "runId": null,
+            "launchStatus": "not-run",
+            "unknownReason": null,
+            "recordedStatus": null,
+            "provenance": {
+                "dateMatch": null,
+                "bundleMatch": null,
+                "parentMatch": null,
+                "digestMatch": null
+            },
+            "targets": []
+        }
+    ],
+    "safety": {
+        "verdict": "pass",
+        "judge": "PASS",
+        "unknownReason": null
+    },
+    "attention": [
+        {
+            "severity": "warn",
+            "kind": "window-not-run",
+            "subject": "overseas-rss",
+            "message": "The 'overseas-rss' window recorded no plan and no launch receipt, and its slot has passed.",
+            "evidence": "4-publish/plan.overseas-rss.json",
+            "recipes": [
+                {
+                    "kind": "publish-window",
+                    "label": "dry-run overseas-rss",
+                    "params": {
+                        "day": "20261123",
+                        "window": "overseas-rss",
+                        "dummy": "true"
+                    },
+                    "argv": [
+                        "kk",
+                        "news",
+                        "publish",
+                        "--run-date",
+                        "20261123",
+                        "--window",
+                        "overseas-rss",
+                        "--dummy"
+                    ],
+                    "live": false
+                }
+            ]
+        }
+    ],
+    "actions": {
+        "enabled": true,
+        "lines": []
+    },
+    "sources": {
+        "generation.launch": "schedule-receipt.json",
+        "generation.attempts": ".works/.board/runs/kk-news-generate-20261123-1.json",
+        "generation.bundle": "bundle.json",
+        "generation.durations": "step-timing.json",
+        "windows.after-generate": "4-publish/plan.after-generate.json",
+        "windows.after-generate.launch": "4-publish/schedule-receipt.after-generate.json",
+        "windows.cn-peak": "4-publish/plan.cn-peak.json",
+        "windows.cn-peak.launch": "4-publish/schedule-receipt.cn-peak.json",
+        "safety": "4-safety-variants/20261123_08b_safety-verdict.decision"
+    },
+    "diagnostics": []
+}

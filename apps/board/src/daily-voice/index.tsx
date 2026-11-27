@@ -13,7 +13,7 @@ import {
     withBase,
 } from '@gobing-ai/spur/board/ui';
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DailyDigest, DaySummary, Recipe, RunEvidence } from '../contracts';
+import type { DailyDigest, DayArtifactDocument, DaySummary, Recipe, RunEvidence } from '../contracts';
 import { type BoardClient, createBoardClient, DEFAULT_READER_ORIGIN, readerOriginFrom } from '../shared/api';
 import { dedupeDiagnostics, formatTimestamp } from '../shared/format';
 import {
@@ -265,10 +265,13 @@ function GenerationPanel({
     digest,
     client,
     recipes,
+    onChanged,
 }: {
     digest: DailyDigest;
     client: BoardClient;
     recipes: (subject: string) => Recipe[];
+    /** One digest refetch after a confirmed write (G84/0445 R2). */
+    onChanged: () => void;
 }) {
     const attempts = useMemo(() => [...digest.generation.attempts].reverse(), [digest.generation.attempts]);
     const [selected, setSelected] = useState<string | null>(attempts[0]?.runId ?? null);
@@ -431,6 +434,254 @@ function GenerationPanel({
                     )}
                 </>
             )}
+            <ArtifactEditor
+                day={digest.day}
+                artifact="article"
+                digest={digest}
+                client={client}
+                onChanged={() => onChanged()}
+            />
+            <ArtifactEditor
+                day={digest.day}
+                artifact="script"
+                digest={digest}
+                client={client}
+                onChanged={() => onChanged()}
+            />
+        </div>
+    );
+}
+
+/**
+ * The Generation tab's draft editor (G84/0445 — design §10).
+ *
+ * Plain textarea plus the server-computed diff: no editor dependency, and the digest, the sha and the
+ * argv all come from the reader, so the browser never invents a second source of truth. The one
+ * client-side rule that matters is that `draft` is never derived from a refetch — that is what keeps
+ * an operator's unsaved text across a conflict.
+ */
+function ArtifactEditor({
+    day,
+    artifact,
+    digest,
+    client,
+    onChanged,
+}: {
+    day: string;
+    artifact: 'article' | 'script';
+    digest: DailyDigest;
+    client: BoardClient;
+    onChanged: () => void;
+}) {
+    const [document, setDocument] = useState<DayArtifactDocument | null>(null);
+    const [draft, setDraft] = useState<string>('');
+    const [preview, setPreview] = useState<{ token: string; diff: string; argv: string[] } | null>(null);
+    const [banner, setBanner] = useState<{ tone: 'info' | 'error'; text: string; conflict: boolean } | null>(null);
+    const [busy, setBusy] = useState(false);
+
+    const load = useCallback(async () => {
+        setBusy(true);
+        try {
+            const next = await client.dayArtifact(day, artifact);
+            setDocument(next);
+            setDraft((current) => (current === '' ? (next.text ?? '') : current));
+            setPreview(null);
+        } catch (cause) {
+            setBanner({ tone: 'error', text: cause instanceof Error ? cause.message : String(cause), conflict: false });
+        } finally {
+            setBusy(false);
+        }
+    }, [artifact, client, day]);
+
+    useEffect(() => {
+        void load();
+    }, [load]);
+
+    if (document === null) {
+        return (
+            <div data-testid={`editor-${artifact}`}>
+                <h2>{artifact === 'article' ? 'Article body' : 'Voice script'}</h2>
+                <p className="kk-board-state">Loading the current draft…</p>
+            </div>
+        );
+    }
+
+    const params = { day, artifact, ...(document.sha256 === null ? {} : { baseSha: document.sha256 }) };
+    const post = async (body: Record<string, unknown>): Promise<{ status: number; body: unknown }> =>
+        client.action('edit-artifact', body);
+
+    const ask = async (): Promise<void> => {
+        setBusy(true);
+        try {
+            const answer = await post({ params, body: draft });
+            const payload = (answer.body ?? {}) as Record<string, unknown>;
+            if (answer.status !== 200) {
+                setBanner({
+                    tone: 'error',
+                    text: String(payload.message ?? payload.code ?? answer.status),
+                    conflict: answer.status === 409,
+                });
+                return;
+            }
+            setPreview({
+                token: String(payload.token ?? ''),
+                diff: String(payload.dryRun ?? ''),
+                argv: Array.isArray(payload.argv) ? (payload.argv as string[]) : [],
+            });
+            setBanner(null);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const confirm = async (): Promise<void> => {
+        if (preview === null) return;
+        setBusy(true);
+        try {
+            const answer = await post({ params, body: draft, token: preview.token });
+            const payload = (answer.body ?? {}) as Record<string, unknown>;
+            if (answer.status !== 200) {
+                setBanner({
+                    tone: 'error',
+                    text: String(payload.message ?? payload.code ?? answer.status),
+                    conflict: answer.status === 409,
+                });
+                return;
+            }
+            setPreview(null);
+            setBanner({ tone: 'info', text: 'saved — the day digest was refetched once', conflict: false });
+            onChanged();
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const revert = async (): Promise<void> => {
+        setBusy(true);
+        try {
+            const answer = await client.action('revert-artifact', { params: { day, artifact } });
+            const payload = (answer.body ?? {}) as Record<string, unknown>;
+            if (answer.status !== 200) {
+                setBanner({
+                    tone: 'error',
+                    text: String(payload.message ?? payload.code ?? answer.status),
+                    conflict: answer.status === 409,
+                });
+                return;
+            }
+            const token = String(payload.token ?? '');
+            const applied = await client.action('revert-artifact', {
+                params: { day, artifact },
+                token,
+            });
+            if (applied.status !== 200) {
+                const refusal = (applied.body ?? {}) as Record<string, unknown>;
+                setBanner({
+                    tone: 'error',
+                    text: String(refusal.message ?? refusal.code ?? applied.status),
+                    conflict: applied.status === 409,
+                });
+                return;
+            }
+            setPreview(null);
+            setBanner({ tone: 'info', text: 'reverted — the day digest was refetched once', conflict: false });
+            onChanged();
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    return (
+        <div className="kk-board-editor" data-testid={`editor-${artifact}`}>
+            <h2>{artifact === 'article' ? 'Article body' : 'Voice script'}</h2>
+            <p className="kk-board-state">
+                {document.path} · {document.sha256 === null ? 'no bytes yet' : `sha ${document.sha256.slice(0, 12)}…`}
+                {document.backup === null ? '' : ` · backup ${document.backup}`}
+            </p>
+            {document.editable ? (
+                <>
+                    <textarea
+                        aria-label={`${artifact} draft`}
+                        data-testid={`editor-${artifact}-draft`}
+                        value={draft}
+                        spellCheck={false}
+                        rows={12}
+                        onChange={(event) => setDraft(event.target.value)}
+                    />
+                    <div className="kk-board-editor-actions">
+                        <Button variant="ghost" size="xs" disabled={busy} onClick={() => void ask()}>
+                            preview
+                        </Button>
+                        {preview === null ? null : (
+                            <Button variant="primary" size="xs" disabled={busy} onClick={() => void confirm()}>
+                                confirm
+                            </Button>
+                        )}
+                        {document.revertRecipe === null ? null : (
+                            <Button variant="ghost" size="xs" disabled={busy} onClick={() => void revert()}>
+                                revert
+                            </Button>
+                        )}
+                    </div>
+                </>
+            ) : (
+                <p className="kk-board-state">
+                    Actions are disabled — recipes only.{' '}
+                    {document.recipe === null ? null : (
+                        <code data-testid={`editor-${artifact}-recipe`}>{recipeText(document.recipe.argv)}</code>
+                    )}
+                </p>
+            )}
+            {banner === null ? null : (
+                <div
+                    data-testid={`editor-${artifact}-banner`}
+                    className={`kk-board-state kk-board-banner-${banner.tone}`}
+                >
+                    {banner.text}
+                    {banner.conflict ? (
+                        <Button variant="ghost" size="xs" disabled={busy} onClick={() => void load()}>
+                            reload current bytes
+                        </Button>
+                    ) : null}
+                </div>
+            )}
+            {preview === null ? null : (
+                <pre data-testid={`editor-${artifact}-diff`} className="kk-board-diff">
+                    {preview.diff}
+                </pre>
+            )}
+            <StaleNotice digest={digest} artifact={artifact} />
+        </div>
+    );
+}
+
+/**
+ * The re-armed gate, shown where the operator edited (G84/0445 R2).
+ *
+ * A confirmed write leaves the recorded safety verdict covering bytes that no longer exist, so the
+ * digest refetch reports `safety.stale` and raises `artifact-edited` for this artifact. The steps are
+ * rendered in the order that re-certifies the day — the operator should not have to derive it.
+ */
+function StaleNotice({ digest, artifact }: { digest: DailyDigest; artifact: 'article' | 'script' }) {
+    const items = digest.attention.filter((item) => item.kind === 'artifact-edited' && item.subject === artifact);
+    if (items.length === 0 && digest.safety.stale !== true) return null;
+    return (
+        <div data-testid={`editor-${artifact}-stale`} className="kk-board-state">
+            <p>
+                safety: <strong>{digest.safety.stale === true ? 'stale' : 'fresh'}</strong>
+                {digest.safety.staleReason == null ? '' : ` — ${digest.safety.staleReason}`}
+            </p>
+            {items.map((item) => (
+                <div key={`${item.kind}:${item.subject}`}>
+                    <Badge variant={TONE_BADGE[item.severity === 'error' ? 'error' : 'warn']} size="sm">
+                        {item.kind}
+                    </Badge>{' '}
+                    <span>{item.message}</span>
+                    {item.recipes.map((recipe) => (
+                        <RecipeLine key={recipe.argv.join(' ')} argv={recipe.argv} label={recipe.label} />
+                    ))}
+                </div>
+            ))}
         </div>
     );
 }
@@ -904,6 +1155,7 @@ function DailyVoiceConsole({ search }: { search: string }) {
                             digest={state.digest}
                             client={clientRef.current as BoardClient}
                             recipes={recipesFor}
+                            onChanged={() => void load()}
                         />
                     ) : location.tab === 'publishing' ? (
                         <PublishingPanel digest={state.digest} recipes={recipesFor} />

@@ -61,7 +61,7 @@ sync: [T3]
 | [kk-wiki.md](design/kk-wiki.md) | `kk wiki` verb surface, vault frontmatter, config keys and Quartz publish projection | accepted design (I1, ADR-048; not yet built — §1 transcribes the verbs once they ship) |
 | [workflow-board-modules.md](design/workflow-board-modules.md) | Native Collect / Daily AI Voice / IT Content Board modules; recorded run settings with Settings → Workflows reuse; local reader and run capture surface | shipped (G8; 0252–0255) |
 | [collect-store-views.md](design/collect-store-views.md) | Collect module read-only store views: cadence overview, run funnel, label quality, items browser and downstream yield over `.works/kk.db` | accepted design (G81) |
-| [daily-voice-ops-console.md](design/daily-voice-ops-console.md) | Day-centric Daily AI Voice ops console: `projectDay()` digest, `/api/days*` routes, `kk news digest`, Today/Generation/Publishing/History tabs, guarded `POST /api/actions/<kind>` action plane; `kk news edit` artifact editor (G84); `kk news digest --push` webhook (G85) | accepted design (G83); planned (G84, G85) |
+| [daily-voice-ops-console.md](design/daily-voice-ops-console.md) | Day-centric Daily AI Voice ops console: `projectDay()` digest, `/api/days*` routes, `kk news digest`, Today/Generation/Publishing/History tabs, guarded `POST /api/actions/<kind>` action plane, committed browser E2E; `kk news edit` artifact editor (G84); `kk news digest --push` webhook (G85) | shipped (G83; 0439–0443); planned (G84, G85) |
 | [daily-news-podcast-cover.md](design/daily-news-podcast-cover.md) | Quasi-news podcast cover rendering via layered generation and deterministic typography compositing (ADR-046) | done (L2; tasks 0347–0349, 2026-11-10) |
 | [daily-news-visual-skills.md](design/daily-news-visual-skills.md) | Daily AI news cover, card and optional inline illustration authoring (ADR-057) | shipped (L4; 0424–0427, packaged replay verifies installed skill discovery) |
 | [music-gen.md](design/music-gen.md) | Music brief → prompt text → `POST /api/lyria/generate`: brief schema and render order, request mapping with no instance defaults, preset precedence over portable data, non-idempotent paid-call policy, digest input, artifact record | shipped (D8; 0397 contract, 0398 plugin, 0399 presets, 0400 spend guard, 0401 `kk music`, 0402 authoring + judge, 0403 `kk-music` workflow, 0405 checks/delivery; 0404 dogfooded one accepted track 2026-11-20) |
@@ -431,6 +431,13 @@ refuse everything outside the day directory.
 | ------- | ------- | --------- |
 | `/api/days/<YYYYMMDD>` | none | `DailyDigest` for one day; `404 board.day.not-found` names the looked-up directory, `400 board.day.invalid` for a non-`YYYYMMDD` key |
 | `/api/days` | `from`/`until` (required `YYYYMMDD`, `from <= until`, at most 31 days) | `DaySummary[]`, newest first |
+| `/api/days/<YYYYMMDD>/artifacts/<article\|script>` | none | `DayArtifactDocument` for the Generation tab's editor: the current bytes, their sha256, and both argv recipes computed server-side (`edit-artifact` against the current sha, `revert-artifact` when a backup exists). `400 board.day.artifact.unknown`, `404 board.day.not-found`. Read-only — the write is the action plane |
+
+Both routes carry the action plane's `board.actions.enabled` switch into the digest (`actions.enabled`),
+read once per reader process from `resolveKkConfigPath`, so the console renders recipes-only with a
+reason when launches are off. `kk news digest` resolves the same switch through
+`actionsEnabledFromConfig`, which is what makes the verb's `--json` output object-identical to
+`GET /api/days/<day>` (asserted by the committed E2E).
 
 With the two day routes and the four Collect store routes taking declared parameters, every other
 route still refuses all of them. Shapes: `DailyDigest` (`{schemaVersion: 1, day, status,
@@ -564,10 +571,29 @@ not runs**: `GET /api/days/<YYYYMMDD>` for the open day and `GET /api/days?from&
 (status banner, generation card, publish-window strip, safety line, severity-ordered attention list
 with copyable recipes, explicit all-clear), Generation (attempts and recorded step durations),
 Publishing (window × target matrix with receipts rendered as text), History (per-day status, window
-outcomes and a per-node duration trend; a day click deep-links into Today) and Actions log (recipes
-only until the guarded plane ships in 0442). The selected day and tab live in the URL hash
+outcomes and a per-node duration trend; a day click deep-links into Today) and Actions log (the day's
+recorded `actions.jsonl` lines, plus preview → confirm launch buttons over the day's recipes when the
+guarded plane is enabled; recipes only, with the reason, when it is off). The selected day and tab live in the URL hash
 (`#day=YYYYMMDD&tab=…`), validated on read so an operator-edited hash cannot select a foreign day.
 `kk-board-daily-voice` stays the module's host identity class.
+
+The Generation tab also carries the draft editor (G84, task 0445): a plain textarea plus the
+server-computed diff, one artifact at a time (article body, voice script). It loads from
+`GET /api/days/<day>/artifacts/<a>` — the sha and the argv come from the reader, never from the
+browser — previews `edit-artifact`/`revert-artifact` (the diff or the revert diff), and confirms with
+the returned token; a confirmed write (the plane awaits the verb and answers `200 {saved}` or the
+verb's own refusal) triggers exactly one digest refetch, which renders `safety: stale` and the
+`artifact-edited` recipes in place. A `409` keeps the operator's draft and offers
+"reload current bytes", which replaces only the loaded bytes and sha. With `board.actions.enabled`
+false the editor shows the copyable `kk news edit` recipe and no editable field.
+
+Evidence (G83, task 0443): `apps/board/tests/daily-voice-console.e2e.test.ts` is the repeatable
+acceptance for the whole feature. It copies `apps/board/tests/fixtures/daily-voice-days/` (eleven days,
+20261115–20261125, carrying the shipinhao `effect: none` failure, an engine-fallback day and a window
+whose plan has no launch receipt) into a throwaway project, starts the reader against it, drives the
+console in Chromium, and commits `apps/board/tests/artifacts/daily-voice-console/{today,generation,
+publishing,history,action}.png`, `argv.log` (the stub `kk`'s recorded argv, asserted equal to the
+previewed recipe) and `digest.json` (asserted equal to `GET /api/days/<day>`).
 
 Retired with the run-centric layouts (feature R2): the voice2 fallback panels and their Summary /
 Generation / Publishing views over one run selection, the G82 funnel and 2026-10-22 supply-context
@@ -1531,6 +1557,10 @@ kk article publish   --type <t> (--slug <s> | --run-date <YYYYMMDD> | --work-dir
 kk article status    --type <t> (--slug <s> | --work-dir <dir>) [--window <w>]
 kk news digest       --run-date <YYYYMMDD> [--json]
 kk news digest       --days --from <YYYYMMDD> --until <YYYYMMDD> [--json]
+kk news edit         --run-date <YYYYMMDD> --artifact article|script
+                     (--from-file <path|-> --base-sha <sha256> | --revert)
+kk news digest       --run-date <YYYYMMDD> --push [--trigger generate|after-generate|cn-peak|overseas-rss]
+                     [--dry-run]
 kk article publish-plan | publish-check | publish-send | publish-settle | publish-report
                      --work-dir <dir> [--window <w>] …            # workflow steps, named flags only
 kk article generate-check --work-dir <dir> --step outline|judge|adapt        # shipped (0368)
@@ -1541,6 +1571,50 @@ kk news generate    [--inline-illustrations]                        # news-only:
 kk news prepare | generate-render | generate-voice [--engine voxcpm|gemini|omnivoice|voicebox|vibe-voice] | generate-cards | report --work-dir <dir> …   # shipped (0367; vibe-voice G16)
 kk news prepare --work-dir <dir> [--refresh] [--ledger-sync]   # --refresh: drop the frozen pool + plan
 ```
+
+**`kk news edit` (G84, task 0444 — `docs/design/daily-voice-ops-console.md` §10).** The one write path
+for a day's allowlisted drafts: `article` → `22-article/<day>_06_article-write_body.md` (which
+`generate-render` re-derives from when it is newer than `_06_article_content.json`) and `script` →
+`24-script/<day>_08_script_voicescript.yaml` (write-once in the render stage, so an edit survives a
+re-render). The destination is never caller-supplied — the enum plus the day resolved from
+`--run-date` produce it, so no input can reach another file. The body comes from `--from-file <path>`
+or stdin (`-`), is capped at 256 KiB, and is written through a same-directory temp file + rename after
+the previous bytes are backed up to `<day>/edits/<ts>-<artifact>.<ext>`; the verb prints
+`{artifact, path, backup, sha256, reverted}` and exit 1 with a closed code on any refusal:
+`news.edit.artifact.unknown`, `news.edit.source.unreadable`, `news.edit.body.too-large`,
+`news.edit.base-sha.mismatch` (carrying `current=<sha>`), `news.edit.script.invalid` (a `segments`
+array of at least two entries, each with non-empty `text`), `news.edit.frozen` (the day's bundle
+carries `contentType`), `news.edit.lock.held` (`ops-console:<day>` held by anything other than this
+invocation — the plane passes its holder to the child as `KK_LOCK_HOLDER`) and
+`news.edit.no-backup`. `--revert` restores the newest backup and backs up the bytes it replaces, so a
+revert is itself revertible. The plane exposes the two matching kinds — `edit-artifact`
+`{day, artifact, baseSha}` (preview returns the unified diff, execute writes the body to the child's
+stdin) and `revert-artifact` `{day, artifact}` — with the token binding
+`sha256(kind + argv + sha256(body))` and a stale `baseSha` answered as `409 actions.artifact.stale`
+carrying the current sha, before any child exists. `projectDay()` re-arms the gate: a recorded safety
+verdict whose digest no longer matches the draft (mirroring `safety-artifact-check.ts`'s
+`draftDigest`), or an article body newer than `content.json`, reads `safety.stale` and raises the
+`artifact-edited` attention rule with the ordered re-render recipes.
+
+**`kk news digest --push` (G85, task 0446 — `docs/design/daily-voice-ops-console.md` §11).** One generic
+webhook, configured as `notify.digest: {enabled (default false), url_env (default
+`KK_DIGEST_WEBHOOK_URL`), body (markdown|json), min_status (ok|attention|failed)}`. The body is the
+digest renderer's own output prefixed with `Status: <status> · attention: <n>`; the digest emits no
+Board link, so the prefix carries no hardcoded host. Order: render → enabled → URL variable → scheme
+(`https`, or plaintext only for a loopback host, so a local stub works and a token never crosses the
+wire unencrypted) → `min_status` floor (`ok < attention < failed`, `running`/`unknown` never clear
+any floor) → receipt read → sha256 of the exact bytes → skip-if-equal → POST with
+`AbortSignal.timeout(10_000)` and no in-run retry → atomic receipt write. `<day>/notify-receipt.<trigger>.json`
+records `{ts, trigger, digestStatus, digestSha256, httpStatus, error, errorCode, update}`; an unchanged
+digest writes nothing and reports the earlier receipt, a changed one posts with `update: true`.
+`--trigger` defaults to `generate` (the receipt is per trigger, so a window push never suppresses the
+next one). Refusal/outcome codes are closed: `notify.digest.disabled` (exit 2), `url-env.unset`,
+`url.not-https`, `http` (carries the status), `timeout`, and `min-status.skipped` (exit 0). Only the
+target host is ever printed — never the URL, never the value, never a token inside it — and `--dry-run`
+prints the body plus the host, sends nothing and writes no receipt. The launch supervisor calls the
+same module after writing its terminal receipt for every `kk-news-generate` launch (trigger `generate`)
+and every `kk-publish` window launch (trigger = the window), best-effort: a throw or a refusal is one
+stderr line and never changes the launch's status, exit code or receipt.
 
 `prepare --refresh` resets a same-day run to its post-collect state, because two caches otherwise make
 one unrecoverable. `daily-extract` keeps `10-collect/pool.json` byte-for-byte once a plan is authored

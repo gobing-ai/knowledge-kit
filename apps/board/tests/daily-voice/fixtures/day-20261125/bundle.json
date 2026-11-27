@@ -1,0 +1,13 @@
+{
+    "schemaVersion": 1,
+    "runId": "kk-news-generate-20261125-1-bundle",
+    "runDate": "20261125",
+    "parentRunId": null,
+    "episode": {
+        "title": "Recap: the week models changed hands"
+    },
+    "variants": {},
+    "safety": {
+        "status": "pass"
+    }
+}

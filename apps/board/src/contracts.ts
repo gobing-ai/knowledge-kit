@@ -301,7 +301,9 @@ export type ActionKind =
     | 'publish-window'
     | 'rerender-step'
     | 'cancel-run'
-    | 'store-release';
+    | 'store-release'
+    | 'edit-artifact'
+    | 'revert-artifact';
 
 /** A redo/render recipe: the argv is resolved server-side by the same function that executes it. */
 export interface Recipe {
@@ -325,7 +327,8 @@ export type AttentionKind =
     | 'window-not-run'
     | 'target-failed'
     | 'provenance-mismatch'
-    | 'safety-flag';
+    | 'safety-flag'
+    | 'artifact-edited';
 
 /** One thing that needs the operator, with the evidence that raised it and its recipes. */
 export interface AttentionItem {
@@ -396,6 +399,13 @@ export interface DaySafety {
     /** The judge verdict (`PASS` | `FAIL` | …), when the judge ran and recorded one. */
     judge: string | null;
     unknownReason: string | null;
+    /**
+     * True when the reviewed draft no longer matches what the verdict was recorded against, or an
+     * edit is pending that the digest cannot see yet (G84). A stale verdict is never a pass.
+     */
+    stale?: boolean;
+    /** Why it reads stale: the recorded digest moved, or the article body is newer than content.json. */
+    staleReason?: string | null;
 }
 
 /** One `actions.jsonl` line: a preview, a launch, an exit or a refusal, append-only (§6). */
@@ -436,6 +446,32 @@ export interface DailyDigest {
     /** Figure → the artifact path or run id that supplied it (R2). */
     sources: Record<string, string>;
     diagnostics: BoardDiagnostic[];
+}
+
+/**
+ * One editable draft of a day, as the Generation tab's editor loads it (G84/0445).
+ *
+ * The reader computes the sha and both argv recipes server-side — the browser never derives a
+ * digest and never builds a command, so a copied recipe and a clicked action stay byte-identical.
+ */
+export interface DayArtifactDocument {
+    schemaVersion: 1;
+    day: string;
+    artifact: 'article' | 'script';
+    /** The draft's path inside the day directory, rendered as text and never as a link. */
+    path: string;
+    /** The current bytes, or null when the draft does not exist yet. */
+    text: string | null;
+    /** sha256 of `text`; null when there is no text to hash. */
+    sha256: string | null;
+    /** The argv that would edit this draft against its current sha. */
+    recipe: Recipe | null;
+    /** The argv that reverts it, present only when a backup exists. */
+    revertRecipe: Recipe | null;
+    /** The newest backup's file name, when one exists. */
+    backup: string | null;
+    /** Whether `board.actions.enabled` allows launching (false renders recipes only). */
+    editable: boolean;
 }
 
 /** One row of the History view: a day's health and its per-step durations. */

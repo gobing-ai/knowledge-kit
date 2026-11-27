@@ -1,0 +1,12 @@
+{
+    "schemaVersion": 1,
+    "workflow": "kk-news-generate",
+    "projectPath": "__PROJECT_ROOT__",
+    "runId": "kk-news-generate-20261124-1",
+    "workspacePath": "__WORKS_ROOT__/kk-news-generate/20261124",
+    "stamp": "20261124",
+    "capturedAt": "2026-11-24T05:06:00.000Z",
+    "settings": {
+        "run_date": "20261124"
+    }
+}

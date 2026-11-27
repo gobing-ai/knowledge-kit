@@ -2,7 +2,7 @@
 kind: design
 title: Daily AI Voice ops console
 feature: G83
-status: design
+status: shipped
 date: 2026-11-25
 adr: ADR-035 amendment 2026-11-25
 ---
@@ -169,7 +169,7 @@ Exact override flags per `rerender-step` verb are fixed in the implementing task
 - Every refusal (disabled, unknown kind, bad origin/host, bad token, lock held, missing typed
   confirmation) launches nothing and is audited (R11).
 
-## 7. Verification
+## 7. Verification (shipped, task 0443)
 
 - One repeatable E2E: fixture works root with days 20261115–20261125 (one day mirroring the
   2026-11-25 shipinhao `effect: none` failure, one engine-fallback day, one window with a plan but
@@ -179,6 +179,14 @@ Exact override flags per `rerender-step` verb are fixed in the implementing task
   whose child is a stub `kk` on PATH; plus `kk news digest` markdown/JSON equality against the
   Today DTO (R4, R13).
 - Action-plane refusal matrix exercised over HTTP against the same reader (R11).
+
+As built: `apps/board/tests/daily-voice-console.e2e.test.ts` (`bun test apps/board/tests/
+daily-voice-console.e2e.test.ts`), fixture at `apps/board/tests/fixtures/daily-voice-days/`,
+artifacts committed under `apps/board/tests/artifacts/daily-voice-console/`. Two notes the run
+settled: the fixture's capture records carry `__PROJECT_ROOT__`/`__WORKS_ROOT__` placeholders
+(a capture record names an absolute workspace path, so a committed one cannot be literal), and the
+day routes carry `board.actions.enabled` into the digest — without it the console renders
+recipes-only even when the plane is on.
 
 ## 8. Delivery slices
 
@@ -196,7 +204,7 @@ Exact override flags per `rerender-step` verb are fixed in the implementing task
 overrides. Editing script/article text before a re-render is G84 (§10); pushing the digest is
 G85 (§11). Both build on the shipped G83 slices and add no new reader route family.
 
-## 10. In-board artifact editor (G84, planned 2026-11-25)
+## 10. In-board artifact editor (G84, shipped — 0444 backend, 0445 Board editor)
 
 **Chosen:** a CLI verb owns the write, and the action plane launches it. Reason: this keeps the
 ADR-035 amendment invariant "the endpoint only launches existing verbs", and it gives the editor a
@@ -232,12 +240,18 @@ That would be a second write path outside the verb layer, with no CLI parity.
   - The new attention rule `artifact-edited` (warn) emits recipes in order:
     - article: `rerender-step generate-render`, then `generate-from-node safety`;
     - script: `generate-from-node safety`, then `rerender-step generate-voice`.
-- **Premise to verify in the implementing task:** whether `generate-voice`'s whole-document cache
-  (`wholeDocCache`, `daily-stages.ts:1687`) is invalidated by a changed voicescript. If it is not,
-  the script recipe must name the cache removal explicitly. It must never be left silent.
-- **UI:** a Generation-tab textarea with a diff preview, and no editor dependency.
+- **Settled premise (0444):** the whole-document cache is irrelevant here — the daily voice path
+  always runs per-section, each section's cache hash includes its text, and the joined final is reused
+  only on an exact `metadata.sectionHashes` match, so an edited `segments[].text` re-synthesizes that
+  section with no code change and the script recipe needs no cache-removal line.
+- **UI (as built, 0445):** a Generation-tab textarea per artifact with the server-computed diff, no
+  editor dependency. The editor loads `GET /api/days/<day>/artifacts/<a>` (bytes, sha, both argv
+  recipes), previews and confirms through the plane, refetches the digest exactly once on success,
+  and keeps the draft across a `409` with a "reload current bytes" action. Evidence:
+  `apps/board/tests/daily-voice/editor.e2e.test.ts` (renders and `actions.jsonl` under
+  `docs/tasks/evidence/0445/20261125/`).
 
-## 11. Digest push notification (G85, planned 2026-11-25)
+## 11. Digest push notification (G85, shipped — task 0446)
 
 **Chosen:** a single generic HTTPS webhook. Reason: one transport covers ntfy, Slack-compatible
 and Telegram-bot endpoints with `fetch` alone. **Rejected:**
@@ -258,3 +272,14 @@ and Telegram-bot endpoints with `fetch` alone. **Rejected:**
     and the node itself exits 0.
 - **Timeout:** 10 s, with no retry inside the run. The next trigger, or a manual `--push`, is the
   retry.
+
+**As built (0446).** `apps/cli/src/news-digest-push.ts` owns the transport; `kk news digest --push`
+is the operator surface, and the launch supervisor (`apps/cli/src/launch.ts`) calls the same module
+after its terminal receipt for every generate and every publish-window launch. Two refinements the
+implementation forced: plaintext `http` is accepted **only for a loopback host** (a local stub must be
+possible, and those bytes never leave the machine — every other plaintext URL is refused so a token
+cannot cross the wire unencrypted), and both the digest body and the receipt sha256 come from the
+renderer's own bytes, so a second formatter can never drift. Evidence:
+`apps/cli/tests/news-digest-push.test.ts` (loopback `Bun.serve` stub: body equality, skip-on-unchanged,
+`update: true`, 500 and timeout paths, redaction) and `apps/cli/tests/launch.test.ts` (the hook on
+done/failed both workflows, and a throwing push leaving the receipt byte-identical).

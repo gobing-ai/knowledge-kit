@@ -1,0 +1,17 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261125-1",
+    "planDigest": "33135b4e8ff3e9256eca8693ca4863e3573d916d611e3f797b79e0a84a7be087",
+    "payloadDigest": "7b90d0dabcc5403f7a4ff4b4aa371503572155edfbd83a54fd3d6ec8db516225",
+    "plugin": "video",
+    "profile": "default",
+    "mode": "live",
+    "attemptId": "video.bilibili-1",
+    "status": "succeeded",
+    "effect": "none",
+    "target": "video.bilibili",
+    "window": "cn-peak",
+    "dummy": true,
+    "startedAt": "2026-11-25T09:00:00.000Z",
+    "finishedAt": "2026-11-25T09:00:05.000Z"
+}

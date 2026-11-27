@@ -1,0 +1,9 @@
+{"step":"prepare","startedAt":"2026-11-16T04:30:00.000Z","endedAt":"2026-11-16T04:30:10.000Z"}
+{"step":"collect","startedAt":"2026-11-16T04:30:10.000Z","endedAt":"2026-11-16T04:35:00.000Z"}
+{"step":"curate","startedAt":"2026-11-16T04:35:00.000Z","endedAt":"2026-11-16T04:39:00.000Z"}
+{"step":"plan","startedAt":"2026-11-16T04:39:00.000Z","endedAt":"2026-11-16T04:40:00.000Z"}
+{"step":"qc-content","startedAt":"2026-11-16T04:40:00.000Z","endedAt":"2026-11-16T04:41:00.000Z"}
+{"step":"generate","startedAt":"2026-11-16T04:41:00.000Z","endedAt":"2026-11-16T04:48:00.000Z"}
+{"step":"voice","startedAt":"2026-11-16T04:48:00.000Z","endedAt":"2026-11-16T04:48:40.000Z"}
+{"step":"safety","startedAt":"2026-11-16T04:49:00.000Z","endedAt":"2026-11-16T04:49:40.000Z"}
+{"step":"run-report","startedAt":"2026-11-16T04:49:40.000Z","endedAt":"2026-11-16T04:50:00.000Z"}

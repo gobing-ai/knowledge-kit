@@ -8,7 +8,7 @@ import type {
 } from '@gobing-ai/kk-board/contracts';
 import { ITEM_DECISION_IDS } from '@gobing-ai/kk-store';
 import { createNodeFileSystem, type FileSystem } from '@gobing-ai/ts-runtime';
-import { type ActionPlane, defaultActionPlane } from './action-plane';
+import { type ActionPlane, actionsEnabledFromConfig, defaultActionPlane } from './action-plane';
 import { captureRecordPath, markerPath, readCaptureRecord, readOwnerMarker } from './capture';
 import {
     type ArtifactObservation,
@@ -29,7 +29,7 @@ import {
     storeSelections,
 } from './collect-store';
 import { dagProducerState, projectDailyResults, sanitizeFunnelArtifact } from './daily-voice';
-import { isDayKey, listDays, MAX_DAY_RANGE, projectDay } from './day';
+import { dayArtifact, isDayKey, isEditableArtifact, listDays, MAX_DAY_RANGE, projectDay } from './day';
 import { itcResultSpecs, projectItcResults } from './itc';
 import {
     type ArtifactSpec,
@@ -46,11 +46,13 @@ import {
 import { projectNewsResults } from './news';
 
 /**
- * The read-only loopback Board reader.
+ * The read-only Board API.
  *
- * It is knowledge-kit's own HTTP boundary: it binds 127.0.0.1, accepts only the configured
- * exact Board origin, and answers only allowlisted run-bound artifacts. Project/run identity
- * is proven against the Board's public HTTP APIs — a browser assertion is never authorization.
+ * Two surfaces over one routing body: `createBoardHandler` is a pure Web-Fetch handler that the
+ * Spur server mounts at `/api/modules/<id>/*` (the native module API, ADR-035 amendment), and
+ * `createBoardReader` wraps it in a loopback `Bun.serve` for the CLI's own tests and the legacy
+ * `kk board serve`. Identity is proven against the Board's own HTTP APIs — a browser assertion is
+ * never authorization.
  */
 
 /** The default reader port (§4). */
@@ -61,6 +63,12 @@ export { MAX_PREVIEW_BYTES };
 
 /** Minimal fetch signature (satisfied by the platform `fetch`), injectable for tests. */
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/** The native module API handler's context (`@gobing-ai/spur/board` `BoardModuleApiContext`). */
+export interface BoardHandlerContext {
+    /** Absolute path of the project whose server is dispatching the request. */
+    readonly projectPath?: string;
+}
 
 /** Reader options. */
 export interface BoardReaderOptions {
@@ -231,26 +239,42 @@ export function mimeFor(kind: ArtifactSpec['kind'], declared?: string): string {
     }
 }
 
+/** What the routing body needs: no socket, no port — the mount decides those. */
+export interface BoardRoutingOptions {
+    /** Pin the Board origin; omitted, each request's own origin is the Board. */
+    boardOrigin?: string;
+    projectPath?: string;
+    fs?: FileSystem;
+    fetchImpl?: FetchLike;
+    actionPlane?: (deps: { projectPath: string; fs: FileSystem; boardOrigin: string }) => Promise<ActionPlane>;
+}
+
 /**
- * Create and start the reader. A bind collision or a non-loopback origin throws immediately
- * (fail loud) instead of silently serving on a surprising address.
+ * One routing body for both surfaces: the loopback reader below, and the native module API the
+ * Spur server mounts at `/api/modules/<id>/*` (`createBoardHandler`).
  */
-export function createBoardReader(options: BoardReaderOptions): BoardReader {
-    if (!isLoopbackOrigin(options.boardOrigin)) {
-        throw new Error(`--board-origin must be a loopback http origin, got '${options.boardOrigin}'`);
-    }
-    const port = options.port ?? DEFAULT_BOARD_PORT;
-    if (!Number.isInteger(port) || port < 0 || port > 65535) {
-        throw new Error(`--port must be an integer 0-65535, got '${port}'`);
-    }
+export function createBoardRouting(options: BoardRoutingOptions): {
+    handle: (request: Request, mountedOrigin?: string) => Promise<Response>;
+} {
     const fs = options.fs ?? createNodeFileSystem();
     const doFetch: FetchLike = options.fetchImpl ?? fetch;
     const projectPath = options.projectPath ?? safeRealPath(fs, process.cwd()) ?? process.cwd();
-    const boardOrigin = options.boardOrigin.replace(/\/+$/, '');
+    const configuredOrigin = options.boardOrigin?.replace(/\/+$/, '');
 
-    async function boardGet(path: string): Promise<{ status: number; body: unknown } | null> {
+    /**
+     * The Board origin this request belongs to.
+     *
+     * Native mounting (`/api/modules/<id>/*`) runs inside the project's own server, so a request's
+     * own origin IS the Board's; a pinned `boardOrigin` keeps the legacy loopback reader and the
+     * unit tests explicit.
+     */
+    function originOf(request: Request): string {
+        return configuredOrigin ?? new URL(request.url).origin;
+    }
+
+    async function boardGet(path: string, selfOrigin: string): Promise<{ status: number; body: unknown } | null> {
         try {
-            const response = await doFetch(`${boardOrigin}${path}`, { headers: { accept: 'application/json' } });
+            const response = await doFetch(`${selfOrigin}${path}`, { headers: { accept: 'application/json' } });
             if (!response.ok) return { status: response.status, body: null };
             return { status: response.status, body: await response.json() };
         } catch {
@@ -258,7 +282,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         }
     }
 
-    async function authorize(workflow: WorkflowName, runId: string): Promise<Authorization> {
+    async function authorize(workflow: WorkflowName, runId: string, selfOrigin: string): Promise<Authorization> {
         const record = await readCaptureRecord(fs, projectPath, runId);
         if (record === null) {
             // §9: a record that exists but does not parse is malformed stored evidence (422),
@@ -286,7 +310,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 },
             };
         }
-        const authorized = await authorizeRun(workflow, runId);
+        const authorized = await authorizeRun(workflow, runId, selfOrigin);
         if (!authorized.ok) return authorized;
         return { ok: true, record, detail: authorized.detail, diagnostics: authorized.diagnostics };
     }
@@ -295,8 +319,8 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
      * The project + Spur run-detail half of {@link authorize}, WITHOUT a capture record: the Collect
      * store views serve runs that predate capture (design §3). Every refusal code is the shipped one.
      */
-    async function authorizeRun(workflow: WorkflowName, runId: string): Promise<RunAuthorization> {
-        const project = await boardGet('/api/project');
+    async function authorizeRun(workflow: WorkflowName, runId: string, selfOrigin: string): Promise<RunAuthorization> {
+        const project = await boardGet('/api/project', selfOrigin);
         if (project === null) {
             return {
                 ok: false,
@@ -320,7 +344,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 },
             };
         }
-        const detail = await boardGet(`/api/runs/${encodeURIComponent(runId)}`);
+        const detail = await boardGet(`/api/runs/${encodeURIComponent(runId)}`, selfOrigin);
         if (detail === null) {
             return {
                 ok: false,
@@ -389,6 +413,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         workflow: WorkflowName,
         runId: string,
         specs: readonly ArtifactSpec[] = artifactsFor(workflow),
+        selfOrigin = '',
     ): Promise<{
         states: Map<string, ProducerState>;
         diagnostics: BoardDiagnostic[];
@@ -400,7 +425,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         let progress: unknown = null;
         const stateSpecs = specs.filter((spec) => spec.producerActionKey !== undefined);
         if (stateSpecs.length > 0) {
-            const response = await boardGet(`/api/runs/${encodeURIComponent(runId)}/progress`);
+            const response = await boardGet(`/api/runs/${encodeURIComponent(runId)}/progress`, selfOrigin);
             if (response === null || response.status !== 200) {
                 return {
                     states,
@@ -424,7 +449,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         }
         const nodeSpecs = specs.filter((spec) => spec.producerActionKey === undefined);
         if (nodeSpecs.length > 0) {
-            const detail = await boardGet(`/api/runs/${encodeURIComponent(runId)}`);
+            const detail = await boardGet(`/api/runs/${encodeURIComponent(runId)}`, selfOrigin);
             const list = detail === null ? undefined : asRecord(detail.body)?.actions;
             if (Array.isArray(list)) actions.push(...list);
             for (const spec of nodeSpecs) states.set(spec.producerNode, dagProducerState(actions, spec.producerNode));
@@ -453,8 +478,8 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return observation.state === 'present' ? observation.text : undefined;
     }
 
-    async function resultsFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
-        const authorized = await authorize(workflow, runId);
+    async function resultsFor(workflow: WorkflowName, runId: string, selfOrigin: string): Promise<BoardResponse> {
+        const authorized = await authorize(workflow, runId, selfOrigin);
         if (!authorized.ok) return authorized.response;
         const { record, detail } = authorized;
         const baseSpecs = artifactsFor(workflow);
@@ -464,7 +489,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         // still exposing real publisher results.
         const resultSpecs = family === 'kk-itc' ? itcResultSpecs(await planTextOf(record, baseSpecs)) : [];
         const allSpecs = [...baseSpecs, ...resultSpecs.map((entry) => entry.spec)];
-        const evidence = await producerEvidence(workflow, runId, allSpecs);
+        const evidence = await producerEvidence(workflow, runId, allSpecs, selfOrigin);
         const observations = new Map<string, ArtifactObservation>();
         for (const spec of allSpecs) {
             observations.set(spec.id, await observe(record, spec));
@@ -502,8 +527,8 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: results };
     }
 
-    async function configFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
-        const authorized = await authorize(workflow, runId);
+    async function configFor(workflow: WorkflowName, runId: string, selfOrigin: string): Promise<BoardResponse> {
+        const authorized = await authorize(workflow, runId, selfOrigin);
         if (!authorized.ok) return authorized.response;
         const { record, detail } = authorized;
         void detail;
@@ -528,8 +553,8 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
      * explicit uncaptured diagnostic explaining that fixed artifacts are unknown, never invented.
      * Captured runs answer the full projection by reusing `resultsFor` verbatim.
      */
-    async function evidenceFor(workflow: WorkflowName, runId: string): Promise<BoardResponse> {
-        const authorizedRun = await authorizeRun(workflow, runId);
+    async function evidenceFor(workflow: WorkflowName, runId: string, selfOrigin: string): Promise<BoardResponse> {
+        const authorizedRun = await authorizeRun(workflow, runId, selfOrigin);
         if (!authorizedRun.ok) return authorizedRun.response;
         const { detail } = authorizedRun;
         const run = {
@@ -568,7 +593,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 },
             };
         }
-        const results = await resultsFor(workflow, runId);
+        const results = await resultsFor(workflow, runId, selfOrigin);
         if (results.status !== 200) return results;
         return {
             status: 200,
@@ -594,6 +619,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         runId: string,
         artifactId: string,
         rangeHeader: string | null,
+        selfOrigin: string,
     ): Promise<BoardResponse> {
         const spec = artifactById(workflow, artifactId);
         if (spec === undefined) {
@@ -602,10 +628,10 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 body: { code: 'board.artifact.unknown', message: `Unknown artifact '${artifactId}'.` },
             };
         }
-        const authorized = await authorize(workflow, runId);
+        const authorized = await authorize(workflow, runId, selfOrigin);
         if (!authorized.ok) return authorized.response;
         const { record, detail } = authorized;
-        const evidence = await producerEvidence(workflow, runId);
+        const evidence = await producerEvidence(workflow, runId, artifactsFor(workflow), selfOrigin);
         const markerBefore = await markerState(record);
         const observed = await observe(record, spec);
         const availability = resolveAvailability(
@@ -703,9 +729,18 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: await storeChannels({ projectPath, fs }, query) };
     }
 
+    /**
+     * The action plane's configured switch, read once.
+     *
+     * The digest carries it so the console can render recipes-only with a reason when launches are
+     * off (G83 §6): reading it here keeps the UI's answer and the plane's own refusal derived from
+     * the same `board.actions.enabled`.
+     */
+    const actionsEnabled = actionsEnabledFromConfig(fs);
+
     /** The day digest (G83): one file-backed projection, no Board call. */
     async function dayFor(day: string): Promise<BoardResponse> {
-        const digest = await projectDay({ projectPath, fs }, day);
+        const digest = await projectDay({ projectPath, fs, actionsEnabled: await actionsEnabled }, day);
         if ('notFound' in digest) {
             return {
                 status: 404,
@@ -718,22 +753,62 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return { status: 200, body: digest };
     }
 
+    /**
+     * One draft of a day, for the Generation tab's editor (G84/0445).
+     *
+     * Read-only: the write is `POST /api/actions/edit-artifact`, which launches `kk news edit`. The
+     * document carries the sha and both argv recipes computed server-side, so the editor never
+     * derives a digest or assembles a command.
+     */
+    async function dayArtifactFor(day: string, artifact: string): Promise<BoardResponse> {
+        if (!isEditableArtifact(artifact)) {
+            return {
+                status: 400,
+                body: {
+                    code: 'board.day.artifact.unknown',
+                    message: `An editable artifact is one of article|script, got '${artifact}'.`,
+                },
+            };
+        }
+        const document = await dayArtifact({ projectPath, fs, actionsEnabled: await actionsEnabled }, day, artifact);
+        if ('notFound' in document) {
+            return {
+                status: 404,
+                body: {
+                    code: 'board.day.not-found',
+                    message: `No kk-news-generate day directory exists at '${document.lookedUp}'.`,
+                },
+            };
+        }
+        return { status: 200, body: document };
+    }
+
     /** The bounded day list (G83): History reads this, one projection per day. */
     async function daysFor(query: { from: string; until: string }): Promise<BoardResponse> {
-        return { status: 200, body: await listDays({ projectPath, fs }, query.from, query.until) };
+        return {
+            status: 200,
+            body: await listDays({ projectPath, fs, actionsEnabled: await actionsEnabled }, query.from, query.until),
+        };
     }
 
     /**
      * The guarded action plane (G83/0442). Off by default: the config switch decides, and every
      * refusal is audited before anything is launched.
      */
-    const plane: Promise<ActionPlane> =
-        options.actionPlane === undefined
-            ? defaultActionPlane({ projectPath, fs, boardOrigin })
-            : options.actionPlane({ projectPath, fs, boardOrigin });
+    const planes = new Map<string, Promise<ActionPlane>>();
+    const planeFor = (origin: string): Promise<ActionPlane> => {
+        const existing = planes.get(origin);
+        if (existing !== undefined) return existing;
+        const created =
+            options.actionPlane === undefined
+                ? defaultActionPlane({ projectPath, fs, boardOrigin: origin })
+                : options.actionPlane({ projectPath, fs, boardOrigin: origin });
+        planes.set(origin, created);
+        return created;
+    };
 
     /** POST `/api/actions/<kind>` — the reader's only write route. */
-    async function actionFor(request: Request): Promise<Response> {
+    async function actionFor(request: Request, selfOrigin: string): Promise<Response> {
         const kind = decodeURIComponent(/^\/api\/actions\/([^/]+)$/.exec(new URL(request.url).pathname)?.[1] ?? '');
         let body: unknown = null;
         try {
@@ -741,7 +816,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         } catch {
             body = null;
         }
-        const handler = await plane;
+        const handler = await planeFor(selfOrigin);
         const answer = await handler.handle({
             kind,
             origin: request.headers.get('origin'),
@@ -752,7 +827,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         return Response.json(answer.body, {
             status: answer.status,
             headers: {
-                'access-control-allow-origin': boardOrigin,
+                'access-control-allow-origin': selfOrigin,
                 'access-control-allow-methods': 'POST, OPTIONS',
                 'access-control-allow-headers': 'content-type, x-kk-action',
                 vary: 'origin',
@@ -760,13 +835,15 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
         });
     }
 
-    const server = Bun.serve({
-        hostname: '127.0.0.1',
-        port,
-        fetch: async (request) => {
+    /** The Web-Fetch handler every route lives in (the native module API mounts exactly this). */
+    const handle = async (request: Request, mountedOrigin?: string): Promise<Response> => {
+        // Native mounting: the handler runs inside the project's own server, so the Board origin is
+        // the request's own origin unless a caller pinned one (the legacy loopback reader did).
+        const selfOrigin = mountedOrigin ?? originOf(request);
+        {
             const origin = request.headers.get('origin');
-            const originMatches = origin === null || isMatchingBoardOrigin(origin, boardOrigin);
-            const allowedOrigin = origin !== null && originMatches ? origin : boardOrigin;
+            const originMatches = origin === null || isMatchingBoardOrigin(origin, selfOrigin);
+            const allowedOrigin = origin !== null && originMatches ? origin : selfOrigin;
             const cors: Record<string, string> = {
                 'access-control-allow-origin': allowedOrigin,
                 'access-control-allow-methods': 'GET, HEAD, OPTIONS',
@@ -792,7 +869,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     'access-control-allow-headers': 'content-type, x-kk-action',
                 };
                 if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: actionCors });
-                if (request.method === 'POST') return actionFor(request);
+                if (request.method === 'POST') return actionFor(request, selfOrigin);
                 return jsonResponse(
                     { code: 'board.method.refused', message: 'The action plane answers POST and OPTIONS only.' },
                     405,
@@ -810,6 +887,18 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
             }
             // The day digest routes (G83 task 0439) are matched before the no-query-parameter
             // gate: like the store views they declare their own parameters.
+            const dayArtifactMatch = /^\/api\/days\/([^/]+)\/artifacts\/([^/]+)$/.exec(path);
+            if (dayArtifactMatch !== null) {
+                const day = decodeURIComponent(dayArtifactMatch[1] ?? '');
+                const artifact = decodeURIComponent(dayArtifactMatch[2] ?? '');
+                if (!isDayKey(day)) {
+                    return jsonResponse({ code: 'board.day.invalid', message: 'A day is a YYYYMMDD key.' }, 400, cors);
+                }
+                const refused = parseQuery(url.searchParams);
+                if (refused !== null) return jsonResponse(refused.body, refused.status, cors);
+                const response = await dayArtifactFor(day, artifact);
+                return jsonResponse(response.body, response.status, cors);
+            }
             const dayMatch = /^\/api\/days\/([^/]+)$/.exec(path);
             if (path === '/api/days' || dayMatch !== null) {
                 if (dayMatch !== null) {
@@ -883,7 +972,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                         return jsonResponse(identified.response.body, identified.response.status, cors);
                     const query = parseSelectionsQuery(url.searchParams);
                     if ('response' in query) return jsonResponse(query.response.body, query.response.status, cors);
-                    const authorized = await authorizeRun(identified.workflow, identified.runId);
+                    const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
                     if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
                     const response = await storeSelectionsFor({ ...query.query, runId: identified.runId });
                     return jsonResponse(response.body, response.status, cors);
@@ -900,7 +989,7 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                 const query = runStoreItemsMatch === null ? null : parseItemsQuery(url.searchParams);
                 if (query !== null && 'response' in query)
                     return jsonResponse(query.response.body, query.response.status, cors);
-                const authorized = await authorizeRun(identified.workflow, identified.runId);
+                const authorized = await authorizeRun(identified.workflow, identified.runId, selfOrigin);
                 if (!authorized.ok) return jsonResponse(authorized.response.body, authorized.response.status, cors);
                 const response =
                     query === null
@@ -921,10 +1010,10 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     return jsonResponse(identified.response.body, identified.response.status, cors);
                 const response =
                     verb === 'results'
-                        ? await resultsFor(identified.workflow, identified.runId)
+                        ? await resultsFor(identified.workflow, identified.runId, selfOrigin)
                         : verb === 'config'
-                          ? await configFor(identified.workflow, identified.runId)
-                          : await evidenceFor(identified.workflow, identified.runId);
+                          ? await configFor(identified.workflow, identified.runId, selfOrigin)
+                          : await evidenceFor(identified.workflow, identified.runId, selfOrigin);
                 return jsonResponse(response.body, response.status, cors);
             }
             if (artifactMatch !== null) {
@@ -937,16 +1026,53 @@ export function createBoardReader(options: BoardReaderOptions): BoardReader {
                     identified.runId,
                     decodeURIComponent(artifactId ?? ''),
                     request.headers.get('range'),
+                    selfOrigin,
                 );
                 return artifactResponse(response, cors);
             }
             return jsonResponse({ code: 'board.route.unknown', message: 'Unknown reader route.' }, 404, cors);
-        },
-    });
+        }
+    };
 
+    return { handle };
+}
+
+/**
+ * The pure Web-Fetch handler the Spur server mounts at `/api/modules/<id>/*` (ADR-035 amendment).
+ *
+ * The mount strips its own prefix, so the handler sees the module-relative path — the same routes
+ * the loopback reader serves. Without a pinned `boardOrigin` the request's own origin is the Board,
+ * which is what makes the module API same-origin by construction.
+ */
+export function createBoardHandler(options: Omit<BoardRoutingOptions, 'boardOrigin'> = {}): {
+    fetch: (request: Request, ctx?: { projectPath?: string }) => Promise<Response>;
+} {
+    const routing = createBoardRouting(options);
+    return { fetch: (request: Request) => routing.handle(request) };
+}
+
+/**
+ * The loopback server: the CLI's own board test suites use it.
+ *
+ * It is a wrapper over the routing body, so no route exists only here — the retired
+ * `kk board serve` subcommand was a caller, never a behaviour.
+ */
+export function createBoardReader(options: BoardReaderOptions): BoardReader {
+    if (!isLoopbackOrigin(options.boardOrigin)) {
+        throw new Error(`--board-origin must be a loopback http origin, got '${options.boardOrigin}'`);
+    }
+    const port = options.port ?? DEFAULT_BOARD_PORT;
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error(`--port must be an integer 0-65535, got '${port}'`);
+    }
+    const routing = createBoardRouting(options);
+    const server = Bun.serve({
+        hostname: '127.0.0.1',
+        port,
+        fetch: (request) => routing.handle(request, options.boardOrigin),
+    });
     const boundPort = server.port ?? port;
-    const readerUrl = `http://127.0.0.1:${boundPort}`;
-    return { url: readerUrl, port: boundPort, stop: () => void server.stop(true) };
+    return { url: `http://127.0.0.1:${boundPort}`, port: boundPort, stop: () => void server.stop(true) };
 }
 
 /** The one workflow whose store views this reader serves (design §3). */

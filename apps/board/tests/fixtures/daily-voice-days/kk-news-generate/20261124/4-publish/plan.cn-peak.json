@@ -1,0 +1,28 @@
+{
+    "schemaVersion": 1,
+    "window": "cn-peak",
+    "bundleRunId": "kk-news-generate-20261124-1-bundle",
+    "parentRunId": "kk-news-generate-20261124-1",
+    "presetName": "daily-ai-voice",
+    "presetDigest": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "runDate": "20261124",
+    "excluded": [],
+    "rows": [
+        {
+            "id": "video.shipinhao",
+            "plugin": "video",
+            "operation": "clip",
+            "variant": "zh",
+            "tier": 1,
+            "window": "cn-peak",
+            "mode": "dummy",
+            "required": true,
+            "approval": "none",
+            "status": "planned",
+            "transport": "fanout",
+            "profile": "default",
+            "payloadPath": "4-publish/payloads/video.shipinhao.json",
+            "payloadDigest": "6d5a4685de7286af0d7b4097d6309a51ca38e467c5d7dfc686d806e3bf91a2f5"
+        }
+    ]
+}

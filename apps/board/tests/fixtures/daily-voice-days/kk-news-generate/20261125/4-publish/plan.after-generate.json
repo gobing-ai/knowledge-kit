@@ -1,0 +1,44 @@
+{
+    "schemaVersion": 1,
+    "window": "after-generate",
+    "bundleRunId": "kk-news-generate-20261125-1-bundle",
+    "parentRunId": "kk-news-generate-20261125-1",
+    "presetName": "daily-ai-voice",
+    "presetDigest": "sha256:0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+    "runDate": "20261125",
+    "excluded": [],
+    "rows": [
+        {
+            "id": "podcast.xiaoyuzhou",
+            "plugin": "podcast",
+            "operation": "episode",
+            "variant": "zh",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "live",
+            "required": true,
+            "approval": "none",
+            "status": "planned",
+            "transport": "fanout",
+            "profile": "default",
+            "payloadPath": "4-publish/payloads/podcast.xiaoyuzhou.json",
+            "payloadDigest": "1204cf0e7b0d7efffd9cdfc0c063529f549d0d455125e1e3b0ab09faa7c99fd5"
+        },
+        {
+            "id": "video.shipinhao",
+            "plugin": "video",
+            "operation": "clip",
+            "variant": "zh",
+            "tier": 1,
+            "window": "after-generate",
+            "mode": "live",
+            "required": true,
+            "approval": "none",
+            "status": "planned",
+            "transport": "fanout",
+            "profile": "default",
+            "payloadPath": "4-publish/payloads/video.shipinhao.json",
+            "payloadDigest": "2c04e85506de3292bfbd03e75fc0169b75dea9d6f0e697a67cee3c1a0579742f"
+        }
+    ]
+}

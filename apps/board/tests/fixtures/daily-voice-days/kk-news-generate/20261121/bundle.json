@@ -1,0 +1,20 @@
+{
+    "schemaVersion": 1,
+    "runId": "kk-news-generate-20261121-1-bundle",
+    "runDate": "20261121",
+    "parentRunId": null,
+    "episode": {
+        "title": "Async runtimes compared"
+    },
+    "variants": {
+        "zh": {
+            "audio": "30-variants/zh/voice.mp3"
+        },
+        "en": {
+            "audio": "30-variants/en/voice.mp3"
+        }
+    },
+    "safety": {
+        "status": "pass"
+    }
+}

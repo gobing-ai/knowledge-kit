@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
 import type {
     AttentionItem,
     BoardDiagnostic,
     DailyActionLine,
     DailyDigest,
+    DayArtifactDocument,
     DayAttempt,
     DayGeneration,
     DayNodeDuration,
@@ -16,7 +18,7 @@ import type {
 import type { FileSystem } from '@gobing-ai/ts-runtime';
 import { PublishWindowSchema } from '../publish-core';
 import { parseActionLog } from './action-plane';
-import { DAY_PATTERN, recipeOf } from './actions';
+import { DAY_PATTERN, EDIT_ARTIFACTS, type EditableArtifactId, editArtifactRelative, recipeOf } from './actions';
 import { BOARD_RUNS_REL, readCaptureRecord } from './capture';
 import { observeRelative } from './collect';
 import { bundleEvidence, publishingEvidence } from './news';
@@ -299,14 +301,131 @@ function todayKey(): string {
     return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * The safety staleness check (G84, task 0444 — design §10 "Safety re-arm").
+ *
+ * Mirrors `draftDigest` in `plugins/kk/scripts/safety-artifact-check.ts:199-207` — sha256 over the
+ * article `_06_article_content.json` bytes, a NUL, the voicescript bytes, a NUL — because the stage
+ * body cannot be imported across the `apps/cli` ↔ `plugins/kk/scripts` boundary. The mirror is
+ * pinned by an executable parity test rather than by comment.
+ *
+ * Two cases make a recorded verdict stale, and the second is why a digest comparison alone is not
+ * enough: `generate-render` re-derives the article from `_06_article-write_body.md` whenever that
+ * body is newer than `_06_article_content.json` (`daily-stages.ts:1134-1141`), so a pending article
+ * edit leaves the digest untouched until the re-render happens.
+ */
+async function safetyStaleness(
+    fs: FileSystem,
+    dir: string,
+    day: string,
+): Promise<{ stale: boolean; reason: string | null; articlePending: boolean; scriptEdited: boolean }> {
+    const hash = createHash('sha256');
+    const articlePath = join(dir, '22-article', `${day}_06_article_content.json`);
+    const scriptPath = join(dir, '24-script', `${day}_08_script_voicescript.yaml`);
+    const bodyPath = join(dir, '22-article', `${day}_06_article-write_body.md`);
+    const requestPath = join(dir, '24-script', `${day}_09_safety-review_request.json`);
+
+    let digest: string | null = null;
+    try {
+        const article = await fs.readFile(articlePath);
+        const script = await fs.readFile(scriptPath);
+        digest = hash
+            .update(Buffer.from(article, 'utf8'))
+            .update('\0')
+            .update(Buffer.from(script, 'utf8'))
+            .update('\0')
+            .digest('hex');
+    } catch {
+        digest = null;
+    }
+    let recorded: string | null = null;
+    try {
+        const request = parseJsonOrNull(await fs.readFile(requestPath));
+        recorded = stringOrNull(request?.digest);
+    } catch {
+        recorded = null;
+    }
+    const scriptEdited = digest !== null && recorded !== null && digest !== recorded;
+
+    let articlePending = false;
+    try {
+        const body = await fs.stat(bodyPath);
+        const content = await fs.stat(articlePath);
+        articlePending = body !== null && content !== null && body.mtimeMs > content.mtimeMs;
+    } catch {
+        articlePending = false;
+    }
+
+    if (articlePending) return { stale: true, reason: 'article newer than content.json', articlePending, scriptEdited };
+    if (scriptEdited)
+        return { stale: true, reason: 'recorded digest no longer matches the draft', articlePending, scriptEdited };
+    return { stale: false, reason: null, articlePending, scriptEdited };
+}
+
+/**
+ * The `artifact-edited` attention items (design §10): an edited draft re-arms the safety gate, and
+ * the recipes name the steps in the order that re-certifies the day.
+ *
+ * An article edit needs the re-render first (it rewrites content.json, which the digest covers), so
+ * the safety run that follows reviews the new prose. A script edit needs no re-render — the
+ * voicescript is write-once — so safety runs first and only the audio is re-synthesized.
+ */
+function artifactEditedItems(input: {
+    day: string;
+    dayDir: string;
+    runId: string | null;
+    articlePending: boolean;
+    scriptEdited: boolean;
+    reason: string | null;
+}): AttentionItem[] {
+    const { day, dayDir, runId, articlePending, scriptEdited, reason } = input;
+    const items: AttentionItem[] = [];
+    const safety =
+        runId === null
+            ? null
+            : recipeOf('generate-from-node', 're-run the safety node', {
+                  node: 'safety',
+                  runId,
+              });
+    if (scriptEdited) {
+        const voice = recipeOf('rerender-step', 're-synthesize the audio', { day, dayDir, step: 'voice' });
+        items.push({
+            severity: 'warn',
+            kind: 'artifact-edited',
+            subject: 'script',
+            message: `The voicescript no longer matches the draft the safety verdict was recorded against${reason === null ? '' : ` (${reason})`}; re-run safety, then re-synthesize the audio.`,
+            evidence: `24-script/${day}_08_script_voicescript.yaml`,
+            recipes: [safety, voice].filter((recipe): recipe is NonNullable<typeof recipe> => recipe !== null),
+        });
+    }
+    if (articlePending) {
+        const render = recipeOf('rerender-step', 're-derive the article', { day, dayDir, step: 'render' });
+        items.push({
+            severity: 'warn',
+            kind: 'artifact-edited',
+            subject: 'article',
+            message:
+                'The article body is newer than the rendered content, so the next render will replace it and the recorded safety verdict does not cover it; re-render, then re-run safety.',
+            evidence: `22-article/${day}_06_article-write_body.md`,
+            recipes: [render, safety].filter((recipe): recipe is NonNullable<typeof recipe> => recipe !== null),
+        });
+    }
+    return items;
+}
+
 /** Build the attention list from the closed rule set (design §2). */
 function attentionItems(input: {
     day: string;
+    dayDir: string;
     launch: LaunchReceipt | null;
     failedNode: string | null;
     reportLine: string | null;
     windows: readonly DayWindow[];
     safety: DaySafety;
+    runId: string | null;
+    articlePending: boolean;
+    scriptEdited: boolean;
+    staleReason: string | null;
 }): AttentionItem[] {
     const items: AttentionItem[] = [];
     const { day, launch, windows, safety } = input;
@@ -420,6 +539,17 @@ function attentionItems(input: {
             recipes: [],
         });
     }
+
+    items.push(
+        ...artifactEditedItems({
+            day,
+            dayDir: input.dayDir,
+            runId: input.runId,
+            articlePending: input.articlePending,
+            scriptEdited: input.scriptEdited,
+            reason: input.staleReason,
+        }),
+    );
     return items;
 }
 
@@ -543,6 +673,14 @@ async function projectKnownDay(
     const safetyRead = await safetyOf(fs, dir, day, bundleParsed.bundle, diagnostics);
     if (safetyRead.source !== null) sources.safety = safetyRead.source;
 
+    // An edit re-arms the gate (G84): a verdict recorded against bytes that have since moved is
+    // stale, and a stale verdict is never rendered as a pass.
+    const staleness = await safetyStaleness(fs, dir, day);
+    if (staleness.stale) {
+        safetyRead.safety = { ...safetyRead.safety, stale: true, staleReason: staleness.reason };
+        sources.safety = safetyRead.source ?? sources.safety ?? '24-script';
+    }
+
     // A failed run leaves its last step open: that step is the only node the day's own evidence
     // can name, and naming a wrong node would offer a resume that cannot work.
     const openStep = launch?.status === 'failed' ? timings.openStep : null;
@@ -551,11 +689,16 @@ async function projectKnownDay(
     // rule order stays a stable tie-break inside one severity.
     const attention = attentionItems({
         day,
+        dayDir: dir,
         launch,
         failedNode: openStep,
         reportLine,
         windows,
         safety: safetyRead.safety,
+        runId: current?.runId ?? launch?.runId ?? null,
+        articlePending: staleness.articlePending,
+        scriptEdited: staleness.scriptEdited,
+        staleReason: staleness.reason,
     }).sort((left, right) => SEVERITY_RANK[left.severity] - SEVERITY_RANK[right.severity]);
 
     const unknownReason = launch === null ? 'no-launch-receipt' : null;
@@ -605,6 +748,62 @@ export async function projectDay(ctx: DayContext, day: string): Promise<DailyDig
     const dir = dayDirOf(ctx, day);
     if (!isDayKey(day) || !(await ctx.fs.exists(dir))) return { notFound: true, lookedUp: dir };
     return projectKnownDay(ctx, day, dir, attemptsFor(await captureIndex(ctx), dir, day), ctx.actionsEnabled === true);
+}
+
+/** True when `value` names one of the two editable drafts. */
+export function isEditableArtifact(value: string): value is EditableArtifactId {
+    return (EDIT_ARTIFACTS as readonly string[]).includes(value);
+}
+
+/**
+ * One draft of a day as the Generation tab's editor loads it (G84/0445).
+ *
+ * The sha256 and both argv recipes are computed HERE, server-side: the browser never derives a
+ * digest and never assembles a command, which is what keeps a copied recipe and a clicked action
+ * byte-identical (`resolveArgv` is the one mapping).
+ */
+export async function dayArtifact(
+    ctx: DayContext,
+    day: string,
+    artifact: EditableArtifactId,
+): Promise<DayArtifactDocument | DayNotFound> {
+    const dir = dayDirOf(ctx, day);
+    if (!isDayKey(day) || !(await ctx.fs.exists(dir))) return { notFound: true, lookedUp: dir };
+    const relative = editArtifactRelative(day, artifact);
+    const path = join(dir, relative);
+    let text: string | null = null;
+    try {
+        text = (await ctx.fs.exists(path)) ? await ctx.fs.readFile(path) : null;
+    } catch {
+        text = null;
+    }
+    const sha256 = text === null ? null : createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex');
+    let backup: string | null = null;
+    try {
+        const suffix = artifact === 'article' ? '-article.md' : '-script.yaml';
+        backup =
+            (await ctx.fs.readDir(join(dir, 'edits')))
+                .filter((name) => name.endsWith(suffix))
+                .sort()
+                .at(-1) ?? null;
+    } catch {
+        backup = null;
+    }
+    return {
+        schemaVersion: 1,
+        day,
+        artifact,
+        path: relative,
+        text,
+        sha256,
+        recipe:
+            sha256 === null
+                ? null
+                : recipeOf('edit-artifact', `edit the ${artifact}`, { day, artifact, baseSha: sha256 }),
+        revertRecipe: backup === null ? null : recipeOf('revert-artifact', `revert the ${artifact}`, { day, artifact }),
+        backup,
+        editable: ctx.actionsEnabled === true,
+    };
 }
 
 /** Every day directory recorded in the works root, newest first. */

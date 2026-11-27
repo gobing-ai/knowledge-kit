@@ -1,0 +1,17 @@
+{
+    "schemaVersion": 1,
+    "parentRunId": "kk-news-generate-20261115-1",
+    "planDigest": "53b5531ec6183b6d5068700b945afaec75ce3d4daf1da17eae91f50b6b9ff936",
+    "payloadDigest": "cbe25cc0f1d5b0c6c4f5f2e20232870763ad82d4a3cfcc22694d698e0124dcc5",
+    "plugin": "social",
+    "profile": "default",
+    "mode": "draft",
+    "attemptId": "social.x-1",
+    "status": "succeeded",
+    "effect": "unknown",
+    "target": "social.x",
+    "window": "after-generate",
+    "dummy": false,
+    "startedAt": "2026-11-15T09:00:00.000Z",
+    "finishedAt": "2026-11-15T09:00:05.000Z"
+}
