@@ -249,6 +249,7 @@ describe('kk command tree shape (0275 AC1 — A22 R1)', () => {
             'music presets',
             'music render',
             'news digest',
+            'news edit',
             'news generate',
             'news generate-bundle',
             'news generate-cards',
