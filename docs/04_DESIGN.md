@@ -65,6 +65,7 @@ sync: [T3]
 | [daily-news-podcast-cover.md](design/daily-news-podcast-cover.md) | Quasi-news podcast cover rendering via layered generation and deterministic typography compositing (ADR-046) | done (L2; tasks 0347–0349, 2026-11-10) |
 | [daily-news-visual-skills.md](design/daily-news-visual-skills.md) | Daily AI news cover, card and optional inline illustration authoring (ADR-057) | shipped (L4; 0424–0427, packaged replay verifies installed skill discovery) |
 | [music-gen.md](design/music-gen.md) | Music brief → prompt text → `POST /api/lyria/generate`: brief schema and render order, request mapping with no instance defaults, preset precedence over portable data, non-idempotent paid-call policy, digest input, artifact record | shipped (D8; 0397 contract, 0398 plugin, 0399 presets, 0400 spend guard, 0401 `kk music`, 0402 authoring + judge, 0403 `kk-music` workflow, 0405 checks/delivery; 0404 dogfooded one accepted track 2026-11-20) |
+| [short-form-video-promotion.md](design/short-form-video-promotion.md) | Unified 9:16 vertical video generator (`video-gen`, Remotion + optional `google-colab-cli` GPU providers for Wan2.1 I2V / MuseTalk / EchoMimicV2) and three-channel publishing (`shipinhao-pub`, `xhs-pub` video profile, `youtube-pub`) (ADR-060) | accepted design (D9) |
 
 ## 1. CLI commands
 

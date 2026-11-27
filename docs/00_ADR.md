@@ -2147,3 +2147,23 @@ in-process coverage, so every small task paid the full e2e cost; the split cut t
 **Why.** On 2026-11-26 (`kk-news-generate-20261126-1795696200790`), pre-TTS `safety` passed (`PASS`, score 0.775), TTS/cards/localize completed (60+ min), and a second LLM judge in `safety-variants` disagreed on aggregator attribution (`AP-06`, `no-prohibited-claims`), hard-blocking `freeze` for all 15 variants across every clean channel at minute 100 when `revise` could not even re-synthesize audio. Separating pre-TTS content review from post-TTS deterministic integrity/PII verification preserves PII/integrity safety while protecting the daily on-time publish SLA.
 
 **Detail:** `plugins/kk/scripts/daily-stages.ts` (`dailySafetyVariantsCheck`, `dailySafetyGate`); `plugins/kk/scripts/kk-workflow-stages.ts` (`ADMISSION_CRITERIA`); `plugins/kk/workflows/kk-news-generate.yaml` (`safety-variants`); `docs/04_DESIGN.md`.
+
+---
+
+## ADR-060: Short-form vertical video uses a local Remotion composition shell with optional Colab GPU visual providers
+
+**Status:** Accepted (design — D9) · **Date:** 2026-11-26
+
+**Decision.**
+1. **Single composition shell, swappable visual layer.** Short-form vertical video generation (9:16, 1080×1920, 45–60s, H.264/AAC MP4) lives in one generator plugin, `plugins/generations/video-gen`, emitting a typed `format: "video"` payload (`videoGenContentSchema` in `@gobing-ai/kk-core`). All editorial assembly — teaser hook extraction, audio slicing, `faster-whisper` word-level timestamps, branded Remotion (TypeScript/React) 9:16 template (headline cards, kinetic ZH/EN captions, waveform, platform safe-zones, podcast CTA outro) — runs locally and deterministically.
+2. **Remote GPU compute via `google-colab-cli` only for visual synthesis.** Heavy GPU visual models run out-of-process through an isolated `colab-runner` wrapping `google-colab-cli` (`colab run --gpu L4|A100`) with Google Drive model-weight caching (`HF_HOME`/checkpoints), bounded job timeouts, unconditional session teardown, and estimated CCU accounting against Google AI Pro's ~200 CCU/month budget.
+3. **Mode-scoped degradation contract.**
+   - `editorial` (primary for Daily AI News): defaults to 100% local Ken-Burns pan/zoom over existing `kk` cover/illustrations (M1), with optional Colab `Wan2.1` I2V 3–5s motion loops (M2). Any Colab error, timeout, or CCU budget exhaustion logs a warning and falls back to local Ken-Burns so unattended daily cron runs never fail.
+   - `avatar` and `hybrid-pip` (M3, for future non-daily formats such as commentary, explainers, and multilingual promos): drive `MuseTalk` (lip-sync, T4/L4) or `EchoMimicV2` (half-body gestures, L4/A100) on Colab from host portrait + audio and composite full-screen or as a PiP bubble in the same Remotion shell. Missing inputs or GPU synthesis failures fail closed rather than silently shipping a broken avatar.
+4. **Three-channel video publishing.** Reuse `shipinhao-pub` (`shortVideo`, draft default) and `xhs-pub` (add `video` publishing profile → `上传视频`, draft default), and add `plugins/publishings/youtube-pub` backed by YouTube Data API v3 (`videos.insert`, OAuth2 refresh-token auth, `private` default).
+
+**Why.** Monolithic stock-footage generators (`MoneyPrinterTurbo`, `ShortGPT`) discard `kk`'s branded voice, editorial script, and illustrations. Running full-screen AI news anchors daily incurs higher CCU cost, stricter platform AI-disclosure scrutiny on XHS/Shipinhao, and cron fragility. Splitting local deterministic composition from optional Colab GPU visual synthesis delivers immediate daily reliability (M1) while keeping one unified pipeline for both editorial I2V (M2) and avatar/PiP formats (M3).
+
+**Rejected.** Separate pipelines for editorial vs. avatar videos (duplicates subtitle, safe-zone, audio-slicing, and publish logic); pure FFmpeg/ASS composition (slower iteration on kinetic typography, waveforms, and PiP layouts); commercial video APIs (redundant recurring spend when Google AI Pro Colab compute is already paid for).
+
+**Detail:** [Short-form vertical video generation and three-channel podcast promotion](design/short-form-video-promotion.md); feature `D9`.
