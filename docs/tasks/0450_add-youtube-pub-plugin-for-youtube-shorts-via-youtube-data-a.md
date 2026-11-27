@@ -4,7 +4,7 @@ name: Add youtube-pub plugin for YouTube Shorts via YouTube Data API v3
 status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.664Z
-updated_at: "2026-11-27T09:39:08.070Z"
+updated_at: "2026-11-27T19:25:58.632Z"
 feature_id: D9
 priority: P1
 tags:
@@ -150,17 +150,17 @@ real `~/.config/kk/youtube-oauth.json`; nothing in this task has touched YouTube
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 plugin scaffold implementing `kk publish --in/--out` | MET | `plugins/publishings/youtube-pub/{plugin.json,package.json,tsconfig.json,README.md}`; `src/index.ts:20` `processPublishIO`, `:52` `main`; `tests/youtube-pub.test.ts` "youtube-pub --in/--out contract" (success writes the Result, refusal writes `ok:false` **and** throws, unparseable input, `main()` exit codes) |
-| R2 OAuth2 refresh + resumable `videos.insert` (env vars, else `~/.config/kk/youtube-oauth.json`) | MET | `src/youtube-client.ts:191` (token POST, `grant_type=refresh_token`, 30s), `:281` (init POST with `X-Upload-Content-Length`/`-Type` → `Location`), `:319` (PUT bytes, size-scaled deadline); `src/credentials.ts:88` loader — env wins, file at 0600 |
-| R3 every invalid input refused with `Result{ok:false}` and **zero** fetch calls | MET | `src/youtube-client.ts:149` `validate` (schema, vertical, ≤180s, `.mp4`, readable non-empty file), `:241` title ≤100, `:247` credentials; tests: all five ladder cases assert `calls.length === 0` |
-| R4 snippet/status mapping + Shorts Result | MET | `:99` `buildUploadBody`, `:84` `shortsDescription` (`#Shorts` once), `:91` `shortsUrl`; test asserts title/description/tags/private/`selfDeclaredMadeForKids:false` and `url: https://youtube.com/shorts/<id>` |
-| R5 no secret in Result/stderr; per-fetch deadlines | MET | `credentials.ts:56` `redact`; `src/youtube-client.ts:78` `uploadTimeoutMs` (≥10 min, scales); tests assert no secret substring in a refused Result and in `redact` output; every fetch passes `AbortSignal.timeout` |
-| R6 `video@youtube-pub` variant + `mode: "off"` preset row | MET | `plugins/kk/scripts/daily-stages.ts:2821` (pass-through) + `:3227` (emission); `plugins/kk/publish-presets/daily-ai-voice.json`; both asserted in `plugins/kk/tests/daily-video-variants-0449.test.ts` |
+| R1 | MET | plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:337 exercises the plugin input/output entry point. |
+| R2 | MET | Private resumable token → init → PUT sequence and Result validated via fake fetch in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:104. |
+| R3 | MET | Schema, media, credentials and an existing file that cannot be read all refuse before fetch in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:219. |
+| R4 | MET | Private resumable token → init → PUT sequence and Result validated via fake fetch in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:104. |
+| R5 | MET | plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:177 exercises failure confidentiality and :316 checks the per-upload deadline helper. Server payloads are kept out of error messages. |
+| R6 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:111 verifies the YouTube variant and the preset tests verify opt-in. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 uploads via Data API v3 with private-first safety | MET | test | `bun test plugins/publishings/youtube-pub/tests` → 19 pass; the call-order test pins `POST token → POST init → PUT Location`, the init body is `privacyStatus: private` with `#Shorts`, and the Result is the Shorts URL |
-| AC2 invalid inputs / missing credentials fail closed with zero fetches | MET | test | the ladder cases pass, and the new case proves a `metadata.privacyStatus: "public"` payload still uploads `private` — only `options.privacyStatus` decides |
+| R11 — YouTube Shorts publisher uploads via YouTube Data API v3 with private-first safety | MET | test | Private resumable token → init → PUT sequence and Result validated via fake fetch in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:104. |
+| R12 — Invalid video inputs or missing credentials fail closed before expensive execution | MET | test | Schema, media, credentials and an existing file that cannot be read all refuse before fetch in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:219. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -171,7 +171,7 @@ real `~/.config/kk/youtube-oauth.json`; nothing in this task has touched YouTube
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
 
 ### References
 

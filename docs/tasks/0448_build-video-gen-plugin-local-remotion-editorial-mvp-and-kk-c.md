@@ -4,7 +4,7 @@ name: Build video-gen plugin local Remotion editorial MVP and kk-core video cont
 status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.658Z
-updated_at: "2026-11-27T08:59:22.070Z"
+updated_at: "2026-11-27T19:25:57.302Z"
 feature_id: D9
 priority: P1
 tags:
@@ -158,20 +158,20 @@ Fills R1/R2/R3/R4 plus this task's R5–R6 legs: the typed video contract in `@g
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 typed `videoGenContentSchema`; rejects missing `videoPath` / non-positive `durationSec` | MET | `packages/kk-core/src/schemas.ts:94,97,104`; `packages/kk-core/src/index.ts:80-84`; `packages/kk-core/tests/schemas.test.ts:87-152` |
-| R2 workspace plugin `kk executor run video-gen` discovers and runs | MET | `plugins/generations/video-gen/{plugin.json,package.json,tsconfig.json,pyproject.toml,uv.lock}`; entry `src/index.ts:45`; discovery `packages/kk-core/tests/registry.test.ts:282`; real dogfood run (Testing) |
-| R3 1080×1920 30fps H.264+AAC 45–60s MP4 into `<workDir>/32-video/` + schema-valid Content | MET | `src/index.ts:66-136`; `src/render.ts:61,87`; heavy `tests/render-e2e.test.ts:29`; dogfood 60.011s |
-| R4 teaser slice, word timestamps, headline/captions/waveform/CTA clear of bottom-480/right-162 | MET | `src/hook-slicer.ts:14,16,48,83`; `src/captions.ts:14,63`; `python/align_captions.py`; `src/layout.ts:16,61,135`; `src/remotion/*.tsx`; `tests/remotion-props.test.ts:40,58,87` |
-| R5 editorial Ken-Burns, no `colab`, no network | MET | `src/visual-provider.ts:27,38` + `tests/video-gen.test.ts:77` (no colab argv, `renderProvider === 'local-ken-burns'`); zero HTTP in this plugin's sources. Residual: Remotion's headless browser is a one-time install cost — now fails with the exact command (`src/render.ts:87`, `src/remotion/engine.ts:16`), per-run behaviour is offline. 0449 should run `npx remotion browser ensure` at install. |
-| R6 invalid inputs fail closed before spawning ffmpeg/uv/Chromium | MET | `src/request.ts:21,64`; `src/inputs.ts:103`; `src/layout.ts:122`; `tests/video-gen.test.ts:124-189` (exit 1 **and** zero recorded spawns); `:160` (no ffmpeg/uv spawn for an out-of-range hook) |
+| R1 | MET | Typed schema accepted the fixture and rejected missing videoPath and zero duration in packages/kk-core/tests/schemas.test.ts:87. |
+| R2 | MET | CLI executor exited 0 with 186 word timestamps and 1,800 H.264 frames at 1080×1920/30 fps with AAC. A real caption rerun also emitted 48 PCM-derived waveform levels and preserved English separators (.spur/run/d9-editorial-caption-waveform.json). Probe: .spur/run/d9-editorial-ffprobe.json. Reproduction: .spur/run/d9-editorial-smoke.sh |
+| R3 | MET | CLI executor exited 0 with 186 word timestamps and 1,800 H.264 frames at 1080×1920/30 fps with AAC. A real caption rerun also emitted 48 PCM-derived waveform levels and preserved English separators (.spur/run/d9-editorial-caption-waveform.json). Probe: .spur/run/d9-editorial-ffprobe.json. Reproduction: .spur/run/d9-editorial-smoke.sh |
+| R4 | MET | CLI executor exited 0 with 186 word timestamps and 1,800 H.264 frames at 1080×1920/30 fps with AAC. A real caption rerun also emitted 48 PCM-derived waveform levels and preserved English separators (.spur/run/d9-editorial-caption-waveform.json). Probe: .spur/run/d9-editorial-ffprobe.json. Reproduction: .spur/run/d9-editorial-smoke.sh Layout checks: plugins/generations/video-gen/tests/remotion-props.test.ts:42. |
+| R5 | MET | The production CLI completed the real 60-second Ken-Burns smoke using provisioned artifacts. uv --offline and HF_HUB_OFFLINE=1 forbid worker downloads, Remotion rejects a cold Chrome cache, and ffprobe rejects a playlist HTTP URL when restricted to file,pipe. |
+| R6 | MET | Request and file rejection cases passed in plugins/generations/video-gen/tests/video-gen.test.ts:124 and plugins/generations/video-gen/tests/request-inputs.test.ts:82. The plugin reads one byte before ffprobe, and rejects a mode-000 file. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 typed contract validates video-gen outputs | MET | test | `packages/kk-core/tests/schemas.test.ts:87` (`bun test packages/kk-core/tests/schemas.test.ts` → 21 pass; `schemas.ts` 100% lines) |
-| AC2 real 9:16 H.264/AAC render (heavy tier) | MET | test | `plugins/generations/video-gen/tests/render-e2e.test.ts:29` — ffprobe: h264 1080×1920 + aac + duration; registered `scripts/test-suites.ts:39`; re-run green after the repair |
-| AC3 hook clamp, caption chunking, safe zone (y≥1440 / x≥918) | MET | test | `tests/remotion-props.test.ts:40` (boundary-inclusive safe zone), `:58` (clamp + reject), `:87` (chunking); `tests/hook-slicer.test.ts:53` (recorded argv + fades) |
-| AC4 editorial mode 100% local, Ken-Burns default | MET | test | `tests/video-gen.test.ts:77` — argv list is exactly `ffprobe, ffmpeg, uv` (no colab), provider `local-ken-burns`; `tests/hook-slicer.test.ts`/`tests/captions.test.ts` assert the bounded deadlines on those three spawns |
-| AC5 invalid inputs exit nonzero with zero spawns | MET | test | `tests/video-gen.test.ts:124` (each refusal: exit 1, no `--out`, `calls` length 0) |
+| R1 — Typed video Content contract validates video-gen outputs in kk-core | MET | test | Typed schema accepted the fixture and rejected missing videoPath and zero duration in packages/kk-core/tests/schemas.test.ts:87. |
+| R2 — video-gen renders a 9:16 H.264/AAC MP4 locally via Remotion from a daily AI news run | MET | command | CLI executor exited 0 with 186 word timestamps and 1,800 H.264 frames at 1080×1920/30 fps with AAC. A real caption rerun also emitted 48 PCM-derived waveform levels and preserved English separators (.spur/run/d9-editorial-caption-waveform.json). Probe: .spur/run/d9-editorial-ffprobe.json. Reproduction: .spur/run/d9-editorial-smoke.sh |
+| R3 — Shared local composition pipeline builds teaser hook, word timestamps, captions, waveform, safe-zones, and CTA | MET | test | CLI executor exited 0 with 186 word timestamps and 1,800 H.264 frames at 1080×1920/30 fps with AAC. A real caption rerun also emitted 48 PCM-derived waveform levels and preserved English separators (.spur/run/d9-editorial-caption-waveform.json). Probe: .spur/run/d9-editorial-ffprobe.json. Reproduction: .spur/run/d9-editorial-smoke.sh Layout checks: plugins/generations/video-gen/tests/remotion-props.test.ts:42. |
+| R4 — Editorial mode runs 100 percent locally with Ken-Burns motion by default | MET | command | The production CLI completed the real 60-second Ken-Burns smoke using provisioned artifacts. uv --offline and HF_HUB_OFFLINE=1 forbid worker downloads, Remotion rejects a cold Chrome cache, and ffprobe rejects a playlist HTTP URL when restricted to file,pipe. |
+| R12 — Invalid video inputs or missing credentials fail closed before expensive execution | MET | test | Request and file rejection cases passed in plugins/generations/video-gen/tests/video-gen.test.ts:124 and plugins/generations/video-gen/tests/request-inputs.test.ts:82. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -182,7 +182,7 @@ Fills R1/R2/R3/R4 plus this task's R5–R6 legs: the typed video contract in `@g
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
 
 ### References
 

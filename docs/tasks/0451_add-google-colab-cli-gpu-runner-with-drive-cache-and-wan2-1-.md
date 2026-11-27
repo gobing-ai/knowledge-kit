@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
-status: done
+status: testing
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-27T09:53:40.468Z"
+updated_at: "2026-11-27T19:36:37.225Z"
 feature_id: D9
 priority: P2
 tags:
@@ -149,32 +149,35 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 `runColabJob` with the frozen argv, `--gpu`, explicit `--timeout`, session name, teardown for created sessions, local kill at `timeoutMs + 60s` | MET | `src/colab-runner.ts:78,83,103,108,139`; `tests/colab-runner.test.ts` pins argv, the 600 000 + 60 000 seam deadline, and `run → download → stop` on success, failure and timeout |
-| R3 ledger line per job + rolling 30-day cap refusal before launch | MET | `src/ccu-ledger.ts:14,36,62,91,100` and `:47` `resolveLedgerPath` (works root, `KK_WORKS_DIR` override) — the window now accumulates across daily runs; math/window/cap and the path are tested in `tests/ccu-ledger.test.ts` |
-| R4 `wan21-i2v` provider returns clips, T4 refused, clips composited in `EditorialReel` | MET | `src/visual-provider.ts:72,129`; `src/props.ts` clip layer; `src/remotion/EditorialReel.tsx` `OffthreadVideo` branch; heavy `tests/render-wan-e2e.test.ts` (ffprobe 1080×1920 h264+aac); T4 refusal tested in `tests/colab-fallback.test.ts` |
-| R5 any Colab failure falls back to local Ken-Burns with `fallbackUsed: true` + a named warning, exit 0 | MET | `src/visual-provider.ts:129`; `tests/colab-fallback.test.ts` covers nonzero exit, silent worker, timeout, T4, budget refusal **and** a reported-but-absent clip — each exits 0 with `renderProvider: 'local-ken-burns'`; the success path through `main()` is covered too (clips reach the renderer, `fallbackUsed` absent) |
-| R6 `video: editorial-wan` maps to `provider: wan21-i2v` | MET | `plugins/kk/scripts/daily-stages.ts` `dailyVideoRequest` + `plugins/kk/tests/daily-video-variants-0449.test.ts` ("maps editorial-wan to the Colab provider") |
+| R1 | PARTIAL | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. Uses new/upload/exec because colab run executes before inputs can be staged; live teardown is unverified. |
+| R2 | PARTIAL | The runner now attempts the installed colab drivemount command within its deadline and the worker reports a local cache when Drive is absent. No live fresh-VM mount has been verified. |
+| R3 | MET | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. Budget refusal launches nothing in plugins/generations/video-gen/tests/colab-runner.test.ts:198. |
+| R4 | PARTIAL | Real local rendering of a synthetic Wan clip passed in plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30. Actual Wan inference was not executed. |
+| R5 | MET | Injected process failure, timeout and budget exhaustion preserve a valid local Content with a named warning in plugins/generations/video-gen/tests/colab-fallback.test.ts:72. |
+| R6 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:200 verifies editorial-wan maps to the Wan provider. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 fallback on Colab failure or budget exhaustion | MET | test | `tests/colab-fallback.test.ts` — four cases, each asserting exit 0, `fallbackUsed: true`, a named warning and `renderProvider: 'local-ken-burns'`; the budget case also asserts **zero** `colab` spawns |
-| AC2 runner argv/env/teardown/ledger | MET | test | `tests/colab-runner.test.ts` (7 cases) + `tests/ccu-ledger.test.ts` (6 cases) |
-| AC3 clips composited in the shared shell | MET | test | `tests/render-wan-e2e.test.ts` (heavy, registered in `scripts/test-suites.ts`); a real Colab run stays an operator-approved manual check |
+| R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget | MET | test | Injected process failure, timeout and budget exhaustion preserve a valid local Content with a named warning in plugins/generations/video-gen/tests/colab-fallback.test.ts:72. |
+| R6 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards | PARTIAL | test | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. The runner now attempts the installed colab drivemount command within its deadline and the worker reports a local cache when Drive is absent. No live fresh-VM mount has been verified. |
+| R7 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell | PARTIAL | test | Real local rendering of a synthetic Wan clip passed in plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30. Actual Wan inference was not executed. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PASS)
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+| P4 | design-conformance | — | Fresh live GPU run pending. The current Colab exec path and staged media are covered by local process fixtures. |
+| P4 | secua-review | — | Scope: shared implementation commit f95253b0, its D9 DAG follow-up b8c51873, and the current fix diff. Reviewed security, efficiency, correctness, usability and architecture. Fresh live GPU run pending. The current Colab exec path and staged media are covered by local process fixtures. |
+| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
 
 ### References
 
@@ -189,4 +192,6 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 - 2026-11-27T09:45:48.068Z todo → wip (system)
 - 2026-11-27T09:53:39.515Z wip → testing (system)
 - 2026-11-27T09:53:40.463Z testing → done (system)
+- 2026-11-27T19:36:36.371Z done → wip (system)
+- 2026-11-27T19:36:37.225Z wip → testing (system)
 

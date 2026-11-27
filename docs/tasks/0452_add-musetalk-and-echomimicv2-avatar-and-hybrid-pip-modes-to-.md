@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add MuseTalk and EchoMimicV2 avatar and hybrid-pip modes to video-gen
-status: done
+status: testing
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-27T16:51:57.264Z"
+updated_at: "2026-11-27T19:36:35.810Z"
 feature_id: D9
 priority: P2
 tags:
@@ -143,33 +143,35 @@ unit or touched YouTube.
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 two remote workers follow 0451's cache convention and write an MP4 + result line | MET | `python/colab_musetalk.py`, `python/colab_echomimic_v2.py` (`choose_cache`, `KK_COLAB_RESULT`, T4 re-check in the EchoMimicV2 worker) |
-| R2 `musetalk` (T4/600s) and `echomimic-v2` (A100/900s, T4 refused) providers via `runColabJob`, returning `{kind:'clips'}` | MET | `src/visual-provider.ts` (`createAvatarProvider`, `createMusetalkProvider`, `createEchomimicV2Provider`, `resolveAvatarProvider`); defaults asserted in `tests/avatar-provider.test.ts` ("musetalk defaults to T4/600s…") |
-| R3 `AvatarReel` + `HybridPipReel` registered, PiP geometry from a pure `pipBox()` that passes `assertInSafeArea` | MET | `src/layout.ts` (`PIP_DIAMETER_PX`, `PIP_GAP_PX`, `pipBox`, `aiLabelBox`), `src/remotion/{AvatarReel,HybridPipReel,AiLabel,Root}.tsx`; `tests/remotion-props.test.ts` (geometry + prop builders); heavy `tests/render-avatar-e2e.test.ts` (both shells, ffprobe 1080×1920 h264+aac) |
-| R4 avatar/hybrid-pip fail closed pre-spawn; synthesis failure exits nonzero with no MP4; 0448 guard removed | MET | `src/request.ts` (mode/provider/portrait ladder), `src/index.ts` (portrait stat, no fallback); `tests/avatar-provider.test.ts` (missing/relative/non-image portrait, hybrid-pip+echomimic, editorial+musetalk, unreadable portrait — all exit 1 with zero spawns; synthesis failure and a missing downloaded clip exit 1 with no MP4) |
-| R5 request schema: `provider`, `hostPortraitPath`, `hybrid-pip` → musetalk only | MET | `src/request.ts`; `tests/request-inputs.test.ts` |
-| R6 persistent `AI生成` label in the safe area + `metadata.syntheticPresenter: true` + youtube mapping | MET | `src/remotion/AiLabel.tsx` rendered by both avatar shells; `label box` asserted inside the safe area; `src/index.ts` `emitContent` sets `syntheticPresenter`; `youtube-client.ts` maps it to `status.containsSyntheticMedia` (field verified in the official `videos` reference); test in `plugins/publishings/youtube-pub/tests/youtube-pub.test.ts` |
+| R1 | PARTIAL | The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| R2 | PARTIAL | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| R3 | MET | Real local avatar and PiP compositions pass with a pre-rendered presenter in plugins/generations/video-gen/tests/render-avatar-e2e.test.ts:44. |
+| R4 | MET | plugins/generations/video-gen/tests/avatar-provider.test.ts:90 and :169 exercise rejection before Colab and no MP4 on a failed synthesis. |
+| R5 | MET | plugins/generations/video-gen/tests/avatar-provider.test.ts:90 and :135 cover mode constraints and provider defaults. |
+| R6 | MET | The synthetic label and metadata are asserted in plugins/generations/video-gen/tests/avatar-provider.test.ts:135 and the YouTube disclosure is exercised in plugins/publishings/youtube-pub/tests/youtube-pub.test.ts:139. API reference: https://developers.google.com/youtube/data/reference/rest/v3/videos/insert. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 avatar mode renders on Colab and composites in Remotion | MET | test | `tests/avatar-provider.test.ts` (argv gpu/timeout per provider, `syntheticPresenter: true`, `AvatarReel` composition id) + `tests/render-avatar-e2e.test.ts` |
-| AC2 hybrid-PiP overlays a MuseTalk bubble; `pipBox()` clear of y≥1440/x≥918; hybrid-pip+echomimic refused | MET | test | `tests/remotion-props.test.ts` (pip/label geometry + refusal cases), `tests/avatar-provider.test.ts`, heavy e2e via `HybridPipReel` |
-| AC3 invalid inputs fail closed before expensive execution | MET | test | `tests/avatar-provider.test.ts` — every pre-launch case asserts exit 1 **and** zero recorded spawns; the synthesis-failure case asserts no MP4 |
+| R8 — Avatar mode renders MuseTalk or EchoMimicV2 presenter video on Colab and composites in Remotion | PARTIAL | test | Real local avatar and PiP compositions pass with a pre-rendered presenter in plugins/generations/video-gen/tests/render-avatar-e2e.test.ts:44. The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| R9 — Hybrid-PiP mode overlays a MuseTalk host bubble onto the editorial Remotion canvas | PARTIAL | test | Real local avatar and PiP compositions pass with a pre-rendered presenter in plugins/generations/video-gen/tests/render-avatar-e2e.test.ts:44. The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| R12 — Invalid video inputs or missing credentials fail closed before expensive execution | MET | test | plugins/generations/video-gen/tests/avatar-provider.test.ts:90 exercises validation and records zero Colab spawns. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PASS)
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+| P4 | design-conformance | — | The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| P4 | secua-review | — | Scope: shared implementation commit f95253b0, its D9 DAG follow-up b8c51873, and the current fix diff. Reviewed security, efficiency, correctness, usability and architecture. The MuseTalk and EchoMimicV2 workers call the documented upstream inference CLIs. The local fixtures .spur/run/d9-musetalk-cli-check.py and .spur/run/d9-echomimic-cli-check.py passed their media, output and pose contracts. Prepared GPU checkouts and live inference remain unverified. EchoMimicV2 reference: https://github.com/antgroup/echomimic_v2/blob/main/infer_acc.py. MuseTalk reference: https://github.com/TMElyralab/MuseTalk/blob/main/inference.sh. |
+| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
 
 ### References
 
@@ -183,4 +185,6 @@ unit or touched YouTube.
 - 2026-11-27T16:48:41.738Z todo → wip (system)
 - 2026-11-27T16:51:55.989Z wip → testing (system)
 - 2026-11-27T16:51:57.255Z testing → done (system)
+- 2026-11-27T19:36:34.186Z done → wip (system)
+- 2026-11-27T19:36:35.810Z wip → testing (system)
 

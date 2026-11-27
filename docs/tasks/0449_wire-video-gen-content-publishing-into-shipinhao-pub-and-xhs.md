@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Wire video-gen Content publishing into shipinhao-pub and xhs-pub
-status: done
+status: testing
 template: feature-impl
 created_at: 2026-11-26T19:50:42.662Z
-updated_at: "2026-11-27T09:26:26.613Z"
+updated_at: "2026-11-27T19:36:38.675Z"
 feature_id: D9
 priority: P1
 tags:
@@ -152,30 +152,32 @@ the variants against a real render — see `## Testing`.
 
 **Pipeline verify results**
 
-- Verdict: PASS (from verdict artifact)
+- Verdict: PARTIAL (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 shipinhao `shortVideo` accepts a `videoGenContentSchema` payload and defaults to draft, no flow change | MET | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` — new flow-stages case parses a real `videoGenContentSchema` payload through the transport (extra `visualMode`/`renderProvider`/`width`/`height`/`fps`/`durationSec`/`captionsPath`/`tags` keys included) and asserts `publishStatus: 'draft'`, the video upload and the title fill. `src/flow.ts` untouched. |
-| R2 xhs declares a `video` profile (`format: video`, locale zh, draft/live → 上传视频, no `requires`) that loads | MET | `plugins/publishings/xhs-pub/plugin.json:47-61`; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` → `video publishing profile (R2, D9)` (manifest parses, profile shape, bound operation is in `XHS_OPERATIONS`) |
-| R3 `kk-news-generate.yaml` gets a `video` node after cards/voice, before variants, gated on `vars.video` (default off), `onError: continue` | MET | `plugins/kk/workflows/kk-news-generate.yaml:47` (var), `:509` (node); `plugins/kk/scripts/daily-stages.ts:3259` + `plugins/kk/scripts/kk-workflow-stages.ts:2311` (typed request stage); `spur workflow validate plugins/kk/workflows/kk-news-generate.yaml` → `workflow valid`; shape asserted in `plugins/kk/tests/daily-video-variants-0449.test.ts` (order, dependsOn, onError, condition, both commands) |
-| R4 `dailyBundleVariants` writes `video`, `video@shipinhao-pub`, `video@xhs-pub` with the per-channel keys, else records `video (no 32-video render)`; `isShortFormVariant` covers the video keys | MET | `plugins/kk/scripts/daily-stages.ts:2797,2808` (builder), `:3214-3223` (emission), `:5334` (short-form set); `plugins/kk/tests/daily-video-variants-0449.test.ts` (3-variant mapping, skip path, builder refusals, ADR-059 classification). Real-render run recorded in `## Testing`. |
-| R5 preset rows `shipinhao-pub / video@shipinhao-pub` and `xhs-pub / video@xhs-pub / 上传视频`, both `mode: off`, `required: false` | MET | `plugins/kk/publish-presets/daily-ai-voice.json`; asserted + `PublishPresetSchema.safeParse` green in `plugins/kk/tests/daily-video-variants-0449.test.ts` |
+| R1 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
+| R2 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
+| R3 | PARTIAL | plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
+| R4 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:86 verifies the variant payload and skip behavior. |
+| R5 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| AC1 both publishers accept video-gen Content and save drafts; variants + preset + node wired | MET | test | `bun test plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` (90 pass), `bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` (174 pass), `bun test plugins/kk/tests/daily-video-variants-0449.test.ts` (8 pass), `bun test apps/cli/tests/publish-matrix.test.ts` (42 pass, the shipped preset still validates); `spur workflow validate plugins/kk/workflows/kk-news-generate.yaml` |
+| R10 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default | MET | test | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PASS)
+**SECU findings** (pipeline verify step — verdict: PARTIAL)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | — | — | No findings (verify verdict PASS) |
+| P4 | design-conformance | — | plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
+| P4 | secua-review | — | Scope: shared implementation commit f95253b0, its D9 DAG follow-up b8c51873, and the current fix diff. Reviewed security, efficiency, correctness, usability and architecture. plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
+| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
 
 ### References
 
@@ -192,4 +194,6 @@ the variants against a real render — see `## Testing`.
 - 2026-11-27T09:13:37.953Z todo → wip (system)
 - 2026-11-27T09:26:22.170Z wip → testing (system)
 - 2026-11-27T09:26:26.603Z testing → done (system)
+- 2026-11-27T19:36:37.723Z done → wip (system)
+- 2026-11-27T19:36:38.675Z wip → testing (system)
 
