@@ -1,0 +1,24 @@
+{
+    "name": "@gobing-ai/video-gen",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:",
+        "@remotion/bundler": "4.0.547",
+        "@remotion/renderer": "4.0.547",
+        "react": "19.2.1",
+        "react-dom": "19.2.1",
+        "remotion": "4.0.547",
+        "zod": "4.4.3"
+    },
+    "devDependencies": {
+        "@types/bun": "1.4.3",
+        "@types/react": "^19.2.0",
+        "@types/react-dom": "^19.2.0"
+    }
+}

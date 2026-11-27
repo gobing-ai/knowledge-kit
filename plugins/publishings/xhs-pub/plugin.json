@@ -4,7 +4,7 @@
     "entry": "./src/index.ts",
     "check": "./src/profile-check.ts",
     "version": "1.0.0",
-    "description": "Publish plugin for Xiaohongshu (xhs): one creator console, four validated operations (上传图文 ≤18 images | 上传视频 | 写长文 | 发播客 audio+cover) saved as a draft via 暂存离开 or published live via 发布, over the Playwright script transport",
+    "description": "Publish plugin for Xiaohongshu (xhs): one creator console, four validated operations (\u4e0a\u4f20\u56fe\u6587 \u226418 images | \u4e0a\u4f20\u89c6\u9891 | \u5199\u957f\u6587 | \u53d1\u64ad\u5ba2 audio+cover) saved as a draft via \u6682\u5b58\u79bb\u5f00 or published live via \u53d1\u5e03, over the Playwright script transport",
     "browserSession": {
         "profileName": "xhs",
         "homeUrl": "https://creator.xiaohongshu.com/publish/publish"
@@ -32,13 +32,37 @@
                 "modes": {
                     "draft": {
                         "metadata": {
-                            "operation": "上传图文",
+                            "operation": "\u4e0a\u4f20\u56fe\u6587",
                             "publishStatus": "draft"
                         }
                     },
                     "live": {
                         "metadata": {
-                            "operation": "上传图文",
+                            "operation": "\u4e0a\u4f20\u56fe\u6587",
+                            "publishStatus": "public"
+                        }
+                    }
+                }
+            },
+            "video": {
+                "format": "video",
+                "locale": "zh",
+                "limits": {
+                    "title": {
+                        "max": 20,
+                        "unit": "xiaohongshu_title_weighted"
+                    }
+                },
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "operation": "\u4e0a\u4f20\u89c6\u9891",
+                            "publishStatus": "draft"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "operation": "\u4e0a\u4f20\u89c6\u9891",
                             "publishStatus": "public"
                         }
                     }

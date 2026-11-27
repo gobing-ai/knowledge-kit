@@ -1,0 +1,16 @@
+{
+    "name": "@gobing-ai/youtube-pub",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "@gobing-ai/kk-core": "workspace:*",
+        "@gobing-ai/ts-runtime": "catalog:",
+        "@gobing-ai/ts-utils": "catalog:"
+    },
+    "devDependencies": {
+        "@types/bun": "1.4.3"
+    }
+}

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add youtube-pub plugin for YouTube Shorts via YouTube Data API v3
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.664Z
-updated_at: "2026-11-26T23:19:09.260Z"
+updated_at: "2026-11-27T09:39:08.070Z"
 feature_id: D9
 priority: P1
 tags:
@@ -14,6 +14,8 @@ tags:
 estimate_hours: 5
 
 dependencies: ["0448", "0449"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0450. Add youtube-pub plugin for YouTube Shorts via YouTube Data API v3
@@ -33,20 +35,20 @@ Implements: R11 — YouTube Shorts publisher uploads via YouTube Data API v3 wit
 
 ### Requirements
 
-- [ ] R1. `plugins/publishings/youtube-pub/` (`plugin.json` `kind: publish`, `package.json` `@gobing-ai/youtube-pub`, `tsconfig.json`, `src/index.ts`, `src/youtube-client.ts`) implements `kk publish` `--in <Content> --out <Result>`.
-- [ ] R2. `YouTubeClient` refreshes an OAuth2 access token (`POST https://oauth2.googleapis.com/token`, `grant_type=refresh_token`) and uploads through the resumable `videos.insert` (`POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status`, then a `PUT` of the bytes to the returned `Location`). Credentials come from `KK_YOUTUBE_CLIENT_ID`/`KK_YOUTUBE_CLIENT_SECRET`/`KK_YOUTUBE_REFRESH_TOKEN`, else `~/.config/kk/youtube-oauth.json` `{client_id, client_secret, refresh_token}`.
-- [ ] R3. The following are each refused with an actionable `Result{ok:false}` and **zero** fetch calls: Content not `videoGenContentSchema`-valid; `height <= width`; `durationSec > 180`; `videoPath` unreadable or not `.mp4`; missing credentials; credentials file wider than 0600.
-- [ ] R4. `snippet.title` comes from Content.title (≤100 chars) and `snippet.description` from body plus `#Shorts`. `snippet.tags` comes from metadata.tags. `status.privacyStatus` is `"private"` unless `options.privacyStatus` ∈ {`unlisted`,`public`}, and `selfDeclaredMadeForKids: false`. On success it returns `ResultSchema` `{ok:true, target:'youtube-pub', id:<videoId>, url:'https://youtube.com/shorts/<videoId>'}`.
-- [ ] R5. Tokens and refresh secrets never appear in Result, stderr or thrown messages (`redact`). Each fetch has a timeout: token 30s; upload scales with file size, minimum 10 min.
-- [ ] R6. `dailyBundleVariants` writes `video@youtube-pub` using 0449's `buildVideoVariant`. `daily-ai-voice.json` gets a `youtube-pub` row with `variant: video@youtube-pub`, `mode: "off"` and `required: false`.
+- [x] R1. `plugins/publishings/youtube-pub/` (`plugin.json` `kind: publish`, `package.json` `@gobing-ai/youtube-pub`, `tsconfig.json`, `src/index.ts`, `src/youtube-client.ts`) implements `kk publish` `--in <Content> --out <Result>`.
+- [x] R2. `YouTubeClient` refreshes an OAuth2 access token (`POST https://oauth2.googleapis.com/token`, `grant_type=refresh_token`) and uploads through the resumable `videos.insert` (`POST https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status`, then a `PUT` of the bytes to the returned `Location`). Credentials come from `KK_YOUTUBE_CLIENT_ID`/`KK_YOUTUBE_CLIENT_SECRET`/`KK_YOUTUBE_REFRESH_TOKEN`, else `~/.config/kk/youtube-oauth.json` `{client_id, client_secret, refresh_token}`.
+- [x] R3. The following are each refused with an actionable `Result{ok:false}` and **zero** fetch calls: Content not `videoGenContentSchema`-valid; `height <= width`; `durationSec > 180`; `videoPath` unreadable or not `.mp4`; missing credentials; credentials file wider than 0600.
+- [x] R4. `snippet.title` comes from Content.title (≤100 chars) and `snippet.description` from body plus `#Shorts`. `snippet.tags` comes from metadata.tags. `status.privacyStatus` is `"private"` unless `options.privacyStatus` ∈ {`unlisted`,`public`}, and `selfDeclaredMadeForKids: false`. On success it returns `ResultSchema` `{ok:true, target:'youtube-pub', id:<videoId>, url:'https://youtube.com/shorts/<videoId>'}`.
+- [x] R5. Tokens and refresh secrets never appear in Result, stderr or thrown messages (`redact`). Each fetch has a timeout: token 30s; upload scales with file size, minimum 10 min.
+- [x] R6. `dailyBundleVariants` writes `video@youtube-pub` using 0449's `buildVideoVariant`. `daily-ai-voice.json` gets a `youtube-pub` row with `variant: video@youtube-pub`, `mode: "off"` and `required: false`.
 
 **Out of scope:** the OAuth consent/bootstrap flow (the operator obtains the refresh token once, documented in README); thumbnails (`thumbnails.set`); playlists; analytics; scheduled publishing; enabling the preset row.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — YouTube Shorts publisher uploads via YouTube Data API v3 with private-first safety (req: R1, R2, R4, R5, R6)
+- [x] AC1 — YouTube Shorts publisher uploads via YouTube Data API v3 with private-first safety (req: R1, R2, R4, R5, R6)
   - Observed by `plugins/publishings/youtube-pub/tests/youtube-pub.test.ts` with an injected fake `fetchImpl` that records requests. Assert the token refresh, then the resumable init body (`privacyStatus: 'private'`, `#Shorts` in the description), then the PUT to `Location`. The Result URL is `https://youtube.com/shorts/<id>`. No secret substring appears in the Result or the logs. The daily-stages variants test covers `video@youtube-pub`.
-- [ ] AC2 — Invalid video inputs or missing credentials fail closed before expensive execution (req: R3)
+- [x] AC2 — Invalid video inputs or missing credentials fail closed before expensive execution (req: R3)
   - Observed by the same suite: each R3 refusal case returns `ok:false` with a named reason, and the fake fetch records zero calls.
 
 ### Q&A
@@ -84,15 +86,92 @@ Implements: R11 — YouTube Shorts publisher uploads via YouTube Data API v3 wit
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Adds the YouTube Shorts publisher on the official Data API v3 (design §5.3) and wires it into the
+frozen bundle. No `googleapis` SDK, no browser: one refresh call plus one resumable upload.
+
+**R1 — plugin** `plugins/publishings/youtube-pub/` (`plugin.json` `kind: publish` with a `video`
+publishing profile — `draft → privacyStatus private`, `live → public`, title limit 100;
+`package.json` `@gobing-ai/youtube-pub`; `tsconfig.json`; `src/index.ts`, `src/youtube-client.ts`,
+`src/credentials.ts`; `README.md` documents the one-time OAuth bootstrap).
+- `src/index.ts:20` `processPublishIO(input, output, options)` deletes a stale Result, parses the
+  Content, delegates to the client and writes `ResultSchema` JSON either way (a refusal writes
+  `ok:false` **and** throws so `kk publish` exits nonzero). `:52` `main(argv, options)` is the
+  `--in/--out` entry; the options bag is the test seam.
+
+**R2 — auth + upload** `src/youtube-client.ts`
+- `:191` `accessToken` → `POST https://oauth2.googleapis.com/token` with
+  `grant_type=refresh_token`, 30s deadline (`TOKEN_TIMEOUT_MS`).
+- `:281` `initUpload` → `POST …/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status`
+  with `X-Upload-Content-Length` / `X-Upload-Content-Type`, then `Location` from the response.
+- `:319` `putBytes` → `PUT` of the MP4 bytes (`Content-Type: video/mp4`) with a deadline that scales
+  with file size and never drops below 10 minutes (`uploadTimeoutMs` `:78`).
+- Credentials: `src/credentials.ts:88` `loadYouTubeCredentials` — `KK_YOUTUBE_*` env wins, else
+  `~/.config/kk/youtube-oauth.json` at mode 0600 (refused at any wider mode). This file is the
+  plugin's single sanctioned `node:fs` site (exemption recorded in
+  `.spur/rules/strict/runtime-boundaries.yaml`) because the ts-runtime seam exposes no permission
+  bits; every other read uses the seam or `Bun.file`.
+
+**R3 — fail-closed ladder** `src/youtube-client.ts:149` `validate` runs before the first fetch:
+schema (via `videoGenContentSchema`), `height > width`, `durationSec <= 180`, `.mp4` extension, a
+readable non-empty file; then the title ladder (`:241`, ≤100 chars) and credentials (`:247`). Each
+refusal returns `Result{ok:false}` with a named reason and **zero** fetches.
+
+**R4 — payload + Result** `:100` `buildUploadBody` (`snippet.title`, `snippet.description` =
+body + `#Shorts` via `shortsDescription` `:84`, `snippet.tags` from `metadata.tags`,
+`status.privacyStatus` private unless `options.privacyStatus ∈ {unlisted, public}`,
+`selfDeclaredMadeForKids: false`); success returns `{ok:true, target:'youtube-pub', id,
+url:'https://youtube.com/shorts/<id>'}` (`shortsUrl` `:91`).
+
+**R5 — secrets + deadlines** `redact` (`credentials.ts:56`) strips the client secret and refresh
+token (raw and percent-encoded) from every refusal; every fetch carries an `AbortSignal.timeout`.
+
+**R6 — bundle wiring**
+- `plugins/kk/scripts/daily-stages.ts:2821` `buildVideoVariant` now accepts `youtube-pub` and passes
+  the video-gen Content through unchanged (privacy stays the client's private default; a frozen
+  variant carries no `options` block), emitted at `:3227`.
+- `plugins/kk/publish-presets/daily-ai-voice.json` gains `youtube-pub / video /
+  video@youtube-pub` (tier 3, `overseas-rss`, `mode: "off"`, `required: false`).
+
+**Evidence.** `plugins/publishings/youtube-pub/tests/youtube-pub.test.ts` — 19 cases over an injected
+`fetchImpl` (token → init → PUT order, private-first body, `#Shorts`, Shorts URL, unlisted override,
+unknown privacy refusal, HTTP refusals at all three steps, 403 `quotaExceeded` with one init call, no
+secret in the Result, the full refusal ladder with zero fetches, credentials env/file/mode/JSON
+edges, and the `--in/--out` + `main()` contract). `plugins/kk/tests/daily-video-variants-0449.test.ts`
+covers the `video@youtube-pub` variant and its preset row.
+
+**Not done.** The live private upload (Plan step 6) requires the operator's explicit go-ahead and a
+real `~/.config/kk/youtube-oauth.json`; nothing in this task has touched YouTube.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 plugin scaffold implementing `kk publish --in/--out` | MET | `plugins/publishings/youtube-pub/{plugin.json,package.json,tsconfig.json,README.md}`; `src/index.ts:20` `processPublishIO`, `:52` `main`; `tests/youtube-pub.test.ts` "youtube-pub --in/--out contract" (success writes the Result, refusal writes `ok:false` **and** throws, unparseable input, `main()` exit codes) |
+| R2 OAuth2 refresh + resumable `videos.insert` (env vars, else `~/.config/kk/youtube-oauth.json`) | MET | `src/youtube-client.ts:191` (token POST, `grant_type=refresh_token`, 30s), `:281` (init POST with `X-Upload-Content-Length`/`-Type` → `Location`), `:319` (PUT bytes, size-scaled deadline); `src/credentials.ts:88` loader — env wins, file at 0600 |
+| R3 every invalid input refused with `Result{ok:false}` and **zero** fetch calls | MET | `src/youtube-client.ts:149` `validate` (schema, vertical, ≤180s, `.mp4`, readable non-empty file), `:241` title ≤100, `:247` credentials; tests: all five ladder cases assert `calls.length === 0` |
+| R4 snippet/status mapping + Shorts Result | MET | `:99` `buildUploadBody`, `:84` `shortsDescription` (`#Shorts` once), `:91` `shortsUrl`; test asserts title/description/tags/private/`selfDeclaredMadeForKids:false` and `url: https://youtube.com/shorts/<id>` |
+| R5 no secret in Result/stderr; per-fetch deadlines | MET | `credentials.ts:56` `redact`; `src/youtube-client.ts:78` `uploadTimeoutMs` (≥10 min, scales); tests assert no secret substring in a refused Result and in `redact` output; every fetch passes `AbortSignal.timeout` |
+| R6 `video@youtube-pub` variant + `mode: "off"` preset row | MET | `plugins/kk/scripts/daily-stages.ts:2821` (pass-through) + `:3227` (emission); `plugins/kk/publish-presets/daily-ai-voice.json`; both asserted in `plugins/kk/tests/daily-video-variants-0449.test.ts` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 uploads via Data API v3 with private-first safety | MET | test | `bun test plugins/publishings/youtube-pub/tests` → 19 pass; the call-order test pins `POST token → POST init → PUT Location`, the init body is `privacyStatus: private` with `#Shorts`, and the Result is the Shorts URL |
+| AC2 invalid inputs / missing credentials fail closed with zero fetches | MET | test | the ladder cases pass, and the new case proves a `metadata.privacyStatus: "public"` payload still uploads `private` — only `options.privacyStatus` decides |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -103,3 +182,8 @@ Implements: R11 — YouTube Shorts publisher uploads via YouTube Data API v3 wit
 - https://developers.google.com/youtube/v3/determine_quota_cost
 
 ### History
+
+- 2026-11-27T09:32:16.925Z todo → wip (system)
+- 2026-11-27T09:39:07.081Z wip → testing (system)
+- 2026-11-27T09:39:08.065Z testing → done (system)
+

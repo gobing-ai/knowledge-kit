@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Build video-gen plugin local Remotion editorial MVP and kk-core video contract
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.658Z
-updated_at: "2026-11-26T23:19:08.513Z"
+updated_at: "2026-11-27T08:59:22.070Z"
 feature_id: D9
 priority: P1
 tags:
@@ -14,6 +14,8 @@ tags:
   - kk-core
 estimate_hours: 8
 
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0448. Build video-gen plugin local Remotion editorial MVP and kk-core video contract
@@ -35,26 +37,26 @@ Implements: R1 — Typed video Content contract validates video-gen outputs in k
 
 ### Requirements
 
-- [ ] R1. `packages/kk-core/src/schemas.ts` exports `VideoVisualModeSchema`, `VideoRenderProviderSchema`, `videoGenContentSchema` and type `VideoGenContent`, exactly as `docs/design/short-form-video-promotion.md` §2, re-exported from `packages/kk-core/src/index.ts`. A payload missing `metadata.videoPath`, or with `durationSec <= 0`, is rejected.
-- [ ] R2. `plugins/generations/video-gen/` is a Bun workspace plugin (`plugin.json` `kind: generator`, `package.json` `@gobing-ai/video-gen`, `tsconfig.json` with `jsx: react-jsx`, `pyproject.toml` + `uv.lock`) that `kk executor run video-gen --in <request.json> --out <content.json>` discovers and runs.
-- [ ] R3. With `visualMode: "editorial"` and a daily work dir, the plugin writes a 1080×1920, 30fps, H.264 video + AAC audio MP4 of 45–60s to `<workDir>/32-video/<runDate>_video.mp4` and a `videoGenContentSchema`-valid Content (non-empty `title` and `body`; `renderProvider: "local-ken-burns"`) to `--out`.
-- [ ] R4. The composition pipeline slices a 45–60s teaser from the episode audio with `ffmpeg`, gets word-level timestamps from a locked uv `faster-whisper` worker (`python/align_captions.py`), and renders headline cards, kinetic captions, a waveform and a CTA outro with nothing inside the bottom 480px or right 162px safe-zones.
-- [ ] R5. Editorial mode animates the cover and card images with local Ken-Burns pan/zoom and spawns no `colab` process and makes no network call.
-- [ ] R6. Unreadable/missing audio, an unknown or not-yet-shipped `visualMode` (`avatar`, `hybrid-pip` until 0452), or a hook window outside 45–60s exits nonzero with an actionable message **before** spawning `ffmpeg`, `uv`, or Chromium.
+- [x] R1. `packages/kk-core/src/schemas.ts` exports `VideoVisualModeSchema`, `VideoRenderProviderSchema`, `videoGenContentSchema` and type `VideoGenContent`, exactly as `docs/design/short-form-video-promotion.md` §2, re-exported from `packages/kk-core/src/index.ts`. A payload missing `metadata.videoPath`, or with `durationSec <= 0`, is rejected.
+- [x] R2. `plugins/generations/video-gen/` is a Bun workspace plugin (`plugin.json` `kind: generator`, `package.json` `@gobing-ai/video-gen`, `tsconfig.json` with `jsx: react-jsx`, `pyproject.toml` + `uv.lock`) that `kk executor run video-gen --in <request.json> --out <content.json>` discovers and runs.
+- [x] R3. With `visualMode: "editorial"` and a daily work dir, the plugin writes a 1080×1920, 30fps, H.264 video + AAC audio MP4 of 45–60s to `<workDir>/32-video/<runDate>_video.mp4` and a `videoGenContentSchema`-valid Content (non-empty `title` and `body`; `renderProvider: "local-ken-burns"`) to `--out`.
+- [x] R4. The composition pipeline slices a 45–60s teaser from the episode audio with `ffmpeg`, gets word-level timestamps from a locked uv `faster-whisper` worker (`python/align_captions.py`), and renders headline cards, kinetic captions, a waveform and a CTA outro with nothing inside the bottom 480px or right 162px safe-zones.
+- [x] R5. Editorial mode animates the cover and card images with local Ken-Burns pan/zoom and spawns no `colab` process and makes no network call.
+- [x] R6. Unreadable/missing audio, an unknown or not-yet-shipped `visualMode` (`avatar`, `hybrid-pip` until 0452), or a hook window outside 45–60s exits nonzero with an actionable message **before** spawning `ffmpeg`, `uv`, or Chromium.
 
 **Out of scope:** Colab / `wan21-i2v` (0451); `avatar`/`hybrid-pip` (0452); publisher changes and daily-workflow wiring (0449); YouTube (0450); a host-portrait registry; 16:9 output; TTS.
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Typed video Content contract validates video-gen outputs in kk-core (req: R1)
+- [x] AC1 — Typed video Content contract validates video-gen outputs in kk-core (req: R1)
   - Given/When/Then: the feature R1 scenario, observed by `packages/kk-core/tests/schemas.test.ts` (pure zod parse).
-- [ ] AC2 — video-gen renders a 9:16 H.264/AAC MP4 locally via Remotion from a daily AI news run (req: R2, R3)
+- [x] AC2 — video-gen renders a 9:16 H.264/AAC MP4 locally via Remotion from a daily AI news run (req: R2, R3)
   - Observed by the heavy-tier `plugins/generations/video-gen/tests/render-e2e.test.ts`: real Remotion render over a fixture work dir, then `ffprobe` asserts 1080×1920, h264, an aac stream, and duration. The fixture clip may be shortened via the request's test-only `hook` window, but the duration clamp must be asserted in the fast tier.
-- [ ] AC3 — Shared local composition pipeline builds teaser hook, word timestamps, captions, waveform, safe-zones, and CTA (req: R4)
+- [x] AC3 — Shared local composition pipeline builds teaser hook, word timestamps, captions, waveform, safe-zones, and CTA (req: R4)
   - Observed by fast-tier `tests/remotion-props.test.ts` and `tests/hook-slicer.test.ts`, with a fake `faster-whisper` JSON and a recorded `ffmpeg` argv. Assert hook clamping, caption chunking, and that every layout box sits clear of y ≥ 1440 and x ≥ 918.
-- [ ] AC4 — Editorial mode runs 100 percent locally with Ken-Burns motion by default (req: R5)
+- [x] AC4 — Editorial mode runs 100 percent locally with Ken-Burns motion by default (req: R5)
   - Observed by fast-tier `tests/video-gen.test.ts` with an injected process runner: the recorded argv list has no `colab` entry and `renderProvider === 'local-ken-burns'`.
-- [ ] AC5 — Invalid video inputs or missing credentials fail closed before expensive execution (req: R6)
+- [x] AC5 — Invalid video inputs or missing credentials fail closed before expensive execution (req: R6)
   - Observed by `tests/video-gen.test.ts`: each invalid request exits nonzero and the injected runner records **zero** spawns.
 
 ### Q&A
@@ -103,15 +105,84 @@ Implements: R1 — Typed video Content contract validates video-gen outputs in k
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Fills R1/R2/R3/R4 plus this task's R5–R6 legs: the typed video contract in `@gobing-ai/kk-core` and the
+100% local Remotion 9:16 editorial generator. 0449/0450/0451/0452 extend this plugin — none of them fork it.
+
+**Contract (R1)**
+- `packages/kk-core/src/schemas.ts:94` `VideoVisualModeSchema`, `:97` `VideoRenderProviderSchema`, `:104`
+  `videoGenContentSchema` (+ `VideoGenContent`/`VideoVisualMode`/`VideoRenderProvider` types at `:133-137`) —
+  exactly design §2, `format: "video"`, `metadata.videoPath` required, `durationSec` positive.
+- `packages/kk-core/src/index.ts:80-88` re-exports. Cover: `packages/kk-core/tests/schemas.test.ts:97-152`
+  (valid parse, missing `videoPath`, `durationSec: 0`, unknown mode/provider).
+
+**Plugin (R2)** — `plugins/generations/video-gen/` (`plugin.json` `kind: generator`, `@gobing-ai/video-gen`,
+`tsconfig` with `jsx: react-jsx`, `pyproject.toml` + `uv.lock` for the whisper worker).
+- `src/index.ts:43-133` `main(argv, deps?)`: request → inputs → `ffprobe` → hook window → `ffmpeg` slice →
+  whisper words → provider → staged assets → props → Remotion render → `videoGenContentSchema.parse` → `--out`.
+  Every check that can run without a render runs first, so a bad input spawns nothing.
+- `src/request.ts:21,64` plugin-local `VideoGenRequestSchema` + `parseVideoGenRequestInput`.
+- `src/inputs.ts:105` resolves audio (`31-publish` `metadata.audioFile`, else `30-audio` `metadata.audioPath`),
+  cover (`23-cover`), plan (`24-script`) and cards (`25-xhs`), failing closed when a required one is absent.
+- `src/hook-slicer.ts:14,48,83` `ffprobe`/`ffmpeg` argv + probe parse; `src/captions.ts:14,63` locked `uv`
+  worker argv + payload validation; `src/visual-provider.ts:27,38` `VisualProvider` + `local-ken-burns`.
+- `src/layout.ts` (198 lines, pure): safe zone `:15`, `contentBox` `:41`, hook clamp `:63-104`, caption
+  chunking `:118`, active-caption lookups `:154`, waveform `:176`.
+- `src/props.ts:19,46` `EditorialReelProps` + `buildEditorialProps`; `src/render.ts:35,70` asset staging +
+  render handoff with a non-empty-artifact check.
+- `src/remotion/{Root,EditorialReel,SafeZoneFrame,KineticCaptions,WaveformBar}.tsx` + `engine.ts` — thin
+  declarative shell; all branching lives in the `.ts` modules so the fast tier can cover it.
+- `python/align_captions.py` — faster-whisper word timestamps, decoded through `ffmpeg` (see deviations).
+
+**Deviations from the Design section (evidence in Testing)**
+1. `kk executor run` validates a generator's `--in` against the kind contract (`DocListSchema`,
+   `packages/kk-core/src/kinds.ts:62`; enforced at `apps/cli/src/invoke.ts:568-608`), so a bare request object is
+   rejected before the plugin starts. The request therefore travels in `Doc[0].metadata`
+   (`parseVideoGenRequestInput` reads that envelope and still tolerates a bare object for a direct
+   `bun src/index.ts --in` run). 0449 must build the `Doc[]` envelope when it wires the daily workflow.
+2. faster-whisper's path-based `transcribe()` decodes through PyAV, and `av>=19` dropped the `metadata_errors`
+   kwarg faster-whisper 1.2.1 still passes — the worker died on every run. `align_captions.py` now decodes to
+   16kHz mono float32 via `ffmpeg` (already a hard dependency) and hands the model an array.
+3. `scripts/bundle-plugins.ts:136` keeps `remotion`/`@remotion/*`/`react`/`react-dom` external: Bun cannot inline
+   `@remotion/bundler` (it pulls `@remotion/studio`, whose effect/whisper peers are unresolvable at build time).
+   `apps/cli/package.json` declares those five as dependencies so an installed plugin resolves them — the same
+   pattern `playwright` already uses.
+
+**Blast radius.** `packages/kk-core/tests/registry.test.ts:282,663` (shipped-plugin list gains `video-gen`),
+`scripts/test-suites.ts:39` (registers the render e2e in the heavy tier), `bun.lock`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 typed `videoGenContentSchema`; rejects missing `videoPath` / non-positive `durationSec` | MET | `packages/kk-core/src/schemas.ts:94,97,104`; `packages/kk-core/src/index.ts:80-84`; `packages/kk-core/tests/schemas.test.ts:87-152` |
+| R2 workspace plugin `kk executor run video-gen` discovers and runs | MET | `plugins/generations/video-gen/{plugin.json,package.json,tsconfig.json,pyproject.toml,uv.lock}`; entry `src/index.ts:45`; discovery `packages/kk-core/tests/registry.test.ts:282`; real dogfood run (Testing) |
+| R3 1080×1920 30fps H.264+AAC 45–60s MP4 into `<workDir>/32-video/` + schema-valid Content | MET | `src/index.ts:66-136`; `src/render.ts:61,87`; heavy `tests/render-e2e.test.ts:29`; dogfood 60.011s |
+| R4 teaser slice, word timestamps, headline/captions/waveform/CTA clear of bottom-480/right-162 | MET | `src/hook-slicer.ts:14,16,48,83`; `src/captions.ts:14,63`; `python/align_captions.py`; `src/layout.ts:16,61,135`; `src/remotion/*.tsx`; `tests/remotion-props.test.ts:40,58,87` |
+| R5 editorial Ken-Burns, no `colab`, no network | MET | `src/visual-provider.ts:27,38` + `tests/video-gen.test.ts:77` (no colab argv, `renderProvider === 'local-ken-burns'`); zero HTTP in this plugin's sources. Residual: Remotion's headless browser is a one-time install cost — now fails with the exact command (`src/render.ts:87`, `src/remotion/engine.ts:16`), per-run behaviour is offline. 0449 should run `npx remotion browser ensure` at install. |
+| R6 invalid inputs fail closed before spawning ffmpeg/uv/Chromium | MET | `src/request.ts:21,64`; `src/inputs.ts:103`; `src/layout.ts:122`; `tests/video-gen.test.ts:124-189` (exit 1 **and** zero recorded spawns); `:160` (no ffmpeg/uv spawn for an out-of-range hook) |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 typed contract validates video-gen outputs | MET | test | `packages/kk-core/tests/schemas.test.ts:87` (`bun test packages/kk-core/tests/schemas.test.ts` → 21 pass; `schemas.ts` 100% lines) |
+| AC2 real 9:16 H.264/AAC render (heavy tier) | MET | test | `plugins/generations/video-gen/tests/render-e2e.test.ts:29` — ffprobe: h264 1080×1920 + aac + duration; registered `scripts/test-suites.ts:39`; re-run green after the repair |
+| AC3 hook clamp, caption chunking, safe zone (y≥1440 / x≥918) | MET | test | `tests/remotion-props.test.ts:40` (boundary-inclusive safe zone), `:58` (clamp + reject), `:87` (chunking); `tests/hook-slicer.test.ts:53` (recorded argv + fades) |
+| AC4 editorial mode 100% local, Ken-Burns default | MET | test | `tests/video-gen.test.ts:77` — argv list is exactly `ffprobe, ffmpeg, uv` (no colab), provider `local-ken-burns`; `tests/hook-slicer.test.ts`/`tests/captions.test.ts` assert the bounded deadlines on those three spawns |
+| AC5 invalid inputs exit nonzero with zero spawns | MET | test | `tests/video-gen.test.ts:124` (each refusal: exit 1, no `--out`, `calls` length 0) |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -123,3 +194,8 @@ Implements: R1 — Typed video Content contract validates video-gen outputs in k
 - https://www.remotion.dev/license
 
 ### History
+
+- 2026-11-27T08:45:30.382Z todo → wip (system)
+- 2026-11-27T08:59:20.846Z wip → testing (system)
+- 2026-11-27T08:59:22.065Z testing → done (system)
+

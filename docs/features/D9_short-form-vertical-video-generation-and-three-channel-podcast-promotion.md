@@ -2,11 +2,11 @@
 schema_version: 1
 id: "D9"
 name: "Short-form vertical video generation and three-channel podcast promotion"
-status: backlog
+status: active
 priority: P2
 tags: []
 created_at: "2026-11-26T19:32:00.623Z"
-updated_at: "2026-11-27T08:12:01.715Z"
+updated_at: "2026-11-27T08:59:21.644Z"
 ---
 
 # D9: Short-form vertical video generation and three-channel podcast promotion
@@ -143,7 +143,7 @@ Feature: Short-form vertical video generation and three-channel podcast promotio
 | --- | ---- | ------ |
 | 0452 | Add MuseTalk and EchoMimicV2 avatar and hybrid-pip modes to video-gen | todo |
 | 0450 | Add youtube-pub plugin for YouTube Shorts via YouTube Data API v3 | todo |
-| 0448 | Build video-gen plugin local Remotion editorial MVP and kk-core video contract | todo |
+| 0448 | Build video-gen plugin local Remotion editorial MVP and kk-core video contract | testing |
 | 0449 | Wire video-gen Content publishing into shipinhao-pub and xhs-pub | todo |
 | 0451 | Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider | todo |
 <!-- END AUTO-GENERATED -->
@@ -151,3 +151,6 @@ Feature: Short-form vertical video generation and three-channel podcast promotio
 ## Notes
 
 ## History
+
+- 2026-11-27T08:59:21.644Z backlog → active (system)
+

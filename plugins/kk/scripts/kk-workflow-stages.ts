@@ -2308,6 +2308,11 @@ if (import.meta.main)
             dailyPublishWechat(rest);
             break;
         }
+        case 'daily-video-request': {
+            const { dailyVideoRequest } = await loadDailyStages();
+            dailyVideoRequest(rest);
+            break;
+        }
         case 'daily-bundle-variants': {
             const { dailyBundleVariants } = await loadDailyStages();
             dailyBundleVariants(rest);

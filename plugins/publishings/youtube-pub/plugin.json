@@ -1,0 +1,34 @@
+{
+    "name": "youtube-pub",
+    "kind": "publish",
+    "entry": "./src/index.ts",
+    "version": "1.0.0",
+    "description": "Publish a 9:16 video to YouTube Shorts through the official Data API v3 (resumable videos.insert, OAuth2 refresh token, private by default)",
+    "publishing": {
+        "defaultProfile": "video",
+        "profiles": {
+            "video": {
+                "format": "video",
+                "locale": "source",
+                "limits": {
+                    "title": {
+                        "max": 100,
+                        "unit": "unicode_code_points"
+                    }
+                },
+                "modes": {
+                    "draft": {
+                        "metadata": {
+                            "privacyStatus": "private"
+                        }
+                    },
+                    "live": {
+                        "metadata": {
+                            "privacyStatus": "public"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

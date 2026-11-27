@@ -1,7 +1,7 @@
 {
     "name": "@gobing-ai/knowledge-kit",
     "version": "0.1.28",
-    "description": "An ingest → create → publish content pipeline CLI (Bun).",
+    "description": "An ingest \u2192 create \u2192 publish content pipeline CLI (Bun).",
     "repository": {
         "type": "git",
         "url": "git+https://github.com/gobing-ai/knowledge-kit.git"
@@ -55,8 +55,13 @@
         "@gobing-ai/ts-infra": "catalog:",
         "@gobing-ai/ts-runtime": "catalog:",
         "@gobing-ai/ts-utils": "catalog:",
+        "@remotion/bundler": "4.0.547",
+        "@remotion/renderer": "4.0.547",
         "commander": "15.0.0",
         "playwright": "catalog:",
+        "react": "19.2.1",
+        "react-dom": "19.2.1",
+        "remotion": "4.0.547",
         "zod": "4.4.3"
     },
     "devDependencies": {

@@ -77,6 +77,12 @@ export {
     ResultSchema,
     type TargetOutcome,
     TargetOutcomeSchema,
+    type VideoGenContent,
+    type VideoRenderProvider,
+    VideoRenderProviderSchema,
+    type VideoVisualMode,
+    VideoVisualModeSchema,
+    videoGenContentSchema,
 } from './schemas';
 export { type SplitSentencesOptions, splitSentences } from './sentences';
 export {

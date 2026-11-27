@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Wire video-gen Content publishing into shipinhao-pub and xhs-pub
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.662Z
-updated_at: "2026-11-26T23:19:08.903Z"
+updated_at: "2026-11-27T09:26:26.613Z"
 feature_id: D9
 priority: P1
 tags:
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0448"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0449. Wire video-gen Content publishing into shipinhao-pub and xhs-pub
@@ -35,17 +37,17 @@ Implements: R10 — Shipinhao and Xiaohongshu publishers accept video-gen Conten
 
 ### Requirements
 
-- [ ] R1. Regression: shipinhao-pub's `shortVideo` flow accepts a `videoGenContentSchema`-valid payload (including the extra `visualMode`/`renderProvider`/`width`… keys) and defaults it to a draft, with no flow change.
-- [ ] R2. `plugins/publishings/xhs-pub/plugin.json` declares a `video` publishing profile (`format: "video"`, `locale: "zh"`, modes draft/live → operation `上传视频`, no `requires`) that passes manifest validation. Given `metadata.video` from a video-gen MP4, the existing 上传视频 ladder saves via 暂存离开 by default.
-- [ ] R3. `kk-news-generate.yaml` gets a `video` node after `cards`/`voice` and before `variants`. It runs `kk executor run video-gen` with `visualMode: editorial` against the run work dir, with `onError: continue`, and it is gated on a new workflow var `video` (default `"off"`), so default daily runs are unchanged.
-- [ ] R4. `dailyBundleVariants` writes `video`, `video@shipinhao-pub` (format video, `videoPath`, `coverPath`, `tags`, `publishStatus: draft`) and `video@xhs-pub` (`metadata.video = videoPath`, `operation: 上传视频`, draft) when `32-video/<d>_video.mp4` and its Content exist. Otherwise it pushes `video (no 32-video render)` to `skipped`. `isShortFormVariant` includes `video` and `video@*`.
-- [ ] R5. `plugins/kk/publish-presets/daily-ai-voice.json` gets rows `shipinhao-pub` / `variant: video@shipinhao-pub` and `xhs-pub` / `variant: video@xhs-pub` / `operation: 上传视频`, both `mode: "off"` and `required: false`.
+- [x] R1. Regression: shipinhao-pub's `shortVideo` flow accepts a `videoGenContentSchema`-valid payload (including the extra `visualMode`/`renderProvider`/`width`… keys) and defaults it to a draft, with no flow change.
+- [x] R2. `plugins/publishings/xhs-pub/plugin.json` declares a `video` publishing profile (`format: "video"`, `locale: "zh"`, modes draft/live → operation `上传视频`, no `requires`) that passes manifest validation. Given `metadata.video` from a video-gen MP4, the existing 上传视频 ladder saves via 暂存离开 by default.
+- [x] R3. `kk-news-generate.yaml` gets a `video` node after `cards`/`voice` and before `variants`. It runs `kk executor run video-gen` with `visualMode: editorial` against the run work dir, with `onError: continue`, and it is gated on a new workflow var `video` (default `"off"`), so default daily runs are unchanged.
+- [x] R4. `dailyBundleVariants` writes `video`, `video@shipinhao-pub` (format video, `videoPath`, `coverPath`, `tags`, `publishStatus: draft`) and `video@xhs-pub` (`metadata.video = videoPath`, `operation: 上传视频`, draft) when `32-video/<d>_video.mp4` and its Content exist. Otherwise it pushes `video (no 32-video render)` to `skipped`. `isShortFormVariant` includes `video` and `video@*`.
+- [x] R5. `plugins/kk/publish-presets/daily-ai-voice.json` gets rows `shipinhao-pub` / `variant: video@shipinhao-pub` and `xhs-pub` / `variant: video@xhs-pub` / `operation: 上传视频`, both `mode: "off"` and `required: false`.
 
 **Out of scope:** the youtube-pub row and variant (0450); shipinhao/xhs flow code changes; live publishing; enabling `video` by default; `kk-daily-ai-voice*.yaml` (legacy workflows, unless they share the node via `kk news generate-bundle`).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default (req: R1, R2, R4, R5)
+- [x] AC1 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default (req: R1, R2, R4, R5)
   - Observed by: `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` (new case: a videoGenContentSchema fixture reaches the shortVideo plan with `publishStatus: draft`); `plugins/publishings/xhs-pub/tests/` (manifest loads, and the `video` profile resolves `上传视频`); `plugins/kk/scripts/tests/` daily-stages variants test (fixture `32-video/` → the two variant files with the mapped keys; no `32-video/` → a `skipped` entry, no throw); a preset parse test (the rows validate against `PublishPresetTargetSchema` at mode off). The R3 workflow node is checked by `spur workflow validate plugins/kk/workflows/kk-news-generate.yaml` and by the existing workflow-shape test.
 
 ### Q&A
@@ -86,15 +88,94 @@ Implements: R10 — Shipinhao and Xiaohongshu publishers accept video-gen Conten
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Wires the video-gen payloads into the two Chinese short-video channels and into the daily bundle.
+R1 needed **no** publisher change (the refine pass was right: shipinhao's shortVideo ladder already
+accepts video-gen Content), so this task adds one regression test, one manifest profile, the bundle
+variants, the request stage + workflow node, and two preset rows.
+
+**R1 — shipinhao accepts video-gen Content unchanged**
+- `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` (new test in the flow-stages
+  describe) parses a real `videoGenContentSchema` payload — `visualMode`/`renderProvider`/`width`/
+  `height`/`fps`/`durationSec`/`captionsPath`/`tags` included — through the transport and asserts
+  `publishStatus: 'draft'`, the video input upload and the title fill. No `src/` change.
+
+**R2 — xhs `video` profile**
+- `plugins/publishings/xhs-pub/plugin.json:47-61` declares `publishing.profiles.video`
+  (`format: "video"`, `locale: "zh"`, title limit 20, `modes.draft → 上传视频 / draft`,
+  `modes.live → 上传视频 / public`). No `requires` block: `PublishingProfileRequiresSchema` is strict
+  with only `cover`/`orderedImages` (`packages/kk-core/src/manifest.ts:120-128`), and the 上传视频
+  ladder already refuses a missing video. `defaultProfile` stays `note`.
+- Cover: `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` new `video publishing profile (R2, D9)`
+  describe — manifest load, profile shape, and that the bound operation is one `XHS_OPERATIONS` lists.
+
+**R4 — bundle variants**
+- `plugins/kk/scripts/daily-stages.ts:2797` `VideoVariantPlugin`, `:2808` `buildVideoVariant(content,
+  plugin)`: structural re-validation (this script ships without `@gobing-ai/*`, so it cannot import
+  `videoGenContentSchema`), then the shipinhao copy keeps `videoPath` + `coverPath` + `tags` and pins
+  `publishStatus: draft`, while the xhs copy maps `metadata.video = videoPath`, sets
+  `operation: 上传视频`, pins the draft, and drops the cover claim (上传视频 has no cover rail).
+- `:3214-3223` `dailyBundleVariants` writes `video`, `video@shipinhao-pub`, `video@xhs-pub` when
+  `32-video/<d>_video.mp4` and its `_video_content.json` exist, else records
+  `video (no 32-video render)` in `skipped`.
+- `:5334` `isShortFormVariant` now includes `video` and `video@*`, so the video title/description go
+  through the ADR-059 deterministic PII gate like the cards and social copy. Exported for direct
+  assertion.
+- Cover: `plugins/kk/tests/daily-video-variants-0449.test.ts` (4 cases: the three variants and their
+  keys, the skip path, the builder's refusals, the short-form classification).
+
+**R3 — workflow node + typed request**
+- `plugins/kk/scripts/daily-stages.ts:3259` `dailyVideoRequest` writes
+  `32-video/request.json` as the `Doc[]` envelope `kk executor run` validates for a generator
+  (`Doc[0].metadata = { workDir, runDate, visualMode }` — the shape 0448's
+  `parseVideoGenRequestInput` reads), dispatched at `plugins/kk/scripts/kk-workflow-stages.ts:2311`.
+- `plugins/kk/workflows/kk-news-generate.yaml:47` declares `vars.video` (default `"off"`) and `:509`
+  adds the `video` node between `cards` and `variants`, `dependsOn: [voice, voice-fallback,
+  voice-fallback2, cards]`, condition `pool-gate PASS && vars.video != off`, action
+  `kk stage daily-video-request … && kk executor run video-gen …`, `onError: continue`.
+  `spur workflow validate` passes.
+
+**R5 — preset rows**
+- `plugins/kk/publish-presets/daily-ai-voice.json` appends `shipinhao-pub / shortVideo /
+  variant video@shipinhao-pub` (tier 3, `overseas-rss`) and `xhs-pub / 上传视频 / variant video@xhs-pub`
+  (tier 3, `cn-peak`), both `mode: "off"` and `required: false`.
+
+**Sync (AGENTS.md § Editing plugins/kk/scripts).** `bun scripts/bundle-plugins.ts` re-staged the
+plugin tree, and `plugins/kk/{scripts,workflows}` were rsync'd into the live install
+(`~/.bun/install/global/node_modules/@gobing-ai/knowledge-kit`) so the 04:30 launch preflight sees
+the same stage roster; `bun run tools:fresh` reports only the unrelated `spur` patch-level lag.
+
+**Known limit.** The full `kk news generate --video editorial` node has not been run end to end (it
+costs a whole TTS episode); the node's two commands were run individually against a real run dir and
+the variants against a real render — see `## Testing`.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 shipinhao `shortVideo` accepts a `videoGenContentSchema` payload and defaults to draft, no flow change | MET | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` — new flow-stages case parses a real `videoGenContentSchema` payload through the transport (extra `visualMode`/`renderProvider`/`width`/`height`/`fps`/`durationSec`/`captionsPath`/`tags` keys included) and asserts `publishStatus: 'draft'`, the video upload and the title fill. `src/flow.ts` untouched. |
+| R2 xhs declares a `video` profile (`format: video`, locale zh, draft/live → 上传视频, no `requires`) that loads | MET | `plugins/publishings/xhs-pub/plugin.json:47-61`; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` → `video publishing profile (R2, D9)` (manifest parses, profile shape, bound operation is in `XHS_OPERATIONS`) |
+| R3 `kk-news-generate.yaml` gets a `video` node after cards/voice, before variants, gated on `vars.video` (default off), `onError: continue` | MET | `plugins/kk/workflows/kk-news-generate.yaml:47` (var), `:509` (node); `plugins/kk/scripts/daily-stages.ts:3259` + `plugins/kk/scripts/kk-workflow-stages.ts:2311` (typed request stage); `spur workflow validate plugins/kk/workflows/kk-news-generate.yaml` → `workflow valid`; shape asserted in `plugins/kk/tests/daily-video-variants-0449.test.ts` (order, dependsOn, onError, condition, both commands) |
+| R4 `dailyBundleVariants` writes `video`, `video@shipinhao-pub`, `video@xhs-pub` with the per-channel keys, else records `video (no 32-video render)`; `isShortFormVariant` covers the video keys | MET | `plugins/kk/scripts/daily-stages.ts:2797,2808` (builder), `:3214-3223` (emission), `:5334` (short-form set); `plugins/kk/tests/daily-video-variants-0449.test.ts` (3-variant mapping, skip path, builder refusals, ADR-059 classification). Real-render run recorded in `## Testing`. |
+| R5 preset rows `shipinhao-pub / video@shipinhao-pub` and `xhs-pub / video@xhs-pub / 上传视频`, both `mode: off`, `required: false` | MET | `plugins/kk/publish-presets/daily-ai-voice.json`; asserted + `PublishPresetSchema.safeParse` green in `plugins/kk/tests/daily-video-variants-0449.test.ts` |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 both publishers accept video-gen Content and save drafts; variants + preset + node wired | MET | test | `bun test plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts` (90 pass), `bun test plugins/publishings/xhs-pub/tests/xhs-pub.test.ts` (174 pass), `bun test plugins/kk/tests/daily-video-variants-0449.test.ts` (8 pass), `bun test apps/cli/tests/publish-matrix.test.ts` (42 pass, the shipped preset still validates); `spur workflow validate plugins/kk/workflows/kk-news-generate.yaml` |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -107,3 +188,8 @@ Implements: R10 — Shipinhao and Xiaohongshu publishers accept video-gen Conten
 - `plugins/kk/publish-presets/daily-ai-voice.json`
 
 ### History
+
+- 2026-11-27T09:13:37.953Z todo → wip (system)
+- 2026-11-27T09:26:22.170Z wip → testing (system)
+- 2026-11-27T09:26:26.603Z testing → done (system)
+

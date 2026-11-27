@@ -40,6 +40,12 @@ vars:
   # --inline-illustrations` forwards "true" after admitting the target, and a direct
   # `spur workflow run` gets the gated-off default.
   inline_illustrations: "false"
+  # 0449 R3: the short-form vertical video (D9). `off` by default, so a default daily run is
+  # unchanged; `editorial` runs the local Remotion render before the bundle is frozen, and
+  # `editorial-wan` (0451) asks the Colab Wan2.1 I2V provider first, falling back to local
+  # Ken-Burns on any Colab failure or CCU-cap refusal. The preset rows for the video variants are
+  # `mode: off` too — the operator enables both after a manual draft review.
+  video: "off"
   # 0426 R2: the figure requests reuse the daily cover's pinned provider/model (no implicit
   # fallback) — the same pair the daily voice workflows ship.
   cover_provider: "minimax"
@@ -499,6 +505,26 @@ nodes:
       onError: continue
       options:
         command: 'kk news generate-cards --work-dir "${vars.work_dir}"'
+
+  # ── 17b. video: the vertical short (D9 / 0449 R3) ───────────────────────────────────────────
+  - id: video
+    description: >-
+      `kk stage daily-video-request` then `kk executor run video-gen` — the 9:16 45–60s teaser
+      (D9, ADR-060) rendered locally from this run's audio, script plan and cover. Gated on the
+      `video` var (`off` by default) and `onError: continue`: a missing render only records
+      `video (no 32-video render)` in the bundle, so a bad video never costs the episode.
+    dependsOn: [voice, voice-fallback, voice-fallback2, cards]
+    condition:
+      kind: shell
+      options:
+        command: 'grep -q "status.*PASS" "${vars.work_dir}/pool-gate.json" 2>/dev/null && [ "${vars.video}" != "off" ]'
+    action:
+      kind: shell
+      onError: continue
+      options:
+        command: >-
+          kk stage daily-video-request "${vars.work_dir}" "${vars.run_date}" "${vars.video}" &&
+          kk executor run video-gen --in "${vars.work_dir}/32-video/request.json" --out "${vars.work_dir}/32-video/${vars.run_date}_video_content.json"
 
   # ── 18–20. the frozen bundle: variants, the nested variants review, then the freeze ─────────
   - id: variants

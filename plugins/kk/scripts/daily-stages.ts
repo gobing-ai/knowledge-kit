@@ -2793,6 +2793,56 @@ export function buildXhsCardsContent(
     };
 }
 
+/** Plugins whose video variant this builder remaps. */
+export type VideoVariantPlugin = 'shipinhao-pub' | 'xhs-pub' | 'youtube-pub';
+
+/**
+ * 0449 R4: remap a `video-gen` Content into one channel's video variant.
+ *
+ * WHY a remap rather than a shared passthrough: shipinhao's shortVideo flow reads
+ * `metadata.videoPath` while xhs's 上传视频 ladder reads `metadata.video` and has no cover rail at
+ * all, so each channel gets exactly the keys its own flow consumes. The content is re-validated
+ * structurally here (this script ships without `@gobing-ai/*`), so a malformed render fails the
+ * bundle instead of reaching a publisher with a dangling path.
+ */
+export function buildVideoVariant(
+    content: Record<string, unknown>,
+    plugin: VideoVariantPlugin,
+): Record<string, unknown> {
+    if (content.format !== 'video') {
+        failWith(1, `build-video-variant: content format is '${String(content.format)}', expected 'video'`);
+    }
+    const meta = metadataOf(content);
+    const videoPath = typeof meta.videoPath === 'string' ? meta.videoPath : '';
+    if (videoPath === '') failWith(1, 'build-video-variant: video content carries no metadata.videoPath');
+    if (!isFile(videoPath)) failWith(1, `build-video-variant: rendered video is missing at ${videoPath}`);
+    const coverPath = typeof meta.coverPath === 'string' ? meta.coverPath : undefined;
+    const tags = Array.isArray(meta.tags) ? meta.tags.filter((tag): tag is string => typeof tag === 'string') : [];
+    if (plugin === 'youtube-pub') {
+        // 0450 R6: the API publisher consumes the video-gen Content as-is; privacy stays the client's
+        // private-first default (no `options` block in a frozen variant — the matrix strips it).
+        return { ...content };
+    }
+    if (plugin === 'shipinhao-pub') {
+        return {
+            ...content,
+            metadata: {
+                ...meta,
+                videoPath,
+                publishStatus: 'draft',
+                ...(coverPath === undefined ? {} : { coverPath }),
+                ...(tags.length > 0 ? { tags } : {}),
+            },
+        };
+    }
+    // 上传视频 reads metadata.video (string or { path }) and ignores a cover entirely.
+    const { coverPath: _coverDropped, ...xhsMeta } = meta;
+    return {
+        ...content,
+        metadata: { ...xhsMeta, video: videoPath, operation: '上传视频', publishStatus: 'draft' },
+    };
+}
+
 /** The podcast payload (task 0327 R1): publish-prep Content plus the episode's show notes. */
 export function buildPodcastContent(
     prep: Record<string, unknown>,
@@ -3164,6 +3214,19 @@ export function dailyBundleVariants(args: string[]): void {
             }
         }
 
+        // 0449 R4: the video variants ride the frozen bundle only when a render exists; without one
+        // the bundle records the miss and keeps going (the node itself is gated on vars.video).
+        const videoFile = join(workDir, '32-video', `${runDate}_video.mp4`);
+        const videoContentPath = join(workDir, '32-video', `${runDate}_video_content.json`);
+        const videoContent = isFile(videoFile) && isFile(videoContentPath) ? readJson(videoContentPath) : null;
+        if (videoContent === null) skipped.push('video (no 32-video render)');
+        else {
+            write('video', videoContent);
+            write('video@shipinhao-pub', buildVideoVariant(videoContent, 'shipinhao-pub'));
+            write('video@xhs-pub', buildVideoVariant(videoContent, 'xhs-pub'));
+            write('video@youtube-pub', buildVideoVariant(videoContent, 'youtube-pub'));
+        }
+
         for (const platform of Object.keys(SOCIAL_LIMITS)) {
             const copyPath = join(socialDir, `${platform}.md`);
             if (!isFile(copyPath)) {
@@ -3186,6 +3249,45 @@ export function dailyBundleVariants(args: string[]): void {
 
         console.log(`bundle-variants: ${written.length} variant(s) in ${outDir}: ${written.join(', ')}`);
         if (skipped.length > 0) console.log(`bundle-variants: skipped ${skipped.join('; ')}`);
+    });
+}
+
+/**
+ * 0449 R3: write `32-video/request.json`, the typed input `kk executor run video-gen` reads.
+ *
+ * WHY a stage and not an inline `printf` in the workflow: the request is the plugin's contract
+ * (`Doc[0].metadata` carries `workDir`/`runDate`/`visualMode` — the executor validates a generator's
+ * `--in` against the kind contract, so the request rides inside a Doc). Writing it here keeps the
+ * shape next to `dailyBundleVariants`, which consumes the same `32-video/` directory.
+ *
+ * `daily-video-request <workDir> <runDate> [videoVar]` — the workflow's `vars.video` value:
+ * `editorial` (local Ken-Burns) or `editorial-wan` (Colab Wan2.1 I2V, 0451 R6). Any other value is
+ * forwarded as the visual mode, so the plugin's own fail-closed ladder names it.
+ */
+export function dailyVideoRequest(args: string[]): void {
+    const [workDir = '', runDate = '', videoVar = 'editorial'] = args;
+    const visualMode = videoVar === 'editorial-wan' ? 'editorial' : videoVar;
+    const provider = videoVar === 'editorial-wan' ? 'wan21-i2v' : undefined;
+    timed(workDir, 'video-request', () => {
+        const outDir = join(workDir, '32-video');
+        const requestPath = join(outDir, 'request.json');
+        sted('mkdir', outDir, () => mkdirSync(outDir, { recursive: true }));
+        const request = [
+            {
+                id: 'video-gen-request',
+                body: '',
+                metadata: {
+                    workDir: resolve(workDir),
+                    runDate,
+                    visualMode,
+                    ...(provider === undefined ? {} : { provider }),
+                },
+            },
+        ];
+        sted('write', requestPath, () => writeJsonText(requestPath, request));
+        console.log(
+            `video-request: ${requestPath} (visualMode=${visualMode}${provider === undefined ? '' : `, provider=${provider}`})`,
+        );
     });
 }
 
@@ -5242,8 +5344,19 @@ function detectVariantPiiKinds(text: string): string[] {
 const AGGREGATOR_CAVEAT_RE = /聚合页转述|未取得原始报道/;
 const SHORT_ATTRIBUTION_RE = /转述|据报道|报道|聚合|来源/;
 
-function isShortFormVariant(key: string): boolean {
-    return key === 'cards' || key.startsWith('cards@') || key.startsWith('social:') || key === 'article@wechatmp-pub';
+/**
+ * 0449 R4: variant keys the ADR-059 PII gate treats as short-form copy (cards, social, the video
+ * title/description, and the 公众号 article). Exported so the classification is asserted directly.
+ */
+export function isShortFormVariant(key: string): boolean {
+    return (
+        key === 'cards' ||
+        key.startsWith('cards@') ||
+        key.startsWith('social:') ||
+        key === 'video' ||
+        key.startsWith('video@') ||
+        key === 'article@wechatmp-pub'
+    );
 }
 
 /**

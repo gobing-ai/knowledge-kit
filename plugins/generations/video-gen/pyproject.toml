@@ -1,0 +1,9 @@
+[project]
+name = "video-gen-captions"
+version = "1.0.0"
+description = "faster-whisper word-level caption aligner for the knowledge-kit video-gen plugin (independent uv project)"
+requires-python = ">=3.10,<3.13"
+dependencies = ["faster-whisper>=1.2.1,<2"]
+
+[dependency-groups]
+dev = ["pytest"]

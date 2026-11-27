@@ -279,6 +279,7 @@ describe('discoverPlugins', () => {
             'surfdash-pub',
             'threads-pub',
             'vibe-voice-tts',
+            'video-gen',
             'voice-gen',
             'voxcpm-tts',
             'web-search',
@@ -287,6 +288,7 @@ describe('discoverPlugins', () => {
             'x-pub',
             'xhs-pub',
             'xiaoyuzhou-pub',
+            'youtube-pub',
             'zenn-pub',
         ]);
         expect(getByName(res, 'karakeep-local')?.kind).toBe('ingestion');
@@ -659,6 +661,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'surfdash-pub',
                 'threads-pub',
                 'vibe-voice-tts',
+                'video-gen',
                 'voice-gen',
                 'voxcpm-tts',
                 'web-search',
@@ -667,6 +670,7 @@ describe('discoverAllPlugins / resolvePluginRoots (ADR-012, feature B7)', () => 
                 'x-pub',
                 'xhs-pub',
                 'xiaoyuzhou-pub',
+                'youtube-pub',
                 'zenn-pub',
             ]);
             expect(res.plugins.every((p) => p.origin === 'builtin')).toBe(true);

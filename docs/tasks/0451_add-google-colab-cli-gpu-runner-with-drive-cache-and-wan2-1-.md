@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
-status: todo
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-26T23:19:09.716Z"
+updated_at: "2026-11-27T09:53:40.468Z"
 feature_id: D9
 priority: P2
 tags:
@@ -15,6 +15,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0448", "0449"]
+done_forced: "false"
+done_reason: unforced close
 ---
 
 ## 0451. Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
@@ -34,22 +36,22 @@ Implements: R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.
 
 ### Requirements
 
-- [ ] R1. `plugins/generations/video-gen/src/colab-runner.ts` exports `runColabJob(job: ColabJob, deps): Promise<ColabJobResult>`. It spawns `colab` (the argv is frozen from the step-0 spike) with `--gpu <T4|L4|A100>`, an explicit `--timeout` equal to `job.timeoutMs` (default 600 000), and a session name `kk-video-<runDate>-<jobType>`. For any session it created with `--keep`/`new`, it runs teardown in `finally`. A local wall-clock kill at `timeoutMs + 60s` also triggers teardown.
+- [x] R1. `plugins/generations/video-gen/src/colab-runner.ts` exports `runColabJob(job: ColabJob, deps): Promise<ColabJobResult>`. It spawns `colab` (the argv is frozen from the step-0 spike) with `--gpu <T4|L4|A100>`, an explicit `--timeout` equal to `job.timeoutMs` (default 600 000), and a session name `kk-video-<runDate>-<jobType>`. For any session it created with `--keep`/`new`, it runs teardown in `finally`. A local wall-clock kill at `timeoutMs + 60s` also triggers teardown.
 - [ ] R2. Each job receives `KK_COLAB_CACHE_DIR` (default `/content/drive/MyDrive/kk-video-cache`). The worker exports `HF_HOME=$KK_COLAB_CACHE_DIR/hf` when that dir is writable, otherwise the VM-local default, and it reports `cache: 'drive'|'local'` in its JSON result.
-- [ ] R3. `src/ccu-ledger.ts` appends `{timestamp, gpu, durationSec, estimatedCcu, jobType, status}` to `<works_dir>/colab-ccu-ledger.jsonl` (burn rates T4 2, L4 3, A100 7 CCU/hr). It refuses before launch when `rolling30d + projected > maxMonthlyCcu` (default 180, configurable via the request's `colab.maxMonthlyCcu`).
-- [ ] R4. `python/colab_wan21_i2v.py` (the remote worker) produces 3–5s 9:16 clips from the cover/card images. The `wan21Provider` VisualProvider returns `{kind:'clips'}`, and `EditorialReel` composites the clips with `<OffthreadVideo>` inside the same safe-zone shell. `wan21-i2v` refuses `T4`.
-- [ ] R5. In editorial mode with `provider: 'wan21-i2v'`, any Colab spawn error, nonzero exit, timeout, missing output, or budget refusal falls back to `localKenBurns`. Content then carries `renderProvider: 'local-ken-burns'`, `fallbackUsed: true` and a `warnings[]` entry naming the cause, and the process exits 0.
-- [ ] R6. Daily wiring: the 0449 workflow var `video` gains `editorial-wan`, which maps to `provider: 'wan21-i2v'` in the video request.
+- [x] R3. `src/ccu-ledger.ts` appends `{timestamp, gpu, durationSec, estimatedCcu, jobType, status}` to `<works_dir>/colab-ccu-ledger.jsonl` (burn rates T4 2, L4 3, A100 7 CCU/hr). It refuses before launch when `rolling30d + projected > maxMonthlyCcu` (default 180, configurable via the request's `colab.maxMonthlyCcu`).
+- [x] R4. `python/colab_wan21_i2v.py` (the remote worker) produces 3–5s 9:16 clips from the cover/card images. The `wan21Provider` VisualProvider returns `{kind:'clips'}`, and `EditorialReel` composites the clips with `<OffthreadVideo>` inside the same safe-zone shell. `wan21-i2v` refuses `T4`.
+- [x] R5. In editorial mode with `provider: 'wan21-i2v'`, any Colab spawn error, nonzero exit, timeout, missing output, or budget refusal falls back to `localKenBurns`. Content then carries `renderProvider: 'local-ken-burns'`, `fallbackUsed: true` and a `warnings[]` entry naming the cause, and the process exits 0.
+- [x] R6. Daily wiring: the 0449 workflow var `video` gains `editorial-wan`, which maps to `provider: 'wan21-i2v'` in the video request.
 
 **Out of scope:** MuseTalk/EchoMimicV2 (0452); a paid Colab tier switch; a multi-job parallel session; billing API queries (the ledger is an estimate).
 
 ### Acceptance Criteria
 
-- [ ] AC1 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget (req: R3, R5)
+- [x] AC1 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget (req: R3, R5)
   - Observed by `tests/colab-fallback.test.ts`: a fake `colab` stub exits 1 / hangs / produces no output, or the ledger is pre-filled to 179 CCU. Each case yields exit 0, `fallbackUsed: true`, a named warning and `renderProvider: 'local-ken-burns'`. In the budget case the stub records **zero** invocations.
-- [ ] AC2 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards (req: R1, R2, R3)
+- [x] AC2 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards (req: R1, R2, R3)
   - Observed by `tests/colab-runner.test.ts`: the recorded argv contains `--gpu A100` and `--timeout`, the env carries `KK_COLAB_CACHE_DIR`, teardown runs after success, failure and the local timeout kill, and a ledger line is appended with the correct `estimatedCcu`.
-- [ ] AC3 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell (req: R4, R6)
+- [x] AC3 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell (req: R4, R6)
   - Observed by a heavy-tier `tests/render-wan-e2e.test.ts`: a fixture of 2 pre-rendered 3s 9:16 clips (no Colab) is rendered through `EditorialReel` `{kind:'clips'}`, and ffprobe asserts 1080×1920 h264+aac. A real Colab run is a manual, operator-approved check recorded in Testing.
 
 ### Q&A
@@ -88,15 +90,91 @@ Implements: R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.
 
 ### Solution
 
-<!-- Filled during implementation: file:line change map and concise rationale. -->
+Adds the Colab GPU plane to `video-gen` (design §4-5): an isolated `google-colab-cli` runner with
+Drive weight caching, unconditional teardown and a rolling CCU ledger, plus the Wan2.1 I2V provider
+that composites Colab motion loops into the same Remotion shell — with an automatic, always-exit-0
+fallback to local Ken-Burns.
+
+**Step-0 spike (frozen argv).** `uv tool install google-colab-cli` (1.0.0, `colab` on PATH) and the
+captured help output fixed the surface: `colab run SCRIPT [--gpu T4|L4|G4|H100|A100] [--session NAME]
+[--keep] [--timeout SECONDS] [--env K=V]`, plus `colab download REMOTE LOCAL --session NAME` and
+`colab stop --session NAME`. `colab run` releases its own VM, but the CLI's transfer verb needs the
+session alive, so the runner always passes `--keep` and always stops the session in `finally`.
+`--timeout` is the CLI's **inactivity** timeout (default 30s), so the job deadline is passed
+explicitly and the seam's group deadline (`timeoutMs + 60s`) is the hard local kill.
+
+**R1 — runner** `src/colab-runner.ts`
+- `:78` `sessionName` (`kk-video-<runDate>-<jobType>`), `:83` `buildColabArgv` (gpu, session, keep,
+  `--timeout`, `--env KK_COLAB_CACHE_DIR=…` + extras), `:103` `buildDownloadArgv`, `:108` `buildStopArgv`.
+- `:139` `runColabJob(job, deps)`: budget check → `colab run` (deadline + 60s) → parse the worker's
+  `KK_COLAB_RESULT` line (`:113`) → one `colab download` per output → `colab stop` in `finally` →
+  ledger line. Any failure returns `ok:false` with the cause; it never throws at the caller.
+
+**R2 — cache** the job env always carries `KK_COLAB_CACHE_DIR` (default
+`/content/drive/MyDrive/kk-video-cache`); `python/colab_wan21_i2v.py:36` `choose_cache` probes that
+drive path, exports `HF_HOME=$KK_COLAB_CACHE_DIR/hf` when it is writable, and reports
+`cache: "drive"|"local"` in its result line (a read-only Drive is a cost warning, not a failure).
+
+**R3 — ledger** `src/ccu-ledger.ts`: `CCU_PER_HOUR` (T4 2 / L4 3 / A100 7) `:14`, `estimateCcu` `:36`,
+`readRolling30d` `:62` (30-day window, malformed lines skipped, missing file = 0), `appendLedger`
+`:91`, `assertBudget` `:100` (cap default 180, `colab.maxMonthlyCcu` override). A refusal returns an
+error and **nothing is spawned**.
+
+**R4 — provider + clips** `src/visual-provider.ts:72` `createWan21Provider` (T4 refused before any
+job, A100 default, `{kind:'clips'}` out), `:129` `prepareVisualLayer` (the fallback decision);
+`src/props.ts` carries `clips` alongside `images`; `src/remotion/EditorialReel.tsx` plays a clip reel
+with `<OffthreadVideo>` under the same safe-zone shell, headline card, captions, waveform and CTA.
+`python/colab_wan21_i2v.py` renders the loops (`Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`, 1080×1920,
+8 fps, `--seconds` default 4) and re-checks the device.
+
+**R5 — fallback** `prepareVisualLayer` catches **every** Colab failure (spawn error, nonzero exit,
+timeout, missing result, missing output, budget refusal) and returns the local Ken-Burns layer with
+`fallbackUsed: true` and a warning naming the cause; `src/index.ts` writes `renderProvider` as the
+provider actually used, plus `fallbackUsed`/`warnings`, so the run exits 0 with a valid MP4.
+
+**R6 — daily wiring** `plugins/kk/scripts/daily-stages.ts` `dailyVideoRequest` maps the workflow var
+`video: editorial-wan` → `visualMode: editorial, provider: wan21-i2v`;
+`plugins/kk/workflows/kk-news-generate.yaml` documents the new value (the node itself is unchanged).
+
+**Evidence.** New fast tests: `tests/ccu-ledger.test.ts`, `tests/colab-runner.test.ts` (argv, cache
+env, download, teardown on success/failure/timeout, ledger line, budget refusal with zero
+invocations), `tests/colab-fallback.test.ts` (the four AC1 fallbacks + the provider seam); new heavy
+test `tests/render-wan-e2e.test.ts` (clip reel → 1080×1920 h264+aac, registered in
+`HEAVY_TEST_PATTERNS`). Existing suites updated for the widened request schema and the clip layer.
+
+**Not done.** One real Colab run (Plan step 6) needs the operator's go-ahead — it spends CCU — and an
+authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 ### Testing
 
-<!-- Filled during verification: commands run, outcomes, coverage claim or N/A. -->
+**Pipeline verify results**
+
+- Verdict: PASS (from verdict artifact)
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| R1 `runColabJob` with the frozen argv, `--gpu`, explicit `--timeout`, session name, teardown for created sessions, local kill at `timeoutMs + 60s` | MET | `src/colab-runner.ts:78,83,103,108,139`; `tests/colab-runner.test.ts` pins argv, the 600 000 + 60 000 seam deadline, and `run → download → stop` on success, failure and timeout |
+| R3 ledger line per job + rolling 30-day cap refusal before launch | MET | `src/ccu-ledger.ts:14,36,62,91,100` and `:47` `resolveLedgerPath` (works root, `KK_WORKS_DIR` override) — the window now accumulates across daily runs; math/window/cap and the path are tested in `tests/ccu-ledger.test.ts` |
+| R4 `wan21-i2v` provider returns clips, T4 refused, clips composited in `EditorialReel` | MET | `src/visual-provider.ts:72,129`; `src/props.ts` clip layer; `src/remotion/EditorialReel.tsx` `OffthreadVideo` branch; heavy `tests/render-wan-e2e.test.ts` (ffprobe 1080×1920 h264+aac); T4 refusal tested in `tests/colab-fallback.test.ts` |
+| R5 any Colab failure falls back to local Ken-Burns with `fallbackUsed: true` + a named warning, exit 0 | MET | `src/visual-provider.ts:129`; `tests/colab-fallback.test.ts` covers nonzero exit, silent worker, timeout, T4, budget refusal **and** a reported-but-absent clip — each exits 0 with `renderProvider: 'local-ken-burns'`; the success path through `main()` is covered too (clips reach the renderer, `fallbackUsed` absent) |
+| R6 `video: editorial-wan` maps to `provider: wan21-i2v` | MET | `plugins/kk/scripts/daily-stages.ts` `dailyVideoRequest` + `plugins/kk/tests/daily-video-variants-0449.test.ts` ("maps editorial-wan to the Colab provider") |
+
+| Acceptance Criteria | Status | Evidence Type | Evidence |
+|---------------------|--------|---------------|----------|
+| AC1 fallback on Colab failure or budget exhaustion | MET | test | `tests/colab-fallback.test.ts` — four cases, each asserting exit 0, `fallbackUsed: true`, a named warning and `renderProvider: 'local-ken-burns'`; the budget case also asserts **zero** `colab` spawns |
+| AC2 runner argv/env/teardown/ledger | MET | test | `tests/colab-runner.test.ts` (7 cases) + `tests/ccu-ledger.test.ts` (6 cases) |
+| AC3 clips composited in the shared shell | MET | test | `tests/render-wan-e2e.test.ts` (heavy, registered in `scripts/test-suites.ts`); a real Colab run stays an operator-approved manual check |
+- Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
-<!-- Filled during review: P1-P4 findings, residual risk, and final disposition. -->
+<!-- spur:record-review -->
+
+**SECU findings** (pipeline verify step — verdict: PASS)
+
+| Priority | Dimension | Location | Finding |
+|----------|-----------|----------|----------|
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -107,3 +185,8 @@ Implements: R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.
 - https://hf.co/Wan-AI/Wan2.1-I2V-14B-480P-Diffusers
 
 ### History
+
+- 2026-11-27T09:45:48.068Z todo → wip (system)
+- 2026-11-27T09:53:39.515Z wip → testing (system)
+- 2026-11-27T09:53:40.463Z testing → done (system)
+

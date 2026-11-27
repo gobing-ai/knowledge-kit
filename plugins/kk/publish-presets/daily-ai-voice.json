@@ -22,7 +22,7 @@
         },
         {
             "plugin": "wechatmp-pub",
-            "operation": "播客",
+            "operation": "\u64ad\u5ba2",
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
@@ -30,7 +30,7 @@
         },
         {
             "plugin": "xhs-pub",
-            "operation": "发播客",
+            "operation": "\u53d1\u64ad\u5ba2",
             "variant": "episode",
             "tier": 1,
             "window": "after-generate",
@@ -44,23 +44,23 @@
             "window": "after-generate",
             "mode": "live",
             "options": {
-                "collection": "每日AI乱炖"
+                "collection": "\u6bcf\u65e5AI\u4e71\u7096"
             }
         },
         {
             "plugin": "wechatmp-pub",
-            "operation": "文章",
+            "operation": "\u6587\u7ae0",
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
             "mode": "draft",
             "options": {
-                "collection": "每日AI资讯"
+                "collection": "\u6bcf\u65e5AI\u8d44\u8baf"
             }
         },
         {
             "plugin": "xhs-pub",
-            "operation": "写长文",
+            "operation": "\u5199\u957f\u6587",
             "variant": "article",
             "tier": 2,
             "window": "after-generate",
@@ -76,7 +76,7 @@
         },
         {
             "plugin": "xhs-pub",
-            "operation": "上传图文",
+            "operation": "\u4e0a\u4f20\u56fe\u6587",
             "variant": "cards",
             "tier": 3,
             "window": "cn-peak",
@@ -129,6 +129,33 @@
             "tier": 3,
             "window": "overseas-rss",
             "mode": "off"
+        },
+        {
+            "plugin": "shipinhao-pub",
+            "operation": "shortVideo",
+            "variant": "video@shipinhao-pub",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "off",
+            "required": false
+        },
+        {
+            "plugin": "xhs-pub",
+            "operation": "\u4e0a\u4f20\u89c6\u9891",
+            "variant": "video@xhs-pub",
+            "tier": 3,
+            "window": "cn-peak",
+            "mode": "off",
+            "required": false
+        },
+        {
+            "plugin": "youtube-pub",
+            "operation": "video",
+            "variant": "video@youtube-pub",
+            "tier": 3,
+            "window": "overseas-rss",
+            "mode": "off",
+            "required": false
         },
         {
             "plugin": "threads-pub",

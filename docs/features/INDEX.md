@@ -32,7 +32,7 @@
     ├── [done] **D6**: image-gen-runtime-fallback ([D6_image-gen-runtime-fallback.md](./D6_image-gen-runtime-fallback.md))
     ├── [done] **D7**: image-gen pre-spend illustration anchor validation ([D7_image-gen-pre-spend-illustration-anchor-validation.md](./D7_image-gen-pre-spend-illustration-anchor-validation.md))
     ├── [active] **D8**: Music generation: music-gen plugin, kk-music workflow and quality gates over the homelab Lyria 3 instance ([D8_music-generation-music-gen-plugin-kk-music-workflow-and-quality-gates-over-the-homelab-lyria-3-instance.md](./D8_music-generation-music-gen-plugin-kk-music-workflow-and-quality-gates-over-the-homelab-lyria-3-instance.md))
-    └── [backlog] **D9**: Short-form vertical video generation and three-channel podcast promotion ([D9_short-form-vertical-video-generation-and-three-channel-podcast-promotion.md](./D9_short-form-vertical-video-generation-and-three-channel-podcast-promotion.md))
+    └── [active] **D9**: Short-form vertical video generation and three-channel podcast promotion ([D9_short-form-vertical-video-generation-and-three-channel-podcast-promotion.md](./D9_short-form-vertical-video-generation-and-three-channel-podcast-promotion.md))
 [done] **E**: Multi-channel publish ([E_publishplugin-surfdash.md](./E_publishplugin-surfdash.md))
     ├── [done] **E1**: wt-publish audit ([E1_wt-publish-audit.md](./E1_wt-publish-audit.md))
     ├── [done] **E2**: Publish design and test harness ([E2_publishplugin-contract-and-test-harness.md](./E2_publishplugin-contract-and-test-harness.md))

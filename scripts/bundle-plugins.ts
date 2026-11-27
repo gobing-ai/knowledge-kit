@@ -128,7 +128,12 @@ async function bundleDeclared(
             // Optional peer of `@gobing-ai/ts-browser-automation` (0177 XHS launcher) and the
             // publish-harness barrel. Bun would otherwise try to inline playwright-core
             // (chromium-bidi / electron) and fail.
-            external: ['playwright'],
+            //
+            // Remotion/React are runtime externals for the same class of reason: `@remotion/bundler`
+            // pulls `@remotion/studio`, whose effect/whisper/web-renderer imports are optional peers
+            // Bun cannot resolve at build time. The CLI package declares them as dependencies, so an
+            // installed `video-gen` (D9/0448) resolves them from the package's own tree.
+            external: ['playwright', 'remotion', '@remotion/bundler', '@remotion/renderer', 'react', 'react-dom'],
             ...(output.naming === undefined ? {} : { naming: output.naming }),
         });
     } catch (error) {

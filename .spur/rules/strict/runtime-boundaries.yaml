@@ -159,6 +159,11 @@ rules:
             # Binary audio bytes read for the presigned-URL PUT upload
             # (podcast-pub); the FileSystem seam is text-only.
             - "plugins/publishings/podcast-pub/src/index.ts"
+            # youtube-pub credentials loader (0450 R3): the FileSystem seam exposes isFile/size/
+            # mtimeMs and no permission bits, so the required `0600` mode check on
+            # ~/.config/kk/youtube-oauth.json can only be made from `statSync().mode`. One file
+            # holds the plugin's whole node:fs surface; every other read goes through the seam.
+            - "plugins/publishings/youtube-pub/src/credentials.ts"
             # seo.ts `readLocalBytes` probes the PNG/JPEG magic bytes and IHDR/SOF header
             # to gate the 1200×630 social image (D9) before any request; the FileSystem
             # seam is text-only, same binary class as podcast-pub/src/index.ts.

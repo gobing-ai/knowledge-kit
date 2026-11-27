@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { type Content, type Result, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, parsePluginManifest, type Result, ResultSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
 import { kkBrowserLauncher } from '@gobing-ai/publish-harness/browser';
 import {
@@ -39,6 +39,7 @@ import {
     type XhsOperation,
     type XhsPage,
 } from '../src/index';
+import { XHS_OPERATIONS } from '../src/modes';
 import { findAttachedSelector, findSelector } from '../src/page';
 import { checkProfileSession, main as profileCheckMain } from '../src/profile-check';
 
@@ -858,6 +859,34 @@ describe('0370 — out-of-page capture and one headed visit', () => {
     });
 });
 
+describe('video publishing profile (R2, D9)', () => {
+    const manifest = parsePluginManifest(
+        JSON.parse(readFileSync(join(import.meta.dir, '..', 'plugin.json'), 'utf8')) as Record<string, unknown>,
+    );
+
+    test('declares a video profile that maps draft to 上传视频 without a requires claim', () => {
+        const profiles = manifest.publishing?.profiles ?? {};
+        expect(Object.keys(profiles).sort()).toEqual(['note', 'video']);
+        expect(manifest.publishing?.defaultProfile).toBe('note');
+        const video = profiles.video;
+        expect(video?.format).toBe('video');
+        expect(video?.locale).toBe('zh');
+        // `PublishingProfileRequiresSchema` is strict with only cover/orderedImages; a `video`
+        // requirement would fail manifest load, and the 上传视频 ladder refuses a missing video itself.
+        expect(video?.requires).toBeUndefined();
+        expect(video?.modes.draft?.metadata).toEqual({ operation: '上传视频', publishStatus: 'draft' });
+        expect(video?.modes.live?.metadata).toEqual({ operation: '上传视频', publishStatus: 'public' });
+    });
+
+    test('the profile binding names an operation the 上传视频 ladder accepts', () => {
+        expect(XHS_OPERATIONS).toContain('上传视频');
+        const bound = parsePluginManifest(
+            JSON.parse(readFileSync(join(import.meta.dir, '..', 'plugin.json'), 'utf8')) as Record<string, unknown>,
+        ).publishing?.profiles.video?.modes.draft?.metadata?.operation;
+        expect(bound).toBe('上传视频');
+    });
+});
+
 describe('xhs-pub validation (no browser opens)', () => {
     test('default driver is script, kind browser', () => {
         const t = makeTransport();
@@ -1644,7 +1673,9 @@ describe('xhs-pub CLI surface (unchanged contract)', () => {
                     plugin: 'xhs-pub',
                     inPath,
                     outPath,
-                    pluginsRoot: join(process.cwd(), 'plugins'),
+                    // Anchored on this file, not cwd: the changed-scope gate runs the file from
+                    // the workspace dir, where `join(cwd, 'plugins')` resolves to nothing.
+                    pluginsRoot: join(import.meta.dir, '..', '..', '..'),
                 }),
             ).toBe(0);
         } finally {
@@ -1652,7 +1683,9 @@ describe('xhs-pub CLI surface (unchanged contract)', () => {
             delete process.env.KNOWLEDGE_KIT_PUBLISH_TRANSPORT;
             await rm(tmpRoot, { recursive: true, force: true });
         }
-    });
+        // A real plugin-entry spawn (cold `bun` + the plugin's import graph) does not fit the 5s
+        // default on a loaded machine; the 0449 gate lost this test to exactly that timeout.
+    }, 30_000);
 });
 
 describe('xhs-pub default page opener (task 0174 wiring)', () => {

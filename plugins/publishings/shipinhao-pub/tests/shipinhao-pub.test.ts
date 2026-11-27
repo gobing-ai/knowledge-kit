@@ -25,7 +25,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readFile, rm, truncate, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { type Content, ContentSchema, type Result, ResultSchema } from '@gobing-ai/kk-core';
+import { type Content, ContentSchema, type Result, ResultSchema, videoGenContentSchema } from '@gobing-ai/kk-core';
 import { FakeBrowserTransport } from '@gobing-ai/publish-harness';
 import { DEFAULT_CHANNEL_STATE_SETTLE_MS, markdownToHtml } from '@gobing-ai/publish-harness/browser';
 import {
@@ -1197,6 +1197,42 @@ describe('6. flow stages (offline fake page running the real evaluate scripts)',
         expect(result.url).toBe(DRAFT_URL);
         expect(fake.calls).toContain('draft:confirm');
         expect(fake.calls.indexOf('draft:confirm')).toBeGreaterThan(fake.calls.indexOf(`click:wujie-app ${SAVE}`));
+    });
+
+    test('R1 — a videoGenContentSchema payload (extra video metadata and all) defaults to a draft with no flow change', async () => {
+        const fake = makeFakeLauncher({ onSaveClick: 'draftReceipt' });
+        // The exact shape 0448's `video-gen` emits, extra metadata keys included (`looseObject`).
+        const content = videoGenContentSchema.parse({
+            title: '每日 AI 日报 1126',
+            body: '今天的头条：推理模型上新，开源权重登顶。',
+            format: 'video',
+            metadata: {
+                generator: 'kk:video-gen',
+                videoPath: VIDEO_PATH,
+                coverPath: COVER_PATH,
+                width: 1080,
+                height: 1920,
+                fps: 30,
+                durationSec: 52,
+                visualMode: 'editorial',
+                renderProvider: 'local-ken-burns',
+                captionsPath: join(TMP_DIR, 'words.json'),
+                tags: ['ai', 'daily'],
+            },
+            options: { operation: 'shortVideo' },
+        });
+
+        const result = await transport(fake).publish({ content });
+
+        expect(result.ok).toBe(true);
+        expect(result.url).toBe(DRAFT_URL);
+        expect(result.metadata).toMatchObject({
+            operation: 'shortVideo',
+            publishStatus: 'draft',
+            confirmedBy: 'draft-receipt',
+        });
+        expect(fake.calls).toContain(`setInputFiles:wujie-app ${VIDEO_INPUT}|${VIDEO_PATH}`);
+        expect(fake.calls).toContain(`fill:wujie-app ${TITLE_INPUT}|每日 AI 日报 1126`);
     });
 
     test('a fresh receipt with full persisted readback confirms the draft', async () => {

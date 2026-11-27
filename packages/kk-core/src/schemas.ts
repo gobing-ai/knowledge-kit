@@ -90,6 +90,37 @@ export const omniVoiceGenContentSchema = ContentSchema.extend({
     }),
 });
 
+/** Vertical visual treatment: Ken-Burns editorial slides, a talking head, or slides with a PiP host bubble. */
+export const VideoVisualModeSchema = z.enum(['editorial', 'avatar', 'hybrid-pip']);
+
+/** Renderer that produced the visual layer; the local provider ships first, Colab GPU providers follow. */
+export const VideoRenderProviderSchema = z.enum(['local-ken-burns', 'wan21-i2v', 'musetalk', 'echomimic-v2']);
+
+/**
+ * video-gen vertical short Content (docs/design/short-form-video-promotion.md §2): `format: "video"`
+ * with generator-pinned metadata describing the rendered 9:16 MP4. Extra metadata keys pass through
+ * so providers can add Colab detail (CCU estimates, warnings) without another schema version.
+ */
+export const videoGenContentSchema = ContentSchema.extend({
+    format: z.literal('video'),
+    metadata: z.looseObject({
+        generator: z.literal('kk:video-gen'),
+        videoPath: z.string().min(1),
+        coverPath: z.string().optional(),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+        fps: z.number().int().positive(),
+        durationSec: z.number().positive(),
+        visualMode: VideoVisualModeSchema,
+        renderProvider: VideoRenderProviderSchema,
+        fallbackUsed: z.boolean().optional(),
+        warnings: z.array(z.string()).optional(),
+        ccuEstimated: z.number().nonnegative().optional(),
+        captionsPath: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+    }),
+});
+
 /** Inferred document unit from {@link DocSchema}. */
 export type Doc = z.infer<typeof DocSchema>;
 /** Inferred generator content from {@link ContentSchema}. */
@@ -98,6 +129,12 @@ export type Content = z.infer<typeof ContentSchema>;
 export type Result = z.infer<typeof ResultSchema>;
 /** Inferred omni-voice-gen audio content from {@link omniVoiceGenContentSchema}. */
 export type OmniVoiceGenContent = z.infer<typeof omniVoiceGenContentSchema>;
+/** Inferred video-gen vertical short content from {@link videoGenContentSchema}. */
+export type VideoGenContent = z.infer<typeof videoGenContentSchema>;
+/** Inferred vertical visual mode from {@link VideoVisualModeSchema}. */
+export type VideoVisualMode = z.infer<typeof VideoVisualModeSchema>;
+/** Inferred render provider from {@link VideoRenderProviderSchema}. */
+export type VideoRenderProvider = z.infer<typeof VideoRenderProviderSchema>;
 /** Inferred per-target fan-out outcome from {@link TargetOutcomeSchema}. */
 export type TargetOutcome = z.infer<typeof TargetOutcomeSchema>;
 /** Inferred fan-out aggregate from {@link AggregateResultSchema}. */
