@@ -4,7 +4,7 @@ name: Register kk_* CLI and workflow MCP tools via plugins/kk/mcp-tools.yaml and
 status: todo
 template: feature-impl
 created_at: 2026-11-24T05:37:29.878Z
-updated_at: "2026-11-24T05:45:00.326Z"
+updated_at: "2026-11-27T23:40:32.041Z"
 
 feature_id: B8
 ac_altitude: task-local
@@ -19,7 +19,7 @@ estimate_hours: 3
 
 Expose `knowledge-kit` (`kk`) workflows and direct CLI capabilities as `kk_*` MCP tools through Spur's embedded MCP server (`spur-new` Task `1447` / Feature `B91`), so coding agents and the Spur gateway root `/mcp` can invoke `kk` tools without shelling out or duplicating server infrastructure.
 
-**Cross-repo dependency (blocking):** `spur-new` Task `1447` (declarative `plugins/<ns>/mcp-tools.yaml` loader + typed `metadata.mcp.params`) is still `todo` and itself waits on `1445`/`1446` (both `todo`). The installed `spur` is `0.4.46` and ships no manifest loader. `spur task deps` cannot express a cross-repo edge, so the dependency lives in Plan step 0 as a hard precondition. 1447's Q&A names this task's scope as the `kk` follow-up ("`kk_store_*`, `kk_wiki_*`, plus `metadata.mcp` on selected workflows").
+**Cross-repo dependency (resolved 2026-11-27):** `spur-new` Task `1447` is `done` (`fc315c9fc`, merged `fb9ba17d3`; `1445`/`1446` landed earlier). The installed global `spur` 0.4.49 ships the manifest loader and typed `metadata.mcp.params`. 1447's Q&A (`spur-new/docs/tasks5/1447_…md:152`) names this task as the `kk` follow-up ("`kk_store_*`, `kk_wiki_*`, plus `metadata.mcp` on selected workflows").
 
 **Refine corrections (2026-11-23)**
 
@@ -31,15 +31,24 @@ Expose `knowledge-kit` (`kk`) workflows and direct CLI capabilities as `kk_*` MC
 6. Workflow set (old R2: 6 workflows) → `kk-publish` performs external multi-channel publishing (`live_channels`, `live_confirm`) — exposing it to any MCP client bypasses the operator-authorization rule for publishing; `kk-solo-podcast` (`pause: true` at `:94,:196`) and `kk-article-generate` (`:93,:115,:186`) pause on HITL gates that an MCP `tools/call` cannot answer → all three removed. Kept: `kk-storm-research`, `kk-smart-seo`, `kk-collect`.
 7. Tool names → `workflowToolName` (`spur-new packages/app/src/services/mcp-workflow-tools.ts:33-38`) yields `kk_kk_storm_research`, `kk_kk_smart_seo`, `kk_kk_collect` (stutter accepted; renaming workflows is out of scope).
 8. Old R3 "`spur workflow validate` exposes `kk_*` tools" → 1447 correction 8: validate filters exposure issues to the workflow file and is not a manifest surface; issues surface via `tools/list` / `catalog().exposureIssues` / Integrations → R3 rewritten.
-9. Feature B8 has only a placeholder scenario → ACs are `task-local`.
+9. Feature B8 had only a placeholder scenario → ACs are `task-local` (B8 now carries feature-level scenarios as of 2026-11-27; the task stays `task-local`).
+
+**Refine corrections (2026-11-27, against spur-new `main` @ `f5f691c4d`)**
+
+10. **Contract landed unchanged.** The manifest schema is in `spur-new/packages/app/src/services/mcp-manifest-tools.ts:28-77` (strict; `output` default `text`; `timeoutMs` 1000–120000, default 30000), mirrored by `apps/cli/schemas/mcp-tools.schema.json`. The fragment rules are in `:125-176`, and argv is built in `params` declaration order at `:353-425`. The workflow params schema (`mcp-workflow-tools.ts:61-73`) accepts only `type`, `description`, `enum` and `required`; it has **no `default`**. The frozen opt-ins use none of the excluded keys, so they conform. `workflowToolName` is now at `mcp-workflow-tools.ts:54-59`, and the `kk_kk_*` stutter is confirmed. Workflow annotations stay frozen at write + non-idempotent (`docs/design/embedded-mcp-server.md`, "Workflow tools"). Plan step 0's blocking gate is cleared.
+11. **Read-only verbs re-probed 2026-11-27 from the checkout.** `plugin status --json` and `store stats --json --days 1` exit 0 with JSON. `wiki query` and `wiki context` exit 1 with an **uncaught `ENOENT` stack trace** (`lstat …/knowledge-kit/content`, from `packages/kk-wiki/src/graph.ts:91` via `buildVaultIndex`) when no vault is configured. AC1 is unaffected because it seeds a vault under `KK_WIKI_ROOT`. On a live serve with no configured vault, though, the two wiki tools return a tool error carrying a stack-trace tail. This is accepted for this task (CLI hygiene is out of scope); AC3 calls `kk_store_stats`. Deferred: a clean "vault not found" error in `kk wiki`, as a separate kk task.
+12. **Serve surface.** There is no `spur serve`. The commands are `spur self serve` (project) and `spur self serve --gateway` (root `/mcp`). MCP is off by default (`server.mcp.enabled` / `SPUR_MCP_ENABLED`). It needs `server.mcp.authEnv` (or `allowUnauthenticated`), see `embedded-mcp-server.md` §2, and kk's `.spur/config.yaml` has no `server.mcp` block. The gateway lists manifest and workflow tools from disk but forwards `tools/call` to the project serve (`spur-new/packages/app/src/services/project-gateway.ts:807-835,869-930`). knowledge-kit appears twice in `spur projects list`, but the `spur.robinmin.net` row is non-local and filtered out by `localEntries` (`:550-555`), so there is no `namespace-collision`.
+13. **`spur workflow validate` does check exposure for the file it validates** (`spur-new/packages/app/src/services/workflow-inspect-ops.ts:221-226,425-440`), which reports `invalid-params` and the other reasons for that workflow. Plan step 3 is a valid per-file gate. Manifest issues still surface only through `tools/list` and the Integrations MCP tab.
+14. **Concurrency refreshed.** The worktree `knowledge-kit-runall-L4-5c3f` no longer exists, and `0426` is `done`. The current tree has unrelated uncommitted video-gen and doc changes (tasks 0449/0451/0452). Do not stage them.
+15. **Reference manifest upstream:** `spur-new/plugins/sp/mcp-tools.yaml` (`sp_plugin_smoke`).
 
 ### Requirements
 
 - [ ] R1. Add `plugins/kk/mcp-tools.yaml` (`schema_version: 1`, strict 1447 R1 contract) declaring exactly four read-only tools, each with `annotations: {readOnlyHint: true, destructiveHint: false, idempotentHint: true}`, `output: json`, and `command` starting `["bun", "apps/cli/src/index.ts", …, "--json"]`: `plugin_status` (param `kind` enum `ingestion|generator|publish`), `store_stats` (param `days` number), `wiki_query` (param `prompt` string required, `limit` number), `wiki_context` (param `topic` string required, `depth` number).
 - [ ] R2. Opt `plugins/kk/workflows/{kk-storm-research,kk-smart-seo,kk-collect}.yaml` into MCP with `metadata.mcp.expose: true` plus a typed `metadata.mcp.params` allowlist: storm-research → `topic` (string, required), `maxResults` (number), `fixture` (boolean); smart-seo → `options_file` (string, required); collect → `limit` (number), `last30days_topic` (string), `horizon_hours` (number). Path, executable, plugin-selection and engine vars (`work_dir`, `input_file`, `plugins_path`, `render_script`, `ingestion_plugin`, `generator_plugin`, `stamp`, `__*`) are never declared. No workflow annotations.
-- [ ] R3. With a Spur build containing 1447, `tools/list` on the knowledge-kit serve and on the gateway root `/mcp` lists the 4 manifest tools and 3 workflow tools with zero `catalog().exposureIssues` (no `no-namespace`, `builtin-collision`, `duplicate`, `invalid-manifest`, `invalid-params`), and `tools/call kk_store_stats` returns parsed JSON.
+- [ ] R3. With `spur` ≥ 0.4.49 (contains 1447) and an MCP-enabled `spur self serve` for this checkout, `tools/list` on the knowledge-kit serve and on the gateway root `/mcp` lists the 4 manifest tools and 3 workflow tools with zero `catalog().exposureIssues` (no `no-namespace`, `builtin-collision`, `duplicate`, `invalid-manifest`, `invalid-params`), and `tools/call kk_store_stats` returns parsed JSON.
 
-**Out of scope:** write/mutating `kk` verbs as manifest tools; `kk-publish`, `kk-solo-podcast`, `kk-article-generate`, daily/music/example workflows; renaming workflows to drop the `kk_kk_` stutter; any edit in `spur-new`; a kk-side copy of the manifest JSON Schema.
+**Out of scope:** write/mutating `kk` verbs as manifest tools; `kk-publish`, `kk-solo-podcast`, `kk-article-generate`, daily/music/example workflows; renaming workflows to drop the `kk_kk_` stutter; any edit in `spur-new`; a kk-side copy of the manifest JSON Schema; fixing the `kk wiki` missing-vault `ENOENT` (correction 11, separate task).
 
 ### Acceptance Criteria
 
@@ -58,7 +67,7 @@ Scenario: AC2 — exposed workflows declare only safe, existing vars (req: R2)
   # apps/cli/tests/mcp-tools-manifest.e2e.test.ts
 
 Scenario: AC3 — the live Spur MCP surface lists all kk tools cleanly (req: R3)
-  Given a Spur build containing spur-new 1447 serving this checkout
+  Given `spur` ≥ 0.4.49, knowledge-kit registered in `spur projects`, `spur self serve` running for this checkout with `SPUR_MCP_ENABLED=true` and `SPUR_MCP_AUTH_ENV` naming a set token variable, and the gateway (`spur self serve --gateway`) running
   When `tools/list` runs on the project `/mcp` and on the gateway root `/mcp`, and `tools/call kk_store_stats {days: 1}` runs
   Then the 7 names `kk_plugin_status, kk_store_stats, kk_wiki_query, kk_wiki_context, kk_kk_storm_research, kk_kk_smart_seo, kk_kk_collect` are listed, exposure issues are empty, and the call returns `{days, byDay, bySource}`
   # manual E2E; JSON-RPC transcript saved to .spur/run/0428-mcp-e2e.json and cited in Testing
@@ -77,6 +86,11 @@ Scenario: AC3 — the live Spur MCP surface lists all kk tools cleanly (req: R3)
 - **Q: `kk` on PATH or checkout source?** Decided: `bun apps/cli/src/index.ts` — the checkout is what the serve's project root is; the installed `kk` is known to drift.
 - **Q: Rename workflows to avoid `kk_kk_*`?** Decided: no; workflow names are referenced by schedules, ledgers and the Board.
 - **Q: Ship kk work before 1447 lands?** Decided: no. Plan step 0 blocks; the strict upstream schema would refuse a manifest written against a guessed contract. Owner of the unblock: spur-new 1447.
+
+#### Q&A entry — 2026-11-27
+
+- **Q: Is the 1447 precondition met?** Decided: yes. 1447 is `done`, installed `spur` 0.4.49 ships it, and the landed schema matches the frozen Design (correction 10). The earlier "ship before 1447? no" decision is now satisfied.
+- **Q: Fix the `kk wiki` missing-vault crash here?** Decided: no. It is CLI hygiene that predates MCP. AC1 seeds a vault, and AC3 exercises `kk_store_stats`. File a separate kk task if the live wiki tools must fail cleanly.
 
 ### Design
 
@@ -125,7 +139,7 @@ tools:
     output: json
 ```
 
-Verified flags: `plugin.ts:329-333`, `store.ts:1670-1675` (default db = kk config `store.db_path`, else `.works/kk.db` under cwd), `commands/wiki.ts:193-205` (vault from `resolveWikiConfig`, `KK_WIKI_ROOT` override at `wiki/config.ts:56`). Positional `{value}` after `--json` is accepted by Commander. Free-form strings starting with `-` are refused upstream (1447 R3) — acceptable for prompts/topics.
+Verified flags: `plugin.ts:329-333`, `store.ts:1670-1675` (default db = kk config `store.db_path`, else `.works/kk.db` under cwd), `commands/wiki.ts:193-205` (vault from `resolveWikiConfig`, `KK_WIKI_ROOT` override at `wiki/config.ts:56`). Positional `{value}` after `--json` is accepted by Commander. Free-form strings that start with `-` are refused upstream (`buildManifestArgv`, `mcp-manifest-tools.ts:353-425`), as are strings longer than 1024 chars; both are acceptable for prompts and topics. No `timeoutMs` is declared, so the 30000 ms default applies. That is enough for these local reads; add it only if a probe shows `wiki_query` near the limit on a large vault. Without a configured vault, the wiki tools fail with a stack-trace tail (correction 11).
 
 **Frozen workflow opt-ins** (append a top-level `metadata:` block; keep existing keys untouched):
 
@@ -154,23 +168,27 @@ metadata:
       horizon_hours: { type: number, description: Lookback window in hours (default 6) }
 ```
 
-Upstream stringifies typed values (`true` → `"true"`, `8` → `"8"`), matching the YAML string defaults. Undeclared vars keep their YAML defaults (allowlist, 1447 R4). `kk-collect` is lock-guarded single-flight, so an MCP call racing the 6 h tick fails cleanly rather than double-collecting.
+Upstream validates typed arguments against `metadata.mcp.params` and then stringifies them (`true` → `"true"`, `8` → `"8"`), matching the YAML string defaults. Undeclared vars keep their YAML defaults (allowlist, 1447 R4). `kk-collect` is lock-guarded single-flight, so an MCP call racing the 6 h tick fails cleanly rather than double-collecting.
 
 **Test file `apps/cli/tests/mcp-tools-manifest.e2e.test.ts`:** parse with `Bun.YAML.parse`; for AC1 build argv in-test (command + fragments, `{value}` substituted, declaration order — mirror of 1447 R3, ~10 lines, no import from spur), replace argv[1] with the absolute repo path, spawn with `Bun.spawn`, cwd/HOME/`KK_WIKI_ROOT` on a `tmp/test-mcp-tools` scratch dir; seed via `kk store migrate` and two vault Markdown pages. AC2 is a pure YAML assertion over `plugins/kk/workflows/*.yaml`.
 
 **Anti-patterns:** no `inputSchema`/`shell` keys (strict schema rejects them); no `{value}` inside a larger element (`--days={value}`); no `kk` (PATH) in `command`; no workflow `annotations`; no mutating verb in the manifest; do not import Spur internals into tests; do not edit `spur-new`.
 
-**Concurrency:** worktree `knowledge-kit-runall-L4-5c3f` and wip task `0426` exist; neither touches `plugins/kk/mcp-tools.yaml` or the three workflow `metadata` blocks — re-check `git diff main -- plugins/kk/workflows` before editing.
+**Concurrency (2026-11-27):** single worktree on `main`. Unrelated uncommitted changes exist in video-gen and docs (tasks 0449/0451/0452), and none of them touches `plugins/kk/mcp-tools.yaml` or the three workflow files. Re-check `git status -- plugins/kk` before editing.
 
 ### Plan
 
-0. **Precondition (blocking):** confirm spur-new `1447` is `done` and a Spur build with the manifest loader is available (released `spur` or source-local `spur serve` from spur-new). Re-read 1447's final Zod schema/`mcp-tools.schema.json`; if any frozen key here differs, update Design via refine before coding. Without it, stop — do not write against a guessed schema.
-1. (R1, R2) Write `apps/cli/tests/mcp-tools-manifest.e2e.test.ts` covering AC1 + AC2; confirm it fails (files absent).
-2. (R1) Add `plugins/kk/mcp-tools.yaml` exactly as frozen; validate it against spur's `apps/cli/schemas/mcp-tools.schema.json` once (ad hoc, not committed).
-3. (R2) Append the three `metadata.mcp` blocks; run `spur workflow validate` on each (workflow-level issues incl. `invalid-params`).
-4. Run the new test, then `bun run gate` (format, build, lint, rules, tests; per-file coverage unaffected — no TS source added).
-5. (R3) Manual E2E: serve knowledge-kit with the 1447 Spur build; JSON-RPC `tools/list` on project `/mcp` and gateway root `/mcp`, `tools/call kk_store_stats {"days":1}`; save the transcript to `.spur/run/0428-mcp-e2e.json` and cite it in Testing (AC3).
-6. If the published plugin bundle must carry the manifest (`scripts/bundle-plugins`), confirm `mcp-tools.yaml` is copied with `plugins/kk/`; otherwise note it as checkout-only in Solution.
+0. **Precondition (verified 2026-11-27):** spur-new `1447` is `done`, and the installed `spur` 0.4.49 ships the loader. The frozen Design matches the landed schema (correction 10). If the upstream schema changes before you implement, re-check it and re-refine.
+1. (R1, R2) Write `apps/cli/tests/mcp-tools-manifest.e2e.test.ts` covering AC1 + AC2, and confirm it fails because the files are absent.
+2. (R1) Add `plugins/kk/mcp-tools.yaml` exactly as frozen. Validate it once, ad hoc and uncommitted, against `spur-new/apps/cli/schemas/mcp-tools.schema.json`.
+3. (R2) Append the three `metadata.mcp` blocks, then run `spur workflow validate plugins/kk/workflows/<name>.yaml --json` on each. This reports per-file exposure issues, including `invalid-params` (correction 13).
+4. Run the new test, then `bun run gate` (format, build, lint, rules, tests). Per-file coverage is unaffected because no TS source is added.
+5. (R3) Manual E2E:
+   - `SPUR_MCP_ENABLED=true SPUR_MCP_AUTH_ENV=<VAR> spur self serve --no-open` in this checkout, with `<VAR>` exported;
+   - `spur self serve --gateway --no-open` (or the installed gateway LaunchAgent);
+   - JSON-RPC `tools/list` on the project `/mcp` and the gateway root `/mcp`, then `tools/call kk_store_stats {"days":1}`;
+   - save the transcript to `.spur/run/0428-mcp-e2e.json` and cite it in Testing (AC3).
+6. If the published plugin bundle must carry the manifest (`scripts/bundle-plugins`), confirm `mcp-tools.yaml` is copied with `plugins/kk/`. Otherwise note it as checkout-only in Solution. The manifest's `command` points at `apps/cli/src/index.ts`, so it only works in a checkout anyway.
 
 ### Solution
 
@@ -186,12 +204,20 @@ Upstream stringifies typed values (`true` → `"true"`, `8` → `"8"`), matching
 
 ### References
 
-- Upstream contract & loader: spur-new task `1447` (`/Users/robin/xprojects/spur-new/docs/tasks5/1447_downstream-mcp-tool-registration-manifest-mcp-tools-yaml-and.md`), deps `1445`, `1446`
-- Workflow tool naming: spur-new `packages/app/src/services/mcp-workflow-tools.ts:33-38`
-- Plugin manifest: `plugins/kk/plugin.json` (`name: "kk"`)
-- CLI verbs: `apps/cli/src/commands/plugin.ts:325-361`, `store.ts:1670-1675`, `wiki.ts:43-47,193-210`, `schedule.ts:299-312`
+- Upstream contract and loader (spur-new task `1447`, `done`; commit `fc315c9fc`):
+  - task: `/Users/robin/xprojects/spur-new/docs/tasks5/1447_downstream-mcp-tool-registration-manifest-mcp-tools-yaml-and.md`
+  - manifest schema: `packages/app/src/services/mcp-manifest-tools.ts:28-77`, `apps/cli/schemas/mcp-tools.schema.json`
+  - argv builder: `mcp-manifest-tools.ts:353-425`
+  - execution: `apps/server/src/modules/mcp/index.ts:273-321`
+  - workflow params schema and naming: `packages/app/src/services/mcp-workflow-tools.ts:54-73`
+  - validate exposure: `packages/app/src/services/workflow-inspect-ops.ts:221-226`
+  - gateway: `packages/app/src/services/project-gateway.ts:550-555,807-835,869-930`
+  - surface doc: `docs/design/embedded-mcp-server.md`
+  - example manifest: `plugins/sp/mcp-tools.yaml`
+- Plugin manifest: `plugins/kk/plugin.json` (`name: "kk"`, the only `plugins/*/plugin.json`)
+- CLI verbs: `apps/cli/src/commands/plugin.ts:325-361`, `store.ts:1670-1675`, `wiki.ts:43-47,193-210`, `schedule.ts:299-312`; missing-vault crash at `packages/kk-wiki/src/graph.ts:91`
 - Workflows: `plugins/kk/workflows/` (symlinked at `.spur/workflows`)
-- Concurrency at refine time: worktree `knowledge-kit-runall-L4-5c3f`, wip `0426`
+- Concurrency at refine time (2026-11-27): single worktree on `main`; unrelated uncommitted changes from tasks 0449/0451/0452
 
 ### History
 
