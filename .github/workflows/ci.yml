@@ -78,6 +78,13 @@ jobs:
         working-directory: apps/board
         run: bunx playwright install chromium
 
+      - name: Install Remotion Chromium
+        # The video-gen heavy renders refuse to auto-download Chromium by design (engine.ts's
+        # onBrowserDownload), so the headless shell must be cached before Test — otherwise the
+        # three render e2e files fail with "Chromium cache is missing" (run 46101951751).
+        working-directory: plugins/generations/video-gen
+        run: bun -e 'import { ensureBrowser } from "@remotion/renderer"; await ensureBrowser();'
+
       - name: Lint
         run: bun run lint
 
