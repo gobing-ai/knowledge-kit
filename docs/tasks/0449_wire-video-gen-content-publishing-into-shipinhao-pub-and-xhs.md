@@ -4,7 +4,7 @@ name: Wire video-gen Content publishing into shipinhao-pub and xhs-pub
 status: testing
 template: feature-impl
 created_at: 2026-11-26T19:50:42.662Z
-updated_at: "2026-11-27T19:36:38.675Z"
+updated_at: "2026-11-27T22:59:46.535Z"
 feature_id: D9
 priority: P1
 tags:
@@ -156,15 +156,15 @@ the variants against a real render — see `## Testing`.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
-| R2 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
-| R3 | PARTIAL | plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
-| R4 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:86 verifies the variant payload and skip behavior. |
-| R5 | MET | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
+| R1 | MET | plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 exercises video-gen metadata through the existing draft path. |
+| R2 | MET | plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:881 checks profile binding and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835 exercises the video draft ladder. |
+| R3 | PARTIAL | Workflow schema validation passed. plugins/kk/workflows/kk-news-generate.yaml:536 has no video dependency on variants. The current declaration-order test does not check that graph edge. |
+| R4 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:92 and :131 check emitted draft variants and the missing-video skip. |
+| R5 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:219 checks both video rows are off and optional. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R10 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default | MET | test | Offline draft ladder exercised in plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:862. Bundle and preset verified in plugins/kk/tests/daily-video-variants-0449.test.ts:219. |
+| R10 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default | MET | test | plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835 and plugins/kk/tests/daily-video-variants-0449.test.ts:219 exercise the draft contract and preset. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -175,9 +175,7 @@ the variants against a real render — see `## Testing`.
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | design-conformance | — | plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
-| P4 | secua-review | — | Scope: shared implementation commit f95253b0, its D9 DAG follow-up b8c51873, and the current fix diff. Reviewed security, efficiency, correctness, usability and architecture. plugins/kk/workflows/kk-news-generate.yaml:510 declares video before the bundle but plugins/kk/workflows/kk-news-generate.yaml:536 omits the video dependency; order test checks declaration position only in plugins/kk/tests/daily-video-variants-0449.test.ts:254. |
-| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
+| P4 | secua-review | — | The draft and optional-preset paths pass. The missing graph dependency is an open correctness finding. The live publishing paths are outside this task. |
 
 ### References
 

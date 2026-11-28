@@ -4,7 +4,7 @@ name: Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
 status: testing
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-27T19:36:37.225Z"
+updated_at: "2026-11-27T23:01:39.589Z"
 feature_id: D9
 priority: P2
 tags:
@@ -95,20 +95,16 @@ Drive weight caching, unconditional teardown and a rolling CCU ledger, plus the 
 that composites Colab motion loops into the same Remotion shell — with an automatic, always-exit-0
 fallback to local Ken-Burns.
 
-**Step-0 spike (frozen argv).** `uv tool install google-colab-cli` (1.0.0, `colab` on PATH) and the
-captured help output fixed the surface: `colab run SCRIPT [--gpu T4|L4|G4|H100|A100] [--session NAME]
-[--keep] [--timeout SECONDS] [--env K=V]`, plus `colab download REMOTE LOCAL --session NAME` and
-`colab stop --session NAME`. `colab run` releases its own VM, but the CLI's transfer verb needs the
-session alive, so the runner always passes `--keep` and always stops the session in `finally`.
-`--timeout` is the CLI's **inactivity** timeout (default 30s), so the job deadline is passed
-explicitly and the seam's group deadline (`timeoutMs + 60s`) is the hard local kill.
+**Installed CLI contract.** Colab CLI 0.8.0 help and the recording process tests cover
+`new --gpu`, media upload, `exec --file`, download and stop. Creation and upload precede execution
+because the worker needs the input files before startup. The `exec --timeout` flag is an inactivity
+timeout in seconds. A separate wall-clock deadline bounds the job, including transfers.
 
-**R1 — runner** `src/colab-runner.ts`
-- `:78` `sessionName` (`kk-video-<runDate>-<jobType>`), `:83` `buildColabArgv` (gpu, session, keep,
-  `--timeout`, `--env KK_COLAB_CACHE_DIR=…` + extras), `:103` `buildDownloadArgv`, `:108` `buildStopArgv`.
-- `:139` `runColabJob(job, deps)`: budget check → `colab run` (deadline + 60s) → parse the worker's
-  `KK_COLAB_RESULT` line (`:113`) → one `colab download` per output → `colab stop` in `finally` →
-  ledger line. Any failure returns `ok:false` with the cause; it never throws at the caller.
+**R1 — runner.** `plugins/generations/video-gen/src/colab-runner.ts` appends a UUID to
+`kk-video-<runDate>-<jobType>` and passes that one name through allocation, mount, upload,
+execution, download and cleanup. This keeps retries from overwriting a prior allocation
+or stopping another attempt after a refused launch. The qualified worker result is required
+before downloading outputs. Cleanup uses a separate deadline and reports a stop failure.
 
 **R2 — cache** the job env always carries `KK_COLAB_CACHE_DIR` (default
 `/content/drive/MyDrive/kk-video-cache`); `python/colab_wan21_i2v.py:36` `choose_cache` probes that
@@ -124,7 +120,7 @@ error and **nothing is spawned**.
 job, A100 default, `{kind:'clips'}` out), `:129` `prepareVisualLayer` (the fallback decision);
 `src/props.ts` carries `clips` alongside `images`; `src/remotion/EditorialReel.tsx` plays a clip reel
 with `<OffthreadVideo>` under the same safe-zone shell, headline card, captions, waveform and CTA.
-`python/colab_wan21_i2v.py` renders the loops (`Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`, 1080×1920,
+`python/colab_wan21_i2v.py` renders the loops (`Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`, vertical 9:16,
 8 fps, `--seconds` default 4) and re-checks the device.
 
 **R5 — fallback** `prepareVisualLayer` catches **every** Colab failure (spawn error, nonzero exit,
@@ -153,18 +149,18 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | PARTIAL | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. Uses new/upload/exec because colab run executes before inputs can be staged; live teardown is unverified. |
-| R2 | PARTIAL | The runner now attempts the installed colab drivemount command within its deadline and the worker reports a local cache when Drive is absent. No live fresh-VM mount has been verified. |
-| R3 | MET | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. Budget refusal launches nothing in plugins/generations/video-gen/tests/colab-runner.test.ts:198. |
-| R4 | PARTIAL | Real local rendering of a synthetic Wan clip passed in plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30. Actual Wan inference was not executed. |
-| R5 | MET | Injected process failure, timeout and budget exhaustion preserve a valid local Content with a named warning in plugins/generations/video-gen/tests/colab-fallback.test.ts:72. |
-| R6 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:200 verifies editorial-wan maps to the Wan provider. |
+| R1 | MET | plugins/generations/video-gen/tests/colab-runner.test.ts:113 proves per-attempt session ownership, including cleanup after allocation refusal. The session has the date/provider prefix plus a unique suffix. plugins/generations/video-gen/tests/colab-runner.test.ts:210 exercises hard-deadline cleanup. Installed CLI help confirms new/exec/stop and the exec timeout unit. |
+| R2 | PARTIAL | plugins/generations/video-gen/tests/colab-runner.test.ts:135 verifies the mount request, cache env and Drive result contract. A real fresh-runtime Drive mount and cache report remain unverified. |
+| R3 | MET | plugins/generations/video-gen/tests/colab-runner.test.ts:224 proves budget refusal launches nothing; plugins/generations/video-gen/tests/ccu-ledger.test.ts:103 verifies append. |
+| R4 | PARTIAL | plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30 passes real Remotion/ffprobe with a fixture clip. .spur/run/0449-0451-0452-worker-contracts.log verifies the worker clip contract in isolation. Real Wan inference remains unverified. |
+| R5 | MET | plugins/generations/video-gen/tests/colab-fallback.test.ts:72, :88 and :121 cover failure, missing results, timeout and exhausted budget. |
+| R6 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:200 verifies editorial-wan dispatch. |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget | MET | test | Injected process failure, timeout and budget exhaustion preserve a valid local Content with a named warning in plugins/generations/video-gen/tests/colab-fallback.test.ts:72. |
-| R6 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards | PARTIAL | test | Upload, worker argv, download, bounded teardown and ledger exercised through the process seam in plugins/generations/video-gen/tests/colab-runner.test.ts:112. The runner now attempts the installed colab drivemount command within its deadline and the worker reports a local cache when Drive is absent. No live fresh-VM mount has been verified. |
-| R7 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell | PARTIAL | test | Real local rendering of a synthetic Wan clip passed in plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30. Actual Wan inference was not executed. |
+| R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget | MET | test | plugins/generations/video-gen/tests/colab-fallback.test.ts:72 and :121 exercise fallback and zero-spawn budget refusal. |
+| R6 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards | PARTIAL | test | plugins/generations/video-gen/tests/colab-runner.test.ts:113 and plugins/generations/video-gen/tests/colab-runner.test.ts:210 prove ownership and cleanup in the process fixtures. The real Drive mount and GPU job are pending. |
+| R7 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell | PARTIAL | test | plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30 validates the clip shell and encoded output. Live Colab inference is pending. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -175,9 +171,7 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | design-conformance | — | Fresh live GPU run pending. The current Colab exec path and staged media are covered by local process fixtures. |
-| P4 | secua-review | — | Scope: shared implementation commit f95253b0, its D9 DAG follow-up b8c51873, and the current fix diff. Reviewed security, efficiency, correctness, usability and architecture. Fresh live GPU run pending. The current Colab exec path and staged media are covered by local process fixtures. |
-| P4 | coverage | — | Coverage: focused verification exercised the affected paths. See the current gitignored verifier logs for command results. |
+| P4 | secua-review | — | Fixed reuse of the same date/provider session name, which could stop another attempt on failed allocation. Live Wan, cache and remote teardown evidence remain open. |
 
 ### References
 
