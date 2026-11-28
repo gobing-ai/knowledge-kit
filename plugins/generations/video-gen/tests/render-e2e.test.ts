@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { chunkCaptions, VIDEO, type WordTimestamp } from '../src/layout';
@@ -114,5 +114,43 @@ describe('editorial reel render (heavy)', () => {
         expect(video?.height).toBe(VIDEO.height);
         expect(info.streams.some((stream) => stream.codec_type === 'audio' && stream.codec_name === 'aac')).toBe(true);
         expect(Number.parseFloat(info.format.duration)).toBeGreaterThan(CLIP_SEC - 0.5);
+    }, 600_000);
+});
+
+/**
+ * The designed missing-cache path: engine.ts's `onBrowserDownload` refuses to download Chromium and
+ * names the provisioning command. Remotion resolves its browser cache from the cwd's nearest
+ * `package.json` (@remotion/renderer's get-download-destination), so an empty temp cwd has no cache
+ * on any machine — the branch a CI runner with no browser takes.
+ */
+describe('render failure mapping', () => {
+    it('names the browser provisioning command when the Chromium cache is missing', async () => {
+        const dir = mkdtempSync(join(tmpdir(), 'kk-video-nocache-'));
+        const publicDir = join(dir, 'public');
+        mkdirSync(publicDir);
+        const cwd = process.cwd();
+        process.chdir(dir);
+        try {
+            await expect(
+                remotionRender({
+                    compositionId: 'EditorialReel',
+                    props: buildEditorialProps({
+                        layer: { kind: 'stills', images: ['still-0.png'] },
+                        captions: chunkCaptions(WORDS),
+                        headline: '每日 AI 日报',
+                        audioName: 'teaser.wav',
+                        durationSec: CLIP_SEC,
+                        width: VIDEO.width,
+                        height: VIDEO.height,
+                        fps: VIDEO.fps,
+                    }),
+                    publicDir,
+                    outputPath: join(dir, 'reel.mp4'),
+                    entryPoint: join(import.meta.dir, '..', 'src', 'remotion', 'index.tsx'),
+                }),
+            ).rejects.toThrow(/Chromium cache is missing/);
+        } finally {
+            process.chdir(cwd);
+        }
     }, 600_000);
 });
