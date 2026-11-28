@@ -1,5 +1,137 @@
 ## [Unreleased]
 
+## [0.1.29] - 2026-11-27
+
+### Added
+
+- feat(board): mount each module's `bootstrap.modules[].api` contribution under `/api/modules/<id>/*` so a module reads its data on the Board origin instead of a second loopback reader; the browser client no longer honours a `kkApi` reader origin (BREAKING) (d698dac8)
+<!-- src: apps/board/src/shared/api.ts:187 · confidence: HIGH -->
+
+- feat(board): add the daily AI Voice day console over one `projectDay()` projection behind `GET /api/days/<day>` and `GET /api/days?from&until`, with the committed eleven-day fixture and digest artifacts (d5d02d02)
+<!-- src: apps/cli/src/board/day.ts:747 · confidence: HIGH -->
+
+- feat(board): commit the daily Voice day-console and draft-editor browser E2E suites with their evidence artifacts, plus 0447's reader-handler half (99bca331)
+<!-- src: apps/board/tests/daily-voice-console.e2e.test.ts:469 · confidence: HIGH -->
+
+- feat(video): add the `video-gen` generator that renders the daily episode's 45–60s 9:16 teaser from its audio, plan and cover, with the Colab visual providers and the always-local fallback (f95253b0)
+<!-- src: plugins/generations/video-gen/src/index.ts:97 · confidence: HIGH -->
+
+- feat(daily-safety): replace the post-TTS variants LLM gate with the deterministic `daily-safety-variants-check` stage that inherits the pre-TTS stamp, verifies the manifest digest and hard-blocks on PII (0a6abff8)
+<!-- src: plugins/kk/scripts/daily-stages.ts:5371 · confidence: HIGH -->
+
+
+### Fixed
+
+- fix(video-gen): give `colab new` its own 600s allocation cap, since a live A100 allocation outran the shared 120s stage cap and forced the Ken-Burns fallback (b8965b71)
+<!-- src: plugins/generations/video-gen/src/colab-runner.ts:75 · confidence: HIGH -->
+
+- fix(news): declare the variants node's dependency on `video` so the daily bundle can no longer run before the clips exist (ec71e49f)
+<!-- src: plugins/kk/workflows/kk-news-generate.yaml:536 · confidence: HIGH -->
+
+- fix(video-gen): name each Colab attempt's session with a fresh UUID so a retry's teardown cannot stop another attempt's session (145fdad2)
+<!-- src: plugins/generations/video-gen/src/colab-runner.ts:79 · confidence: HIGH -->
+
+- fix(news): post the digest once per trigger under a `notify.digest:` store lock, refuse redirects, allow plain http only on loopback, and add the relative Board day link plus the attention count (d25c3cde)
+<!-- src: apps/cli/src/news-digest-push.ts:218 · confidence: HIGH -->
+
+- fix(news): hold `ops-console:<day>` across the whole freshness-to-write window of a direct edit, and refuse a malformed `--run-date` before the artifact resolves (bd636563)
+<!-- src: apps/cli/src/commands/content-edit.ts:224 · confidence: HIGH -->
+
+- fix(youtube-pub): stat and size-check the clip before the resumable init, keep refusals to the HTTP status, and mark the snippet embeddable instead of madeForKids (c23b3d11)
+<!-- src: plugins/publishings/youtube-pub/src/youtube-client.ts:172 · confidence: HIGH -->
+
+- fix(video): derive the caption waveform from audio decoded to 16 kHz PCM and restrict ffprobe to `file,pipe` so a playlist URL cannot be fetched (7ec8362a)
+<!-- src: plugins/generations/video-gen/python/align_captions.py:55 · confidence: HIGH -->
+
+- fix(wechatmp-pub): scope the audio title input to `.audio-upload-dialog` so the background picker dialog stops intercepting title entry (e0f2f556)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:314 · confidence: HIGH -->
+
+- fix(news-editorial): scope snapshot corrections and the editorial preamble to the superseding run (1d60eb98)
+<!-- src: plugins/kk/scripts/news-editorial-ledger.ts:473 · confidence: HIGH -->
+
+- fix(kk-store): promote a `dropped` selection when an item is explicitly marked published, without touching a `published` row (144311c7)
+<!-- src: packages/kk-store/src/dao/selections.ts:103 · confidence: HIGH -->
+
+- fix(wechatmp-pub): poll the editor body for up to 1500ms after paste and clear residual content before the insert fallbacks (20f11668)
+<!-- src: plugins/publishings/wechatmp-pub/src/flow.ts:951 · confidence: HIGH -->
+
+- fix(tasks): restate 0443's AC1 evidence as the light gate's 6/6 result so no task cites a disposable run-scoped receipt (bf568b19)
+
+
+### Changed
+
+- chore(project): bump the `@gobing-ai/ts-*` catalog from ^0.8.4 to ^0.8.8 (61aefa74)
+<!-- src: package.json:17 · confidence: HIGH -->
+
+- chore: merge e0f2f556 into main (f45268c7)
+
+- chore: merge 1d60eb98 into main (f859d22b)
+
+- chore(board): re-capture the committed daily-voice E2E evidence from the merged-tree gate run (4a649771)
+
+- chore(wrap): write the runall 0443–0446 close-out learnings and the architecture note (7be147c7)
+
+- chore(hooks): rebuild the board bundles from the checkout and merge lefthook hooks (266ffb1d)
+<!-- src: .lefthook.yml:28 · confidence: HIGH -->
+
+- chore: merge 0a6abff8 into main (c1cb81cb)
+
+- chore: merge 70780ae0 into main (ac362f31)
+
+- chore(daily-voice): turn the daily preset's x-pub article and post rows off for the account appeal (b039338f)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:99 · confidence: HIGH -->
+
+- chore(daily-voice): turn the daily-ai-voice preset's x-pub post off and drop its live override (70780ae0)
+<!-- src: plugins/kk/publish-presets/daily-ai-voice.json:99 · confidence: HIGH -->
+
+- chore: merge 20f11668 into main (8280af11)
+
+
+### Other
+
+- docs(tasks): add the video-gen README (aa87c15b)
+
+- docs(tasks): close the video batch with live Colab evidence and record 0451/0452's limits — the Wan2.1 A100 run timed out at 45 min, headless Drive mount needs per-VM consent, and the avatar live run was skipped for lack of a portrait (1787997c)
+
+- docs(tasks): re-verify 0428's frozen MCP contract against spur 0.4.49 and move it to todo (eb066f10)
+
+- docs(tasks): re-anchor the video batch's requirement rows to the tests that now prove them (21403562)
+
+- docs(context): record the four worktree-batch merge lessons (3ba1762d)
+
+- docs(tasks): update the 0447 task after verification (4b5ece89)
+
+- docs(tasks): cite the proving test in the 0443–0446 requirement and AC rows (14478a32)
+
+- test(board): write the daily-voice browser evidence only under `KK_UPDATE_BOARD_EVIDENCE=1` (82a09fe2)
+<!-- src: apps/board/tests/daily-voice-console.e2e.test.ts:22 · confidence: HIGH -->
+
+- test(cli): drive the edit verb and the native reader handler in-process, covering every refusal and both write paths (4e485bf8)
+<!-- src: apps/cli/tests/commands/content-edit-unit.test.ts:95 · confidence: HIGH -->
+
+- test(cli): add `news edit` to the frozen A22 leaf inventory (3d5584bd)
+<!-- src: apps/cli/tests/main.test.ts:251 · confidence: HIGH -->
+
+- docs(D9): close 0448 and 0450 and reopen 0449/0451/0452 for the unverified live GPU legs (1f274a64)
+
+- docs(process): bump the constitution version for the batch landing gate (85f12c76)
+
+- docs(process): mirror the batch landing gate in AGENTS.md (f30687d5)
+
+- docs(process): add constitution §5.1 requiring the integrated full gate before a worktree batch lands (9c5cfae2)
+
+- docs(context): record the D9 batch learnings and session memory (babc0e40)
+
+- test(news): register the `video` node in the news DAG shape contract (b8c51873)
+<!-- src: apps/cli/tests/kk-news-generate-dag.test.ts:115 · confidence: HIGH -->
+
+- docs(D9): lowercase the feature scope headings so feature check --strict passes (4ea953ce)
+
+- docs(board): file 0447 for the Spur native module backend migration (9f2a3adb)
+
+- docs(video-gen): record ADR-060 and the D9 design and task batch (2f80483b)
+
+
 ## [0.1.28] - 2026-11-25
 
 ### Added
