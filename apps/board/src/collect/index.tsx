@@ -680,6 +680,7 @@ export function CollectModule() {
                     artifacts={modalArtifacts}
                     steps={modalSteps}
                     config={modalConfig}
+                    basePath={basePath}
                     showEffective={showEffective}
                     onToggleQuality={toggleQuality}
                     onClose={handleCloseModal}

@@ -11,7 +11,6 @@ import type {
     RunResults,
 } from '../contracts';
 import {
-    boardBasePath,
     MAX_OVERVIEW_RUNS,
     type StoreItemFilterName,
     type StoreItemsQuery,
@@ -429,6 +428,7 @@ export function RunDetailModal({
     artifacts,
     steps,
     config,
+    basePath = '',
     showEffective,
     onToggleQuality,
     onClose,
@@ -440,6 +440,7 @@ export function RunDetailModal({
     artifacts: ArtifactView[];
     steps?: ProgressRow[];
     config?: RunConfig | null;
+    basePath?: string;
     showEffective: boolean;
     onToggleQuality: () => void;
     onClose: () => void;
@@ -542,7 +543,7 @@ export function RunDetailModal({
                         <h3 className="kk-chart-title" style={{ marginBottom: '0.5rem' }}>
                             Workflow Configuration
                         </h3>
-                        <ConfigPanel config={config ?? null} />
+                        <ConfigPanel config={config ?? null} basePath={basePath} />
                     </div>
 
                     {/* Execution Progress Steps */}
@@ -1336,7 +1337,11 @@ export function ProgressPanel({ steps }: { steps: ProgressRow[] }) {
     );
 }
 
-export function ConfigPanel({ config }: { config: RunConfig | null }) {
+/**
+ * `basePath` stays a prop: the panel renders to static markup in tests and on the server, where
+ * `window` does not exist (task 0447's prefix must come from the browser-side container).
+ */
+export function ConfigPanel({ config, basePath = '' }: { config: RunConfig | null; basePath?: string }) {
     if (config === null) return <p>No captured configuration for the selected run.</p>;
     const entries = Object.entries(config.settings);
     return (
@@ -1354,8 +1359,7 @@ export function ConfigPanel({ config }: { config: RunConfig | null }) {
             {config.unavailableKeys.length === 0 ? null : <p>Uncaptured keys: {config.unavailableKeys.join(', ')}</p>}
             <p>
                 Current definitions and defaults live in{' '}
-                <a href={`${boardBasePath(window.location.pathname)}/board/settings/workflows`}>Settings → Workflows</a>
-                .
+                <a href={`${basePath}/board/settings/workflows`}>Settings → Workflows</a>.
             </p>
         </div>
     );

@@ -701,6 +701,11 @@ describe('shipped panels (AC6)', () => {
             diagnostics: [],
         };
         expect(renderToStaticMarkup(<ConfigPanel config={config} />)).toContain('topic');
+        // 0447 — the gateway prefix reaches the settings link through a prop: this render has no
+        // `window`, so a render-time `window.location` read fails the whole panel (run 46101951751).
+        expect(renderToStaticMarkup(<ConfigPanel config={config} basePath="/knowledge-kit" />)).toContain(
+            '/knowledge-kit/board/settings/workflows',
+        );
         expect(
             renderToStaticMarkup(<ConfigPanel config={{ ...config, settings: {}, unavailableKeys: ['topic'] }} />),
         ).toContain('Uncaptured keys: topic');
