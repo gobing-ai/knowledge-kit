@@ -7,6 +7,7 @@ import {
     buildColabArgv,
     buildDownloadArgv,
     buildStopArgv,
+    COLAB_ALLOCATE_TIMEOUT_MS,
     type ColabJob,
     DEFAULT_COLAB_CACHE_DIR,
     LOCAL_KILL_GRACE_MS,
@@ -145,6 +146,9 @@ describe('runColabJob', () => {
         expect(programs).toEqual(['new', 'drivemount', 'upload', 'exec', 'download', 'stop']);
         // The local kill allowance rides the seam's deadline (R1).
         expect(harness.calls[3]?.timeoutMs).toBe(600_000 + LOCAL_KILL_GRACE_MS);
+        // A live A100 allocation took 2m45s (2026-11-27); a 120s cap made every real Wan run fall back.
+        expect(harness.calls[0]?.timeoutMs).toBe(COLAB_ALLOCATE_TIMEOUT_MS);
+        expect(COLAB_ALLOCATE_TIMEOUT_MS).toBeGreaterThan(165_000);
 
         const ledger = await fs.readFile(join(harness.outputs(), 'works', 'colab-ccu-ledger.jsonl'));
         expect(JSON.parse(ledger.trim())).toMatchObject({ gpu: 'A100', jobType: 'wan21-i2v', status: 'ok' });

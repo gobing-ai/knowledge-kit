@@ -71,6 +71,9 @@ export const DEFAULT_COLAB_CACHE_DIR = '/content/drive/MyDrive/kk-video-cache';
 export const LOCAL_KILL_GRACE_MS = 60_000;
 /** Marker the worker prints on its last line with its JSON result. */
 export const WORKER_RESULT_MARKER = 'KK_COLAB_RESULT ';
+/** Cap for `colab new`: a live A100 allocation took 2m45s, so the 120s per-stage cap is too short. */
+export const COLAB_ALLOCATE_TIMEOUT_MS = 600_000;
+const STAGE_TIMEOUT_MS = 120_000;
 
 /** A distinct session for each attempt, including retries for the same date and provider. */
 export function sessionName(job: ColabJob): string {
@@ -168,15 +171,15 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
 
     try {
         const cli = process.env.KK_COLAB_BIN ?? 'colab';
-        const stage = async (argv: string[]): Promise<void> => {
-            const result = await deps.runProcess(argv, { timeoutMs: Math.min(120_000, remaining()) });
+        const stage = async (argv: string[], capMs: number = STAGE_TIMEOUT_MS): Promise<void> => {
+            const result = await deps.runProcess(argv, { timeoutMs: Math.min(capMs, remaining()) });
             if (result.code !== 0) {
                 throw new Error(
                     `colab ${argv[1]} failed (exit ${result.code}): ${bounded(result.stderr) || 'no stderr'}`,
                 );
             }
         };
-        await stage([cli, 'new', '--session', session, '--gpu', job.gpu]);
+        await stage([cli, 'new', '--session', session, '--gpu', job.gpu], COLAB_ALLOCATE_TIMEOUT_MS);
         const requestedCache = job.env?.KK_COLAB_CACHE_DIR ?? cacheDir;
         if (requestedCache === '/content/drive' || requestedCache.startsWith('/content/drive/')) {
             // Colab's CLI brokers Drive credentials. An unavailable mount leaves the worker on its local cache.
@@ -202,7 +205,7 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
                     const remoteName = job.jobType === 'wan21-i2v' ? `clip-${index}.mp4` : 'presenter.mp4';
                     const download = await deps.runProcess(
                         buildDownloadArgv(session, join(job.remoteDir, remoteName), localPath),
-                        { timeoutMs: Math.min(120_000, remaining()) },
+                        { timeoutMs: Math.min(STAGE_TIMEOUT_MS, remaining()) },
                     );
                     if (download.code !== 0) {
                         error = `colab download of ${name} failed (exit ${download.code}): ${bounded(download.stderr) || 'no stderr'}`;
