@@ -12,7 +12,7 @@
  * resolve with `bodyLength === 0`, which is exactly the state in which `insertBody` used to return
  * early and save an empty draft body.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -180,6 +180,14 @@ describe('wechatmp insertBody fallback after pasteHtml (real Chromium)', () => {
 });
 
 describe('wechatmp legacy editor readiness probe', () => {
+    // Bun runs every test file in one process, so a `window` left on globalThis breaks any later
+    // file importing a browser-shaped library — remotion's CJS entry reads `window.addEventListener`
+    // at import time (run 46103961439). Restore the two globals this test fakes.
+    afterEach(() => {
+        delete (globalThis as { window?: unknown }).window;
+        delete (globalThis as { document?: unknown }).document;
+    });
+
     test('accepts a canonical saved editor with hidden autosave markers and one save control', () => {
         // Exercise the generated probe in Bun, so its hidden/text predicates are covered without a
         // browser. This is the measured legacy `media/appmsg_edit` readiness contract.
