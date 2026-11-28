@@ -80,10 +80,12 @@ jobs:
 
       - name: Install Remotion Chromium
         # The video-gen heavy renders refuse to auto-download Chromium by design (engine.ts's
-        # onBrowserDownload), so the headless shell must be cached before Test — otherwise the
-        # three render e2e files fail with "Chromium cache is missing" (run 46101951751).
-        working-directory: plugins/generations/video-gen
-        run: bun -e 'import { ensureBrowser } from "@remotion/renderer"; await ensureBrowser();'
+        # onBrowserDownload), so the headless shell must be cached before Test.
+        # Remotion resolves that cache from the cwd's nearest package.json
+        # (get-download-destination.js), and Test runs from the repo root — so this step must too,
+        # importing the renderer through the plugin's own node_modules. Installing from
+        # plugins/generations/video-gen populated a second, unused cache (run 46105666417).
+        run: bun -e 'import { ensureBrowser } from "./plugins/generations/video-gen/node_modules/@remotion/renderer"; await ensureBrowser();'
 
       - name: Lint
         run: bun run lint
