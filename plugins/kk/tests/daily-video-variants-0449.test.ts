@@ -265,5 +265,6 @@ describe('0449 R3 — the workflow node', () => {
         const order = dag.nodes.map((entry) => entry.id);
         expect(order.indexOf('video')).toBeGreaterThan(order.indexOf('cards'));
         expect(order.indexOf('video')).toBeLessThan(order.indexOf('variants'));
+        expect(byId.get('variants')?.dependsOn).toContain('video');
     });
 });

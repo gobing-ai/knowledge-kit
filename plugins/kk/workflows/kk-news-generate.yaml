@@ -533,7 +533,7 @@ nodes:
       `daily-safety-manifest` in one process: `31-publish/` prep, `30-variants/*` payloads and the
       manifest the nested variants review registers. Two stages, because the review of those
       variants has to run between them and a nested workflow call cannot live inside a verb.
-    dependsOn: [voice, voice-fallback, voice-fallback2, cards, localize-check, illustrations-render]
+    dependsOn: [voice, voice-fallback, voice-fallback2, cards, localize-check, illustrations-render, video]
     condition:
       kind: shell
       options:
