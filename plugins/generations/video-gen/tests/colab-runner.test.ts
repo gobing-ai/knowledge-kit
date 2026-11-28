@@ -69,18 +69,19 @@ const deps = (harness: ReturnType<typeof scratch>, now?: () => number) => ({
 
 describe('frozen argv (step-0 spike)', () => {
     it('runs the worker in the selected session with a timeout and cache env', () => {
-        const argv = buildColabArgv(job());
+        const session = sessionName(job());
+        const argv = buildColabArgv(job(), session);
         expect(argv.slice(0, 2)).toEqual([process.env.KK_COLAB_BIN ?? 'colab', 'exec']);
         expect(argv[argv.indexOf('--file') + 1]).toBe('/plugins/video-gen/python/colab_wan21_i2v.py');
-        expect(argv[argv.indexOf('--session') + 1]).toBe('kk-video-20261126-wan21-i2v');
+        expect(argv[argv.indexOf('--session') + 1]).toBe(session);
         // A 600 000 ms job is 600 s; the CLI default (30 s) must never be inherited.
         expect(argv[argv.indexOf('--timeout') + 1]).toBe('600');
         expect(argv.join(' ')).toContain(`--env KK_COLAB_CACHE_DIR=${DEFAULT_COLAB_CACHE_DIR}`);
-        expect(sessionName(job())).toBe('kk-video-20261126-wan21-i2v');
+        expect(session).toMatch(/^kk-video-20261126-wan21-i2v-/);
     });
 
     it('carries extra env pairs and the CLI transfer verbs', () => {
-        const argv = buildColabArgv(job({ env: { KK_WAN21_STEPS: '20' } }), '/drive/cache');
+        const argv = buildColabArgv(job({ env: { KK_WAN21_STEPS: '20' } }), 's1', '/drive/cache');
         expect(argv.join(' ')).toContain('--env KK_WAN21_STEPS=20');
         expect(argv.join(' ')).toContain('--env KK_COLAB_CACHE_DIR=/drive/cache');
         expect(buildDownloadArgv('s1', '/content/kk-video/clip-0.mp4', '/tmp/clip-0.mp4')).toEqual([
@@ -109,6 +110,28 @@ describe('worker result parsing', () => {
 });
 
 describe('runColabJob', () => {
+    it('cleans up only the session assigned to each attempt for the same date and provider', async () => {
+        const first = scratch();
+        const second = scratch();
+        const failedNew: RunProcess = async (argv) => {
+            second.calls.push({ argv });
+            return { code: argv[1] === 'new' ? 1 : 0, stdout: '', stderr: 'allocation refused' };
+        };
+
+        await runColabJob(job(), deps(first));
+        await runColabJob(job(), { ...deps(second), runProcess: failedNew });
+
+        const sessions = (harness: ReturnType<typeof scratch>) =>
+            harness.calls.map(({ argv }) => argv[argv.indexOf('--session') + 1]);
+        const firstSession = sessions(first)[0];
+        const secondSession = sessions(second)[0];
+        expect(firstSession).toMatch(/^kk-video-20261126-wan21-i2v-/);
+        expect(secondSession).not.toBe(firstSession);
+        expect(new Set(sessions(first))).toEqual(new Set([firstSession]));
+        expect(sessions(second)).toEqual([secondSession, secondSession]);
+        expect(second.calls.map(({ argv }) => argv[1])).toEqual(['new', 'stop']);
+    });
+
     it('downloads the outputs, stops the session and appends a ledger line', async () => {
         const harness = scratch();
         const result = await runColabJob(job(), deps(harness));
@@ -133,8 +156,10 @@ describe('runColabJob', () => {
         const result = await runColabJob(job({ inputPaths: [input] }), deps(harness));
         expect(result.ok).toBe(true);
         const [create, mount, upload, execute, download, stop] = harness.calls.map((call) => call.argv);
-        expect(create?.slice(1)).toEqual(['new', '--session', sessionName(job()), '--gpu', 'A100']);
-        expect(mount?.slice(1)).toEqual(['drivemount', '/content/drive', '--session', sessionName(job())]);
+        const session = create?.[3];
+        expect(session).toMatch(/^kk-video-20261126-wan21-i2v-/);
+        expect(create?.slice(1)).toEqual(['new', '--session', session, '--gpu', 'A100']);
+        expect(mount?.slice(1)).toEqual(['drivemount', '/content/drive', '--session', session]);
         expect(upload?.slice(1, 4)).toEqual(['upload', input, '/content/kk-input-0.png']);
         expect(execute).toContain(
             'KK_COLAB_ARGS=["--images","/content/kk-input-0.png","--out-dir","/content/kk-video"]',

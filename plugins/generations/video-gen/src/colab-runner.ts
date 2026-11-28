@@ -72,13 +72,13 @@ export const LOCAL_KILL_GRACE_MS = 60_000;
 /** Marker the worker prints on its last line with its JSON result. */
 export const WORKER_RESULT_MARKER = 'KK_COLAB_RESULT ';
 
-/** `kk-video-<runDate>-<jobType>` (R1). */
+/** A distinct session for each attempt, including retries for the same date and provider. */
 export function sessionName(job: ColabJob): string {
-    return `kk-video-${job.runDate}-${job.jobType}`;
+    return `kk-video-${job.runDate}-${job.jobType}-${crypto.randomUUID()}`;
 }
 
 /** Execute the local worker in the session where the media has been staged. */
-export function buildColabArgv(job: ColabJob, cacheDir: string = DEFAULT_COLAB_CACHE_DIR): string[] {
+export function buildColabArgv(job: ColabJob, session: string, cacheDir: string = DEFAULT_COLAB_CACHE_DIR): string[] {
     const inputs = job.inputPaths.map((path, index) => `/content/kk-input-${index}${extname(path)}`);
     const scriptArgs =
         job.jobType === 'wan21-i2v'
@@ -96,7 +96,7 @@ export function buildColabArgv(job: ColabJob, cacheDir: string = DEFAULT_COLAB_C
         '--file',
         job.script,
         '--session',
-        sessionName(job),
+        session,
         // The CLI's own timeout is an inactivity timeout; it is seconds, and 0 means unlimited.
         '--timeout',
         String(Math.max(1, Math.round(job.timeoutMs / 1000))),
@@ -185,7 +185,7 @@ export async function runColabJob(job: ColabJob, deps: ColabDeps): Promise<Colab
         for (const [index, path] of job.inputPaths.entries()) {
             await stage([cli, 'upload', path, `/content/kk-input-${index}${extname(path)}`, '--session', session]);
         }
-        const result = await deps.runProcess(buildColabArgv(job, cacheDir), {
+        const result = await deps.runProcess(buildColabArgv(job, session, cacheDir), {
             timeoutMs: remaining(),
         });
         if (result.code !== 0) {
