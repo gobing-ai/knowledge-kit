@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add MuseTalk and EchoMimicV2 avatar and hybrid-pip modes to video-gen
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-27T23:00:02.152Z"
+updated_at: "2026-11-28T02:45:28.878Z"
 feature_id: D9
 priority: P2
 tags:
@@ -16,8 +16,8 @@ tags:
 estimate_hours: 6
 
 dependencies: ["0451", "0450"]
-done_forced: "false"
-done_reason: unforced close
+done_forced: "true"
+done_reason: "Operator-approved force-done 2026-11-27: avatar/hybrid code shippable (gate 6262/0, heavy 575/0 incl. render-avatar-e2e). Live MuseTalk/EchoMimicV2 runs skipped by operator (no consented portrait). Follow-up: 0453 R4."
 ---
 
 ## 0452. Add MuseTalk and EchoMimicV2 avatar and hybrid-pip modes to video-gen
@@ -161,6 +161,8 @@ unit or touched YouTube.
 | R12 — Invalid video inputs or missing credentials fail closed before expensive execution | MET | test | plugins/generations/video-gen/tests/avatar-provider.test.ts:90 and plugins/publishings/youtube-pub/tests/youtube-pub.test.ts cover invalid inputs and missing auth. |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
+**Closing pass (2026-11-27):** The operator decided to skip the live MuseTalk/EchoMimicV2 runs (no consented portrait supplied), so R1/R2 stay PARTIAL as documented live limits. This task inherits 0451's runner fix (`plugins/generations/video-gen/src/colab-runner.ts:182`: a 600s allocation cap; a live A100 allocation took 2m44s) and its open live findings (headless `drivemount` needs per-VM consent; `colab exec` exits 0 on worker failure). The fast avatar suites re-ran green this pass (`tests/avatar-provider.test.ts`, `tests/remotion-props.test.ts`: part of 60 pass / 0 fail); `bun run gate` exit 0 (6262/0); `bun run test:heavy` exit 0 (575/0, including `render-avatar-e2e`).
+
 ### Review
 
 <!-- spur:record-review -->
@@ -185,4 +187,5 @@ unit or touched YouTube.
 - 2026-11-27T16:51:57.255Z testing → done (system)
 - 2026-11-27T19:36:34.186Z done → wip (system)
 - 2026-11-27T19:36:35.810Z wip → testing (system)
+- 2026-11-28T02:45:28.717Z testing → done (system)
 

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.669Z
-updated_at: "2026-11-27T23:01:39.589Z"
+updated_at: "2026-11-28T02:45:27.755Z"
 feature_id: D9
 priority: P2
 tags:
@@ -15,8 +15,8 @@ tags:
 estimate_hours: 8
 
 dependencies: ["0448", "0449"]
-done_forced: "false"
-done_reason: unforced close
+done_forced: "true"
+done_reason: "Operator-approved force-done 2026-11-27: code shippable (gate 6262/0, heavy 575/0, live fallback + teardown + ledger proven; allocation-timeout bug fixed). Live Wan2.1 inference (R2/R4) unproven: A100 run timed out at 45 min, headless Drive mount needs per-VM consent. Follow-up: 0453."
 ---
 
 ## 0451. Add google-colab-cli GPU runner with Drive cache and Wan2.1 I2V provider
@@ -149,18 +149,18 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/generations/video-gen/tests/colab-runner.test.ts:113 proves per-attempt session ownership, including cleanup after allocation refusal. The session has the date/provider prefix plus a unique suffix. plugins/generations/video-gen/tests/colab-runner.test.ts:210 exercises hard-deadline cleanup. Installed CLI help confirms new/exec/stop and the exec timeout unit. |
-| R2 | PARTIAL | plugins/generations/video-gen/tests/colab-runner.test.ts:135 verifies the mount request, cache env and Drive result contract. A real fresh-runtime Drive mount and cache report remain unverified. |
-| R3 | MET | plugins/generations/video-gen/tests/colab-runner.test.ts:224 proves budget refusal launches nothing; plugins/generations/video-gen/tests/ccu-ledger.test.ts:103 verifies append. |
-| R4 | PARTIAL | plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30 passes real Remotion/ffprobe with a fixture clip. .spur/run/0449-0451-0452-worker-contracts.log verifies the worker clip contract in isolation. Real Wan inference remains unverified. |
-| R5 | MET | plugins/generations/video-gen/tests/colab-fallback.test.ts:72, :88 and :121 cover failure, missing results, timeout and exhausted budget. |
-| R6 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:200 verifies editorial-wan dispatch. |
+| R1 | MET | `plugins/generations/video-gen/src/colab-runner.ts:182` — closing pass: `colab new` now gets `COLAB_ALLOCATE_TIMEOUT_MS` (600s) instead of the 120s stage cap. A live A100 allocation took 2m44s on 2026-11-27, so every real run fell back at `colab new`. Regression: `plugins/generations/video-gen/tests/colab-runner.test.ts:150` (red before the fix). Live run 2 (session kk-video-20261020-wan21-i2v-a0f50822…): new → drivemount → 3 uploads → exec → stop all ran; `colab sessions` empty afterwards (teardown proven live). |
+| R2 | PARTIAL | `plugins/generations/video-gen/tests/colab-runner.test.ts:135` covers the cache env contract. Live: `colab drivemount` needs a **per-VM browser OAuth consent** (ephemeral `dfs_ephemeral` scope). It succeeded only after interactive consent on a T4 probe. On the headless A100 run it waited the full 120s and gave up, so the worker ran on the VM-local cache. Headless Drive caching is not achievable with colab-cli 0.8.0; the worker's `cache: local` report never surfaced because inference did not finish. |
+| R3 | MET | `plugins/generations/video-gen/tests/colab-runner.test.ts:224` zero-spawn budget refusal; live ledger `.works/tmp/test-wan21/colab-ccu-ledger.jsonl` lines 1–2 (A100 120.6s → 0.2345 CCU; A100 2761.45s → 5.3695 CCU, vs the account's measured 6.1 CU drop) |
+| R4 | PARTIAL | `plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30` fixture clip render passes (heavy tier 575/0). Live: a 3-still Wan2.1-14B-480P job on an A100 (cold weight download + CPU-offloaded 40-step inference) did not finish within a 45-min deadline. Real Wan inference is unproven, and the daily 10-min default cannot complete as designed. |
+| R5 | MET | `plugins/generations/video-gen/tests/colab-fallback.test.ts:72` + live: both real runs exited 0 with a 1080×1920 h264+aac MP4, `renderProvider: local-ken-burns`, `fallbackUsed: true` and a named warning (`.works/tmp/test-wan21/20261020/32-video/20261020_video_content.json`) |
+| R6 | MET | `plugins/kk/tests/daily-video-variants-0449.test.ts:200` editorial-wan dispatch |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget | MET | test | plugins/generations/video-gen/tests/colab-fallback.test.ts:72 and :121 exercise fallback and zero-spawn budget refusal. |
-| R6 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards | PARTIAL | test | plugins/generations/video-gen/tests/colab-runner.test.ts:113 and plugins/generations/video-gen/tests/colab-runner.test.ts:210 prove ownership and cleanup in the process fixtures. The real Drive mount and GPU job are pending. |
-| R7 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell | PARTIAL | test | plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30 validates the clip shell and encoded output. Live Colab inference is pending. |
+| R5 — Editorial mode falls back to local Ken-Burns when Colab Wan2.1 I2V fails or exceeds budget | MET | test | `plugins/generations/video-gen/tests/colab-fallback.test.ts:72`, `:121`; live fallback twice (allocation timeout, exec deadline) with exit 0 |
+| R6 — Colab GPU runner executes headless jobs with Google Drive weight caching and teardown guards | PARTIAL | command | Teardown and ledger proven live; headless Drive caching is impossible without per-VM consent (see R2) |
+| R7 — Editorial mode composites Colab Wan2.1 I2V motion loops inside the shared Remotion shell | PARTIAL | test | `plugins/generations/video-gen/tests/render-wan-e2e.test.ts:30` (fixture); live Wan inference timed out at 45 min |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
@@ -171,7 +171,7 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | secua-review | — | Fixed reuse of the same date/provider session name, which could stop another attempt on failed allocation. Live Wan, cache and remote teardown evidence remain open. |
+| P4 | — | — | No findings (verify verdict PARTIAL) |
 
 ### References
 
@@ -188,4 +188,5 @@ authenticated `colab` CLI; nothing in this task has spent a compute unit.
 - 2026-11-27T09:53:40.463Z testing → done (system)
 - 2026-11-27T19:36:36.371Z done → wip (system)
 - 2026-11-27T19:36:37.225Z wip → testing (system)
+- 2026-11-28T02:45:27.655Z testing → done (system)
 

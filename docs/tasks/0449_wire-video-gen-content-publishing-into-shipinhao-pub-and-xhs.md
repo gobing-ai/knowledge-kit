@@ -1,10 +1,10 @@
 ---
 schema_version: 1
 name: Wire video-gen Content publishing into shipinhao-pub and xhs-pub
-status: testing
+status: done
 template: feature-impl
 created_at: 2026-11-26T19:50:42.662Z
-updated_at: "2026-11-27T22:59:46.535Z"
+updated_at: "2026-11-28T02:03:55.294Z"
 feature_id: D9
 priority: P1
 tags:
@@ -152,30 +152,30 @@ the variants against a real render — see `## Testing`.
 
 **Pipeline verify results**
 
-- Verdict: PARTIAL (from verdict artifact)
+- Verdict: PASS (from verdict artifact)
 
 | Requirement | Status | Evidence |
 |-------------|--------|----------|
-| R1 | MET | plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202 exercises video-gen metadata through the existing draft path. |
-| R2 | MET | plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:881 checks profile binding and plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835 exercises the video draft ladder. |
-| R3 | PARTIAL | Workflow schema validation passed. plugins/kk/workflows/kk-news-generate.yaml:536 has no video dependency on variants. The current declaration-order test does not check that graph edge. |
-| R4 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:92 and :131 check emitted draft variants and the missing-video skip. |
-| R5 | MET | plugins/kk/tests/daily-video-variants-0449.test.ts:219 checks both video rows are off and optional. |
+| R1 | MET | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202` — a videoGenContentSchema payload defaults to a draft with no flow change (273 pass / 0 fail this run) |
+| R2 | MET | `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:881` profile binding; `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835` 上传视频 draft ladder |
+| R3 | MET | `plugins/kk/workflows/kk-news-generate.yaml:536` — variants now depends on video (closing-pass fix); `plugins/kk/tests/daily-video-variants-0449.test.ts:268` asserts the edge; `spur workflow validate` → valid |
+| R4 | MET | `plugins/kk/tests/daily-video-variants-0449.test.ts:92` variants + keys; `plugins/kk/tests/daily-video-variants-0449.test.ts:131` skip path |
+| R5 | MET | `plugins/kk/tests/daily-video-variants-0449.test.ts:219` both preset rows off + optional |
 
 | Acceptance Criteria | Status | Evidence Type | Evidence |
 |---------------------|--------|---------------|----------|
-| R10 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default | MET | test | plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202, plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835 and plugins/kk/tests/daily-video-variants-0449.test.ts:219 exercise the draft contract and preset. |
+| R10 — Shipinhao and Xiaohongshu publishers accept video-gen Content and save drafts by default | MET | test | `plugins/publishings/shipinhao-pub/tests/shipinhao-pub.test.ts:1202`, `plugins/publishings/xhs-pub/tests/xhs-pub.test.ts:2835`, `plugins/kk/tests/daily-video-variants-0449.test.ts:219`; `bun run gate` exit 0 (6262 pass / 0 fail) |
 - Coverage: N/A (verdict-based; verify pipeline does not measure code coverage)
 
 ### Review
 
 <!-- spur:record-review -->
 
-**SECU findings** (pipeline verify step — verdict: PARTIAL)
+**SECU findings** (pipeline verify step — verdict: PASS)
 
 | Priority | Dimension | Location | Finding |
 |----------|-----------|----------|----------|
-| P4 | secua-review | — | The draft and optional-preset paths pass. The missing graph dependency is an open correctness finding. The live publishing paths are outside this task. |
+| P4 | — | — | No findings (verify verdict PASS) |
 
 ### References
 
@@ -194,4 +194,5 @@ the variants against a real render — see `## Testing`.
 - 2026-11-27T09:26:26.603Z testing → done (system)
 - 2026-11-27T19:36:37.723Z done → wip (system)
 - 2026-11-27T19:36:38.675Z wip → testing (system)
+- 2026-11-28T02:03:54.695Z testing → done (system)
 
